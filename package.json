@@ -7,12 +7,20 @@
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
 		"test": "vitest",
-		"cf-typegen": "wrangler types"
+		"cf-typegen": "wrangler types",
+		"db:migrate": "bash scripts/migrate.sh",
+    "db:init:local": "wrangler d1 execute gostylens_db --local --file=./db/schema.sql",
+    "db:init:remote": "wrangler d1 execute gostylens_db --remote --file=./db/schema.sql",
+		"check:size": "npx wrangler deploy --dry-run --outdir=dist > /dev/null && SIZE=$(gzip -c dist/_worker.js | wc -c) && echo \"🗜️  Gzipped size: $((SIZE/1024)) KB\" && if [ $SIZE -gt 1048576 ]; then echo '❌ Exceeds 1 MB Cloudflare limit!' && exit 1; else echo '✅ Within limit'; fi"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.8.19",
 		"typescript": "^5.5.2",
 		"vitest": "~3.2.0",
 		"wrangler": "^4.43.0"
+	},
+	"dependencies": {
+		"aws4fetch": "^1.0.20",
+		"itty-router": "^5.0.22"
 	}
 }

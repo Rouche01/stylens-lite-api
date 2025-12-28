@@ -9,7 +9,7 @@
 	"compatibility_date": "2025-10-11",
 	"observability": {
 		"enabled": true
-	}
+	},
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
@@ -25,7 +25,19 @@
 	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
-	// "vars": { "MY_VARIABLE": "production_value" }
+	"vars": {
+		"MODEL_ENDPOINT_URL": "https://api.openai.com/v1",
+		"OPENAI_MODEL_VERSION": "gpt-5-mini",
+		"OUTFIT_PHOTOS_BUCKET_NAME": "outfit-photos",
+		"R2_ACCOUNT_ID": "d7978583c6d20c1a4c8cce3ed6ac71b2"
+	},
+	"d1_databases": [
+		{
+			"binding": "gostylens_db",
+			"database_name": "gostylens-db",
+			"database_id": "d10c69e6-f37e-4ac6-9342-423d8b9e2cfe"
+		}
+	]
 	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/

@@ -1,18 +1,22 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Bind resources to your worker in `wrangler.jsonc`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
+import { error, Router } from 'itty-router';
+import styleAnalysisRouter from './routes/style_analysis';
+import assetsRouter from './routes/assets';
+
+const router = Router();
+
+// Mount the style analysis router at the /style-analysis path
+router.all('/style-analysis/*', styleAnalysisRouter.fetch);
+router.all('/assets/*', assetsRouter.fetch);
+
+router.get('/', () => new Response('Style Analysis API is running'));
+
+// Add a catch-all for unmatched routes
+router.all('*', () => error(404));
 
 export default {
-	async fetch(request, env, ctx): Promise<Response> {
-		return new Response('Hello World!');
+	async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
+		// Attach ctx to request for access in routes
+		(request as any).ctx = ctx;
+		return router.fetch(request, env, ctx);
 	},
-} satisfies ExportedHandler<Env>;
+};
