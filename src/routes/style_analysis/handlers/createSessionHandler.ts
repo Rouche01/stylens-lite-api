@@ -1,8 +1,8 @@
-import { MessageEntry } from '../../../utils/types';
+import { MessageEntry } from 'utils/types';
 import { error, RequestHandler } from 'itty-router';
 import { env } from 'cloudflare:workers';
-import { createStyleAnalysisDB } from '../../../db';
-import { generateTitle } from '../../../utils/style_analysis_session.utils';
+import { createStyleAnalysisDB } from 'db';
+import { generateTitle } from 'utils/style_analysis_session.utils';
 
 type CreateSessionBody = {
 	userId: string;

@@ -31,9 +31,9 @@ export async function generateTitle(
 
 	// Build a compact summary for the LLM
 	const messagesSummary = messages
-		.filter((m) => m.prompt || m.imageUrl)
+		.filter((m) => m.prompt || m.remoteImage)
 		.map((m, i) => {
-			const content = m.prompt ? m.prompt : `[image] ${m.imageUrl}`;
+			const content = m.prompt ? m.prompt : `[image] ${m.remoteImage?.url}`;
 			return `${i + 1}. ${m.role}: ${content}`;
 		})
 		.join('\n');

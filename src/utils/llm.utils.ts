@@ -150,7 +150,7 @@ export class LLMService {
 			role: 'user',
 			content: [
 				...(entry.prompt ? [{ type: 'input_text' as const, text: entry.prompt }] : []),
-				...(entry.imageUrl ? [{ type: 'input_image' as const, image_url: entry.imageUrl }] : []),
+				...(entry.remoteImage ? [{ type: 'input_image' as const, image_url: entry.remoteImage.url }] : []),
 			],
 		};
 	}
@@ -191,9 +191,8 @@ export class LLMService {
 						content.push({ type: 'input_text', text: message.prompt });
 					}
 
-					if (message.imageUrl) {
-						const freshSignedUrl = await regenerateSignedUrl(message.imageUrl);
-						console.log('Regenerated signed URL:', freshSignedUrl);
+					if (message.remoteImage) {
+						const freshSignedUrl = await regenerateSignedUrl(message.remoteImage.url);
 						content.push({
 							type: 'input_image',
 							image_url: freshSignedUrl,

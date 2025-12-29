@@ -1,5 +1,5 @@
 import { error, RequestHandler } from 'itty-router';
-import { createStyleAnalysisDB } from '../../../db';
+import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 
 const listSessionsHandler: RequestHandler = async (request) => {
