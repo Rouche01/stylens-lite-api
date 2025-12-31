@@ -15,7 +15,8 @@ export type StyleAnalysisEntry = {
 	style_analysis_history_id: string;
 	role: 'user' | 'assistant' | 'system';
 	content?: string;
-	remoteImage?: RemoteImage;
+	image_url?: string | null;
+	image_key?: string | null;
 	created_at: number;
 };
 

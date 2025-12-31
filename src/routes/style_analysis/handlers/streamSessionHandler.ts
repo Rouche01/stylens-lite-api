@@ -2,6 +2,7 @@ import { error, RequestHandler } from 'itty-router';
 import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { createLLMService } from 'utils/llm.utils';
+import { MessageEntry } from 'utils/types';
 
 const streamSessionHandler: RequestHandler = async (request) => {
 	try {
@@ -53,17 +54,19 @@ const streamSessionHandler: RequestHandler = async (request) => {
 		}
 
 		// Convert to MessageEntry format
-		const messageEntries = messagesToSend.map((m) => ({
+		const messageEntries: MessageEntry[] = messagesToSend.map((m) => ({
 			role: m.role as 'user' | 'assistant' | 'system',
 			prompt: m.content || undefined,
-			imageUrl: m.remoteImage,
+			remoteImage: m.image_url || m.image_key ? { url: m?.image_url || '', key: m.image_key || '' } : undefined,
 		}));
 
 		// Prepare for LLM
 		const preparedMessages = await llmService.prepareMessagesForLLM(messageEntries);
 
 		// Get streaming response
-		const stream = await llmService.generateStreamingResponse(preparedMessages);
+		const stream = await llmService.generateStreamingResponse(preparedMessages, async (completeText) => {
+			await styleAnalysisDB.addMessage({ role: 'assistant', sessionId, content: completeText });
+		});
 
 		return new Response(stream, {
 			headers: {

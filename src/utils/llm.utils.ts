@@ -31,7 +31,11 @@ export class LLMService {
 	}
 
 	// NEW: Streaming method
-	async generateStreamingResponse(input: LLMInput[], signal?: AbortSignal): Promise<ReadableStream> {
+	async generateStreamingResponse(
+		input: LLMInput[],
+		onComplete?: (completeStreamText: string) => Promise<void> | void,
+		signal?: AbortSignal
+	): Promise<ReadableStream> {
 		const requestBody = {
 			model: this.model,
 			input,
@@ -117,6 +121,7 @@ export class LLMService {
 								// When done, log the complete chunk
 								if (parsed.type === 'response.output_text.done') {
 									console.log('Complete chunk:', currentChunk);
+									await onComplete?.(currentChunk);
 									currentChunk = ''; // Reset for next message
 								}
 							} catch (e) {
@@ -198,6 +203,10 @@ export class LLMService {
 							image_url: freshSignedUrl,
 						});
 					}
+					processedMessages.push({
+						role: 'user',
+						content,
+					});
 				}
 			} else if (message.role === 'system') {
 				// Collect system prompts for later processing
