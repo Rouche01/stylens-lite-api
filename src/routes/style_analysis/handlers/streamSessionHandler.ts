@@ -64,7 +64,7 @@ const streamSessionHandler: RequestHandler = async (request) => {
 		const preparedMessages = await llmService.prepareMessagesForLLM(messageEntries);
 
 		// Get streaming response
-		const stream = await llmService.generateStreamingResponse(preparedMessages, async (completeText) => {
+		const stream = await llmService.generateStreamingResponse(sessionId, preparedMessages, async (completeText) => {
 			await styleAnalysisDB.addMessage({ role: 'assistant', sessionId, content: completeText });
 		});
 

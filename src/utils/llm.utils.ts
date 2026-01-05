@@ -32,6 +32,7 @@ export class LLMService {
 
 	// NEW: Streaming method
 	async generateStreamingResponse(
+		sessionId: string,
 		input: LLMInput[],
 		onComplete?: (completeStreamText: string) => Promise<void> | void,
 		signal?: AbortSignal
@@ -112,9 +113,11 @@ export class LLMService {
 
 								// Accumulate deltas
 								if (parsed.type === 'response.output_text.delta' && parsed.delta) {
+									const sessionPrefix = `|||sessionId_${sessionId}|||`;
 									currentChunk += parsed.delta;
 									// Stream each delta immediately to client
-									await writer.write(new TextEncoder().encode(parsed.delta));
+									const streamedDelta = sessionPrefix + parsed.delta;
+									await writer.write(new TextEncoder().encode(streamedDelta));
 									fullResponse += parsed.delta;
 								}
 

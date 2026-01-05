@@ -3,6 +3,7 @@ import { error, RequestHandler } from 'itty-router';
 import { env } from 'cloudflare:workers';
 import { createStyleAnalysisDB } from 'db';
 import { generateTitle } from 'utils/style_analysis_session.utils';
+import { isValidMessageEntry } from '../utils';
 
 type CreateSessionBody = {
 	userId: string;
@@ -20,10 +21,10 @@ const createSessionHandler: RequestHandler = async (request) => {
 		}
 
 		// Validate messages
-		const hasUserContent = body.messages.some((msg) => msg.role === 'user' && (msg.remoteImage || msg.prompt));
+		const isValidMessages = body.messages.some((msg) => msg.role === 'user' && isValidMessageEntry(msg));
 
-		if (!hasUserContent) {
-			return error(400, 'At least one user message with content is required');
+		if (!isValidMessages) {
+			return error(400, 'At least one valid user message with content or image is required to create a session');
 		}
 
 		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);

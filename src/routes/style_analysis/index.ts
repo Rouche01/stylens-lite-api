@@ -4,6 +4,7 @@ import streamSessionHandler from './handlers/streamSessionHandler';
 import listSessionsHandler from './handlers/listSessionsHandler';
 import deleteSessionHandler from './handlers/deleteSessionHandler';
 import getSessionMessagesHandler from './handlers/getSessionMessagesHandler';
+import addMessageToSessionHandler from './handlers/addMessageToSessionHandler';
 
 const router = Router({ base: '/style-analysis' });
 
@@ -17,5 +18,7 @@ router.get('/sessions', listSessionsHandler);
 router.delete('/sessions/:sessionId', deleteSessionHandler);
 
 router.get('/sessions/:sessionId/messages', getSessionMessagesHandler);
+
+router.post('/sessions/:sessionId/messages', addMessageToSessionHandler);
 
 export default router;
