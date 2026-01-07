@@ -29,7 +29,7 @@ const streamSessionHandler: RequestHandler = async (request) => {
 
 		// Get all session messages
 		// TODO: implement pagination if needed
-		const allMessages = await styleAnalysisDB.getSessionMessages(sessionId);
+		const { messages: allMessages } = await styleAnalysisDB.getSessionMessages(sessionId);
 
 		// Filter messages based on context mode
 		let messagesToSend: typeof allMessages;

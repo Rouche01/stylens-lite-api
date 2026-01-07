@@ -1,7 +1,8 @@
+import { PaginationParams } from 'types';
 import type { StyleAnalysisHistory, StyleAnalysisEntry, CreateSessionParams, CreateSessionResult, AddMessageParams } from './types';
 
 export class StyleAnalysisDB {
-	constructor(private db: any) {}
+	constructor(private db: D1Database) {}
 
 	async createSessionWithInitialMessage(params: CreateSessionParams): Promise<CreateSessionResult> {
 		const { userId, title, messages } = params;
@@ -116,27 +117,60 @@ export class StyleAnalysisDB {
         `
 			)
 			.bind(sessionId, userId)
-			.first();
+			.first<StyleAnalysisHistory>();
 
 		return result || null;
 	}
 
-	async getSessionMessages(sessionId: string): Promise<StyleAnalysisEntry[]> {
+	async getSessionMessages(
+		sessionId: string,
+		{ page, pageSize }: PaginationParams = { page: 1, pageSize: 10 }
+	): Promise<{ messages: StyleAnalysisEntry[]; total: number }> {
+		// Get total count
+		const countResult = await this.db
+			.prepare(
+				`SELECT COUNT(*) as count FROM style_analysis_entries
+             WHERE style_analysis_history_id = ?`
+			)
+			.bind(sessionId)
+			.first<{ count: number }>();
+
+		const total = countResult?.count ?? 0;
+
+		// Get paginated messages
+		const offset = (page - 1) * pageSize;
 		const result = await this.db
 			.prepare(
 				`
             SELECT * FROM style_analysis_entries
             WHERE style_analysis_history_id = ?
-            ORDER BY created_at ASC
+            ORDER BY created_at DESC
+						LIMIT ? OFFSET ?
         `
 			)
-			.bind(sessionId)
-			.all();
+			.bind(sessionId, pageSize, offset)
+			.all<StyleAnalysisEntry>();
 
-		return result.results || [];
+		return { messages: result.results || [], total };
 	}
 
-	async getUserSessions(userId: string): Promise<StyleAnalysisHistory[]> {
+	async getUserSessions(
+		userId: string,
+		{ page, pageSize }: PaginationParams = { page: 1, pageSize: 10 }
+	): Promise<{ sessions: StyleAnalysisHistory[]; total: number }> {
+		// Get total count
+		const countResult = await this.db
+			.prepare(
+				`SELECT COUNT(*) as count FROM style_analysis_histories
+             WHERE user_id = ? AND is_deleted = 0`
+			)
+			.bind(userId)
+			.first<{ count: number }>();
+
+		const total = countResult?.count ?? 0;
+
+		const offset = (page - 1) * pageSize;
+
 		const result = await this.db
 			.prepare(
 				`
@@ -148,12 +182,16 @@ export class StyleAnalysisDB {
                 WHERE e.style_analysis_history_id = h.id
             )
             ORDER BY h.updated_at DESC
-        `
+						LIMIT ? OFFSET ?
+				`
 			)
-			.bind(userId)
-			.all();
+			.bind(userId, pageSize, offset)
+			.all<StyleAnalysisHistory>();
 
-		return result.results || [];
+		return {
+			sessions: result.results || [],
+			total,
+		};
 	}
 
 	// Soft delete method
@@ -170,7 +208,7 @@ export class StyleAnalysisDB {
 			.bind(now, now, sessionId, userId)
 			.run();
 
-		if (result.changes === 0) {
+		if (result.meta.changes === 0) {
 			throw new Error('Session not found or already deleted');
 		}
 	}
@@ -186,7 +224,7 @@ export class StyleAnalysisDB {
 			.bind(sessionId, userId)
 			.run();
 
-		if (result.changes === 0) {
+		if (result.meta.changes === 0) {
 			throw new Error('Session not found');
 		}
 	}
@@ -220,7 +258,7 @@ export class StyleAnalysisDB {
 			.run();
 
 		// If nothing changed, throw so caller can log/handle if desired
-		if (result.changes === 0) {
+		if (result.meta.changes === 0) {
 			throw new Error('Session not found or title unchanged');
 		}
 	}

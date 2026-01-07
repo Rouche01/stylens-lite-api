@@ -1,6 +1,6 @@
 import { StyleAnalysisDB } from './style_analysis';
 
-export function createStyleAnalysisDB(db: any): StyleAnalysisDB {
+export function createStyleAnalysisDB(db: D1Database): StyleAnalysisDB {
 	return new StyleAnalysisDB(db);
 }
 
