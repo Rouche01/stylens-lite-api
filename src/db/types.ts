@@ -1,3 +1,4 @@
+import { Gender } from 'types';
 import { RemoteImage } from '../utils/types';
 
 export type StyleAnalysisHistory = {
@@ -37,4 +38,22 @@ export type AddMessageParams = {
 	role: 'user' | 'assistant' | 'system';
 	content?: string;
 	remoteImage?: RemoteImage;
+};
+
+export type User = {
+	id: string;
+	auth_id: string;
+	name: string;
+	gender?: Gender;
+	email?: string;
+	created_at: number;
+	updated_at: number;
+	is_active: 0 | 1;
+};
+
+export type CreateUserParams = {
+	authId: string;
+	name: string;
+	gender?: Gender;
+	email?: string;
 };

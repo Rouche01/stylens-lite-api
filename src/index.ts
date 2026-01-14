@@ -1,12 +1,14 @@
 import { error, Router } from 'itty-router';
 import styleAnalysisRouter from './routes/style_analysis';
 import assetsRouter from './routes/assets';
+import usersRouter from './routes/users';
 
 const router = Router();
 
 // Mount the style analysis router at the /style-analysis path
 router.all('/style-analysis/*', styleAnalysisRouter.fetch);
 router.all('/assets/*', assetsRouter.fetch);
+router.all('/users/*', usersRouter.fetch); // Mount users router
 
 router.get('/', () => new Response('Style Analysis API is running'));
 
