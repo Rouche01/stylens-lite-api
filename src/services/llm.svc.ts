@@ -1,9 +1,13 @@
 import { env } from 'cloudflare:workers';
-import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMResponse, MessageEntry } from './types';
-import { regenerateSignedUrl } from './assets.utils';
+import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMResponse, MessageEntry } from '../utils/types';
+import { regenerateSignedUrl } from '../utils/assets.utils';
 
 export class LLMService {
-	constructor(private endpoint: string, private apiKey: string, private model: string) {}
+	constructor(
+		private endpoint: string,
+		private apiKey: string,
+		private model: string,
+	) {}
 
 	async generateResponse(input: LLMInput[], signal?: AbortSignal): Promise<LLMOutputContentItem[]> {
 		const response = await fetch(`${this.endpoint}/responses`, {
@@ -35,7 +39,7 @@ export class LLMService {
 		sessionId: string,
 		input: LLMInput[],
 		onComplete?: (completeStreamText: string) => Promise<void> | void,
-		signal?: AbortSignal
+		signal?: AbortSignal,
 	): Promise<ReadableStream> {
 		const requestBody = {
 			model: this.model,

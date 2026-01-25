@@ -1,4 +1,4 @@
-import { createLLMService } from './llm.utils';
+import { createLLMService } from '../services/llm.svc';
 import type { LLMMessageRole, MessageEntry } from './types';
 
 /**
@@ -25,7 +25,7 @@ export const sanitizeTitle = (raw?: string, maxLength = 60): string | null => {
  */
 export async function generateTitle(
 	messages: MessageEntry[],
-	opts?: { maxWords?: number; maxLength?: number; timeoutMs?: number }
+	opts?: { maxWords?: number; maxLength?: number; timeoutMs?: number },
 ): Promise<string | null> {
 	const { maxWords = 6, maxLength = 60, timeoutMs = 5000 } = opts || {};
 
@@ -71,7 +71,7 @@ export async function generateTitle(
 
 		if (!outputs) return null;
 
-		const candidate = Array.isArray(outputs) ? outputs.find((o: any) => o.type === 'output_text')?.text ?? null : null;
+		const candidate = Array.isArray(outputs) ? (outputs.find((o: any) => o.type === 'output_text')?.text ?? null) : null;
 		const cleaned = sanitizeTitle(candidate ?? undefined, maxLength);
 		return cleaned;
 	} catch (err: any) {

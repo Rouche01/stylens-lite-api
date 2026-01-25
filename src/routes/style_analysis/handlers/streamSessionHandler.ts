@@ -1,7 +1,7 @@
 import { error, RequestHandler } from 'itty-router';
 import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
-import { createLLMService } from 'utils/llm.utils';
+import { createLLMService } from 'services/llm.svc';
 import { MessageEntry } from 'utils/types';
 
 const streamSessionHandler: RequestHandler = async (request) => {
