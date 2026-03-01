@@ -1,7 +1,7 @@
 import type { CreateUserParams, User } from './types';
 
 export class UsersDB {
-	constructor(private db: D1Database) {}
+	constructor(private db: D1Database) { }
 
 	async createUser(params: CreateUserParams): Promise<User> {
 		const { authId, name, gender, email } = params;
@@ -21,6 +21,11 @@ export class UsersDB {
 		const user = await this.getUserById(userId);
 
 		return user!;
+	}
+
+	async getUsers(): Promise<User[]> {
+		const result = await this.db.prepare(`SELECT * FROM users`).all<User>();
+		return result.results || [];
 	}
 
 	async getUserById(id: string): Promise<User | null> {
