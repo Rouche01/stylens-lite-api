@@ -1,19 +1,11 @@
 import { env } from 'cloudflare:workers';
-import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMResponse, MessageEntry } from '../utils/types';
-import { regenerateSignedUrl } from '../utils/assets.utils';
+import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMResponse, MessageEntry } from 'utils/types';
+import { regenerateSignedUrl } from 'utils/assets.utils';
 
 export class LLMService {
-	constructor(
-		private endpoint: string,
-		private apiKey: string,
-		private model: string,
-	) {}
+	constructor(private endpoint: string, private apiKey: string, private model: string) { }
 
-	async generateResponse(
-		input: LLMInput[],
-		signal?: AbortSignal,
-		format?: { type: 'json_schema' | 'text' | 'json_object'; name: string; schema: object },
-	): Promise<LLMOutputContentItem[]> {
+	async generateResponse(input: LLMInput[], signal?: AbortSignal): Promise<LLMOutputContentItem[]> {
 		const response = await fetch(`${this.endpoint}/responses`, {
 			method: 'POST',
 			headers: {
@@ -24,17 +16,15 @@ export class LLMService {
 			body: JSON.stringify({
 				model: this.model,
 				input,
-				...(format ? { text: { format } } : {}),
 			}),
 		});
 
 		if (!response.ok) {
-			const errorData = await response.json();
-			const errorMessage = (errorData as any)?.error?.message ?? `LLM API error: ${response.status} ${response.statusText}`;
-			throw new Error(errorMessage);
+			throw new Error(`LLM API error: ${response.status} ${response.statusText}`);
 		}
 
 		const data: LLMResponse = await response.json();
+		console.log('LLM Response:', data);
 
 		// Get all outputs with message type, extract their content arrays, and flatten
 		return data.output?.filter((item) => item.type === 'message')?.flatMap((messageOutput) => messageOutput.content || []) || [];
@@ -45,7 +35,7 @@ export class LLMService {
 		sessionId: string,
 		input: LLMInput[],
 		onComplete?: (completeStreamText: string) => Promise<void> | void,
-		signal?: AbortSignal,
+		signal?: AbortSignal
 	): Promise<ReadableStream> {
 		const requestBody = {
 			model: this.model,
@@ -66,7 +56,7 @@ export class LLMService {
 		if (!response.ok) {
 			// Get the error response body
 			const errorText = await response.text();
-			throw new Error(errorText ?? `LLM API error: ${response.status} ${response.statusText}`);
+			throw new Error(`LLM API error: ${response.status} ${response.statusText} - ${errorText}`);
 		}
 
 		if (!response.body) {
@@ -81,7 +71,7 @@ export class LLMService {
 
 		// If an external AbortSignal aborts, close/abort our writer and cancel the reader.
 		const onAbort = () => {
-			reader.cancel().catch(() => {});
+			reader.cancel().catch(() => { });
 			writer.abort(new Error('Aborted'));
 		};
 
@@ -90,7 +80,7 @@ export class LLMService {
 			if (signal.aborted) {
 				onAbort();
 				// return an empty readable to avoid hanging
-				writer.close().catch(() => {});
+				writer.close().catch(() => { });
 				return readable;
 			}
 			signal.addEventListener('abort', onAbort);
@@ -241,16 +231,6 @@ export class LLMService {
 	}
 }
 
-type LLMServiceOpts = Partial<{
-	endpoint: string;
-	apiKey: string;
-	model: string;
-}>;
-
-export const createLLMService = (opts?: LLMServiceOpts): LLMService => {
-	return new LLMService(
-		opts?.endpoint ?? env.MODEL_ENDPOINT_URL,
-		opts?.apiKey ?? env.MODEL_API_KEY,
-		opts?.model ?? env.OPENAI_MODEL_VERSION,
-	);
+export const createLLMService = (): LLMService => {
+	return new LLMService(env.MODEL_ENDPOINT_URL, env.MODEL_API_KEY, env.OPENAI_MODEL_VERSION);
 };

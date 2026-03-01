@@ -9,7 +9,7 @@ export type MessageEntry = {
 	role: 'user' | 'assistant' | 'system';
 };
 
-export type LLMMessageRole = 'user' | 'developer' | 'assistant';
+export type LLMMessageRole = 'user' | 'developer' | 'assistant' | 'system';
 
 export type LLMContentItem = {
 	type: 'input_text' | 'input_image';
