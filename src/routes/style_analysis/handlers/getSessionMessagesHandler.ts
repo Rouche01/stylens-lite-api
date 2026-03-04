@@ -2,20 +2,16 @@ import { error, RequestHandler } from 'itty-router';
 import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { getPaginationMetadata } from '../utils';
+import { AuthRequest } from 'types';
 
-const getSessionMessagesHandler: RequestHandler = async (request) => {
+const getSessionMessagesHandler: RequestHandler<AuthRequest> = async (request) => {
 	try {
 		const { sessionId } = request.params as { sessionId: string };
 
 		// Extract query parameters
 		const url = new URL(request.url);
-		const userId = url.searchParams.get('userId');
 		const page = parseInt(url.searchParams.get('page') || '1', 10);
 		const pageSize = parseInt(url.searchParams.get('pageSize') || '10', 10);
-
-		if (!userId) {
-			return error(400, 'userId query parameter is required');
-		}
 
 		if (page < 1 || pageSize < 1) {
 			return error(400, 'page and pageSize must be positive integers');
@@ -24,7 +20,7 @@ const getSessionMessagesHandler: RequestHandler = async (request) => {
 		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
 
 		// First, verify session exists and belongs to user
-		const session = await styleAnalysisDB.getSession(sessionId, userId);
+		const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);
 		if (!session) {
 			return error(404, 'Session not found or access denied');
 		}

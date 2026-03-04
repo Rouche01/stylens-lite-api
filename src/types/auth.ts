@@ -1,3 +1,5 @@
+import { IRequest } from "itty-router";
+
 export const AppRoles = {
     DefaultUser: 'defaultuser',
     RootAdmin: 'root-admin',
@@ -8,13 +10,23 @@ export type AppRole = typeof AppRoles[keyof typeof AppRoles];
 export type UserAuthMetadata = {
     role?: AppRole;
     dbId?: string;
-    [key: string]: any;
+    [key: string]: unknown;
 };
 
 export type DecodedJWT = {
     sub: string;
     email: string;
-    role: AppRole;
+    app_metadata: UserAuthMetadata;
+    [key: string]: unknown;
+}
+
+export type AuthUser = {
+    authId: string;
+    email: string;
+    role?: AppRole;
     dbId: string;
-    [key: string]: any;
-}                           
+}
+
+export type AuthRequest = IRequest & {
+    user: AuthUser;
+}   

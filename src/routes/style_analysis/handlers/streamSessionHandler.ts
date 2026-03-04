@@ -3,26 +3,22 @@ import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { createLLMService } from 'services/llm.svc';
 import { MessageEntry } from 'utils/types';
+import { AuthRequest } from 'types';
 
-const streamSessionHandler: RequestHandler = async (request) => {
+const streamSessionHandler: RequestHandler<AuthRequest> = async (request) => {
 	try {
 		const { sessionId } = request.params as { sessionId: string };
 		const url = new URL(request.url);
-		const userId = url.searchParams.get('userId');
 
 		// New parameter to control context strategy
 		const contextMode = url.searchParams.get('contextMode') || 'recent'; // 'all', 'recent', 'last'
 		const recentCount = parseInt(url.searchParams.get('recentCount') || '10'); // Default to last 10 messages
 
-		if (!userId) {
-			return error(400, 'userId query parameter is required');
-		}
-
 		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
 		const llmService = createLLMService();
 
 		// Verify session exists
-		const session = await styleAnalysisDB.getSession(sessionId, userId);
+		const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);
 		if (!session) {
 			return error(404, 'Session not found or access denied');
 		}

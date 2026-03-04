@@ -4,15 +4,15 @@ import { env } from 'cloudflare:workers';
 import { createStyleAnalysisDB } from 'db';
 import { generateTitle } from 'utils/style_analysis_session.utils';
 import { isValidMessageEntry } from '../utils';
+import { AuthRequest } from 'types';
 
 type CreateSessionBody = {
-	userId: string;
 	title?: string;
 	// Require initial message content
 	messages: MessageEntry[];
 };
 
-const createSessionHandler: RequestHandler = async (request) => {
+const createSessionHandler: RequestHandler<AuthRequest> = async (request) => {
 	try {
 		const body = (await request.json()) as CreateSessionBody;
 
@@ -30,7 +30,7 @@ const createSessionHandler: RequestHandler = async (request) => {
 		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
 
 		// Create session with initial message
-		const sessionResult = await styleAnalysisDB.createSessionWithInitialMessage(body);
+		const sessionResult = await styleAnalysisDB.createSessionWithInitialMessage({ ...body, userId: request.user.dbId });
 
 		// If no explicit title was provided, generate one asynchronously and persist it.
 		// Fire-and-forget; does not block the response to the client.

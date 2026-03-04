@@ -3,13 +3,13 @@ import { MessageEntry } from 'utils/types';
 import { isValidMessageEntry } from '../utils';
 import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
+import { AuthRequest } from 'types';
 
 type AddMessageToSessionBody = {
-	userId: string;
 	message: MessageEntry;
 };
 
-const addMessageToSessionHandler: RequestHandler = async (request) => {
+const addMessageToSessionHandler: RequestHandler<AuthRequest> = async (request) => {
 	try {
 		const { sessionId } = request.params as { sessionId: string };
 		const body = (await request.json()) as AddMessageToSessionBody;
@@ -25,7 +25,7 @@ const addMessageToSessionHandler: RequestHandler = async (request) => {
 		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
 
 		// First, verify session exists and belongs to user
-		const session = await styleAnalysisDB.getSession(sessionId, body.userId);
+		const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);
 		if (!session) {
 			return error(404, 'Session not found or access denied');
 		}

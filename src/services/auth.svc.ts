@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { env } from 'cloudflare:workers';
-import { UserAuthMetadata } from 'types';
+import { DecodedJWT, UserAuthMetadata } from 'types';
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -24,12 +24,12 @@ export class AuthService {
         this.JWKS = jwksCache.get(this.svcUrl)!;
     }
 
-    async verifyJWT(token: string) {
+    async verifyJWT(token: string): Promise<DecodedJWT> {
         const { payload } = await jwtVerify(token, this.JWKS, {
             issuer: this.issuer,
             audience: 'authenticated'
         });
-        return payload;
+        return payload as DecodedJWT;
     }
 
     async updateUserAuthMetadata(userId: string, appMetadata: UserAuthMetadata) {

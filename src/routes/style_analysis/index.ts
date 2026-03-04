@@ -9,17 +9,17 @@ import { authMiddleware } from '../../middlewares/authMiddleware';
 
 const router = Router({ base: '/style-analysis' });
 
-router.post('/sessions', createSessionHandler);
+router.post('/sessions', authMiddleware, createSessionHandler);
 
 // Streaming endpoint for assistant responses within a style analysis session
-router.get('/sessions/:sessionId/stream', streamSessionHandler);
+router.get('/sessions/:sessionId/stream', authMiddleware, streamSessionHandler);
 
 router.get('/sessions', authMiddleware, listSessionsHandler);
 
-router.delete('/sessions/:sessionId', deleteSessionHandler);
+router.delete('/sessions/:sessionId', authMiddleware, deleteSessionHandler);
 
-router.get('/sessions/:sessionId/messages', getSessionMessagesHandler);
+router.get('/sessions/:sessionId/messages', authMiddleware, getSessionMessagesHandler);
 
-router.post('/sessions/:sessionId/messages', addMessageToSessionHandler);
+router.post('/sessions/:sessionId/messages', authMiddleware, addMessageToSessionHandler);
 
 export default router;

@@ -1,6 +1,6 @@
 import { error, RequestHandler } from 'itty-router';
 import { createAuthService } from '../services/auth.svc';
-import { type AppRole } from 'types';
+import { AuthUser } from 'types';
 
 export const authMiddleware: RequestHandler = async (request) => {
     const authHeader = request.headers.get('Authorization');
@@ -15,13 +15,20 @@ export const authMiddleware: RequestHandler = async (request) => {
         const authService = createAuthService();
         const payload = await authService.verifyJWT(token);
 
-        // Attach user info to request
-        request.user = {
-            authId: payload.sub,
-            email: payload.email as string,
-            role: payload.role as AppRole,
-            ...payload
+        if (!payload.app_metadata.dbId) {
+            // TODO: Find user in database by authId and update app_metadata with dbId
+            return error(401, 'Unauthorized: User not found in database');
         }
+
+        const authUser: AuthUser = {
+            authId: payload.sub,
+            email: payload.email,
+            role: payload.app_metadata.role,
+            dbId: payload.app_metadata.dbId,
+        }
+
+        // Attach user info to request
+        request.user = authUser;
     } catch (err) {
         console.error('JWT verification failed:', err);
         return error(401, 'Unauthorized: Invalid or expired token');
