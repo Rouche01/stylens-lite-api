@@ -1,7 +1,8 @@
 import { env } from 'cloudflare:workers';
 import { createUsersDB } from 'db';
 import { error, RequestHandler } from 'itty-router';
-import { Gender } from 'types';
+import { createAuthService } from 'services/auth.svc';
+import { AppRoles, Gender } from 'types';
 
 type CreateUserBody = {
 	authId: string;
@@ -35,6 +36,23 @@ const createUserHandler: RequestHandler = async (request) => {
 			email: body.email,
 			gender: body.gender,
 		});
+
+		const authService = createAuthService();
+
+		try {
+			// Update the user's app_metadata in Supabase
+			await authService.updateUserAuthMetadata(body.authId, {
+				role: AppRoles.DefaultUser,
+				dbId: newUser.id,
+			});
+		} catch (supabaseErr) {
+			console.error('Failed to update Supabase app_metadata, rolling back user creation.', supabaseErr);
+			// Rollback the DB creation
+			await usersDB.deleteUser(newUser.id);
+
+			return error(500, 'Failed to fully register user. Please try again.');
+		}
+
 
 		return new Response(JSON.stringify(newUser), {
 			headers: { 'Content-Type': 'application/json' },
