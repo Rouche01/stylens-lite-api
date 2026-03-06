@@ -1,4 +1,4 @@
-import { Gender } from 'types';
+import { Gender, SubscriptionTier } from 'types';
 import { RemoteImage } from '../utils/types';
 
 export type StyleAnalysisHistory = {
@@ -50,6 +50,19 @@ export type User = {
 	created_at: number;
 	updated_at: number;
 	is_active: 0 | 1;
+	subscription?: Subscription;
+};
+
+export type Subscription = {
+	id: string;
+	user_id: string;
+	tier: SubscriptionTier;
+	stripe_customer_id: string | null;
+	stripe_subscription_id: string | null;
+	status: string | null;
+	current_period_end: number | null;
+	created_at: number;
+	updated_at: number;
 };
 
 export type CreateUserParams = {

@@ -274,4 +274,15 @@ export class StyleAnalysisDB {
 			throw new Error('Session not found or title unchanged');
 		}
 	}
+
+	async countActiveSessions(userId: string): Promise<number> {
+		const result = await this.db
+			.prepare(
+				`SELECT COUNT(*) as count FROM style_analysis_histories WHERE user_id = ? AND is_deleted = 0`
+			)
+			.bind(userId)
+			.first<{ count: number }>();
+
+		return result?.count ?? 0;
+	}
 }

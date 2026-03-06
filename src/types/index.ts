@@ -10,4 +10,9 @@ export enum Gender {
 	Unspecified = 'unspecified',
 }
 
+export enum SubscriptionTier {
+	Free = 'free',
+	Core = 'core',
+}
+
 export * from './auth';
