@@ -5,6 +5,7 @@ import listSessionsHandler from './handlers/listSessionsHandler';
 import deleteSessionHandler from './handlers/deleteSessionHandler';
 import getSessionMessagesHandler from './handlers/getSessionMessagesHandler';
 import addMessageToSessionHandler from './handlers/addMessageToSessionHandler';
+import toggleSessionFavouriteHandler from './handlers/toggleSessionFavouriteHandler';
 import { authMiddleware } from '../../middlewares/authMiddleware';
 
 const router = Router({ base: '/style-analysis' });
@@ -21,5 +22,7 @@ router.delete('/sessions/:sessionId', authMiddleware, deleteSessionHandler);
 router.get('/sessions/:sessionId/messages', authMiddleware, getSessionMessagesHandler);
 
 router.post('/sessions/:sessionId/messages', authMiddleware, addMessageToSessionHandler);
+
+router.patch('/sessions/:sessionId/favourite', authMiddleware, toggleSessionFavouriteHandler);
 
 export default router;

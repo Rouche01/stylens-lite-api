@@ -2,7 +2,7 @@ import { PaginationParams } from 'types';
 import type { StyleAnalysisHistory, StyleAnalysisEntry, CreateSessionParams, CreateSessionResult, AddMessageParams } from './types';
 
 export class StyleAnalysisDB {
-	constructor(private db: D1Database) {}
+	constructor(private db: D1Database) { }
 
 	async createSessionWithInitialMessage(params: CreateSessionParams): Promise<CreateSessionResult> {
 		const { userId, title, messages } = params;
@@ -113,13 +113,16 @@ export class StyleAnalysisDB {
 		const result = await this.db
 			.prepare(
 				`
-            SELECT * FROM style_analysis_histories WHERE id = ? AND user_id = ? AND is_deleted = 0
+            SELECT h.*, CASE WHEN f.id IS NOT NULL THEN 1 ELSE 0 END as is_favourite
+            FROM style_analysis_histories h
+            LEFT JOIN favourites f ON h.id = f.style_analysis_history_id AND f.user_id = h.user_id
+            WHERE h.id = ? AND h.user_id = ? AND h.is_deleted = 0
         `
 			)
 			.bind(sessionId, userId)
 			.first<StyleAnalysisHistory>();
 
-		return result || null;
+		return result ? { ...result, is_favourite: !!result.is_favourite } : null;
 	}
 
 	async getSessionMessages(
@@ -156,15 +159,23 @@ export class StyleAnalysisDB {
 
 	async getUserSessions(
 		userId: string,
-		{ page, pageSize }: PaginationParams = { page: 1, pageSize: 10 }
+		{ page, pageSize, isFavourite }: PaginationParams & { isFavourite?: boolean } = { page: 1, pageSize: 10 }
 	): Promise<{ sessions: StyleAnalysisHistory[]; total: number }> {
+		// Base where clause
+		let whereClause = `h.user_id = ? AND h.is_deleted = 0`;
+		const bindings: any[] = [userId];
+
+		// If filtering by favourites, require a match in the favourites table
+		if (isFavourite) {
+			whereClause += ` AND EXISTS (SELECT 1 FROM favourites f WHERE f.style_analysis_history_id = h.id AND f.user_id = h.user_id)`;
+		}
+
 		// Get total count
 		const countResult = await this.db
 			.prepare(
-				`SELECT COUNT(*) as count FROM style_analysis_histories
-             WHERE user_id = ? AND is_deleted = 0`
+				`SELECT COUNT(*) as count FROM style_analysis_histories h WHERE ${whereClause}`
 			)
-			.bind(userId)
+			.bind(...bindings)
 			.first<{ count: number }>();
 
 		const total = countResult?.count ?? 0;
@@ -174,22 +185,23 @@ export class StyleAnalysisDB {
 		const result = await this.db
 			.prepare(
 				`
-            SELECT h.* FROM style_analysis_histories h
-            WHERE h.user_id = ?
-						AND h.is_deleted = 0
+            SELECT h.*, CASE WHEN f.id IS NOT NULL THEN 1 ELSE 0 END as is_favourite
+            FROM style_analysis_histories h
+            LEFT JOIN favourites f ON h.id = f.style_analysis_history_id AND f.user_id = h.user_id
+            WHERE ${whereClause}
             AND EXISTS (
                 SELECT 1 FROM style_analysis_entries e
                 WHERE e.style_analysis_history_id = h.id
             )
             ORDER BY h.updated_at DESC
-						LIMIT ? OFFSET ?
+            LIMIT ? OFFSET ?
 				`
 			)
-			.bind(userId, pageSize, offset)
+			.bind(...bindings, pageSize, offset)
 			.all<StyleAnalysisHistory>();
 
 		return {
-			sessions: result.results || [],
+			sessions: (result.results || []).map(s => ({ ...s, is_favourite: !!s.is_favourite })),
 			total,
 		};
 	}

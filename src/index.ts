@@ -3,6 +3,7 @@ import styleAnalysisRouter from './routes/style_analysis';
 import assetsRouter from './routes/assets';
 import usersRouter from './routes/users';
 import outfitsRouter from './routes/outfits';
+import favouritesRouter from './routes/favourites';
 
 const router = Router();
 
@@ -11,6 +12,7 @@ router.all('/style-analysis/*', styleAnalysisRouter.fetch);
 router.all('/assets/*', assetsRouter.fetch);
 router.all('/users/*', usersRouter.fetch); // Mount users router
 router.all('/outfits/*', outfitsRouter.fetch);
+router.all('/favourites/*', favouritesRouter.fetch);
 
 router.get('/', () => new Response('Style Analysis API is running'));
 

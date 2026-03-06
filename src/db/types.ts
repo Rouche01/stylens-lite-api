@@ -9,6 +9,7 @@ export type StyleAnalysisHistory = {
 	updated_at: number;
 	deleted_at: number | null;
 	is_deleted: 0 | 1;
+	is_favourite?: boolean;
 };
 
 export type StyleAnalysisEntry = {
