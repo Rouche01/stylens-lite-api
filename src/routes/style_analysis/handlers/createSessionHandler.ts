@@ -1,10 +1,10 @@
 import { MessageEntry } from 'utils/types';
 import { error, RequestHandler } from 'itty-router';
 import { env } from 'cloudflare:workers';
-import { createStyleAnalysisDB } from 'db';
+import { createStyleAnalysisDB, createSubscriptionsDB } from 'db';
 import { generateTitle } from 'utils/style_analysis_session.utils';
 import { isValidMessageEntry } from '../utils';
-import { AuthRequest } from 'types';
+import { AuthRequest, SubscriptionTier } from 'types';
 
 type CreateSessionBody = {
 	title?: string;
@@ -28,6 +28,18 @@ const createSessionHandler: RequestHandler<AuthRequest> = async (request) => {
 		}
 
 		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
+		const subscriptionsDB = createSubscriptionsDB(env.gostylens_db);
+
+		// Subscription Check
+		const subscription = await subscriptionsDB.getSubscriptionByUserId(request.user.dbId);
+		const currentTier = subscription?.tier || SubscriptionTier.Free;
+
+		if (currentTier === SubscriptionTier.Free) {
+			const activeSessionsCount = await styleAnalysisDB.countActiveSessions(request.user.dbId);
+			if (activeSessionsCount >= 3) {
+				return error(403, 'FREE_LIMIT_REACHED: Upgrade to GoStylens Core for unlimited sessions.');
+			}
+		}
 
 		// Create session with initial message
 		const sessionResult = await styleAnalysisDB.createSessionWithInitialMessage({ ...body, userId: request.user.dbId });

@@ -89,8 +89,9 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     id TEXT PRIMARY KEY,
     user_id TEXT UNIQUE NOT NULL,
     tier TEXT CHECK(tier IN ('free', 'core')) DEFAULT 'free' NOT NULL,
-    stripe_customer_id TEXT,
-    stripe_subscription_id TEXT,
+    provider TEXT,
+    provider_customer_id TEXT,
+    provider_subscription_id TEXT,
     status TEXT,
     current_period_end INTEGER,
     created_at INTEGER NOT NULL,
@@ -98,9 +99,8 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Index for looking up by stripe customer id
-CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_customer_id ON subscriptions(stripe_customer_id);
+-- Index for looking up by provider customer id
+CREATE INDEX IF NOT EXISTS idx_subscriptions_provider_customer_id ON subscriptions(provider_customer_id);
 
--- Index for looking up by stripe subscription id
-CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_subscription_id ON subscriptions(stripe_subscription_id);
-
+-- Index for looking up by provider subscription id
+CREATE INDEX IF NOT EXISTS idx_subscriptions_provider_subscription_id ON subscriptions(provider_subscription_id);

@@ -57,8 +57,9 @@ export type Subscription = {
 	id: string;
 	user_id: string;
 	tier: SubscriptionTier;
-	stripe_customer_id: string | null;
-	stripe_subscription_id: string | null;
+	provider: string | null;
+	provider_customer_id: string | null;
+	provider_subscription_id: string | null;
 	status: string | null;
 	current_period_end: number | null;
 	created_at: number;

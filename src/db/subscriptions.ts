@@ -4,8 +4,9 @@ import type { Subscription } from './types';
 export type CreateSubscriptionParams = {
     userId: string;
     tier?: SubscriptionTier;
-    stripeCustomerId?: string;
-    stripeSubscriptionId?: string;
+    provider?: string;
+    providerCustomerId?: string;
+    providerSubscriptionId?: string;
     status?: string;
     currentPeriodEnd?: number;
 };
@@ -14,18 +15,18 @@ export class SubscriptionsDB {
     constructor(private db: D1Database) { }
 
     async createSubscription(params: CreateSubscriptionParams): Promise<Subscription> {
-        const { userId, tier = SubscriptionTier.Free, stripeCustomerId, stripeSubscriptionId, status, currentPeriodEnd } = params;
+        const { userId, tier = SubscriptionTier.Free, provider, providerCustomerId, providerSubscriptionId, status, currentPeriodEnd } = params;
         const id = crypto.randomUUID();
         const now = Date.now();
 
         await this.db
             .prepare(
                 `
-        INSERT INTO subscriptions (id, user_id, tier, stripe_customer_id, stripe_subscription_id, status, current_period_end, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO subscriptions (id, user_id, tier, provider, provider_customer_id, provider_subscription_id, status, current_period_end, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
             )
-            .bind(id, userId, tier, stripeCustomerId ?? null, stripeSubscriptionId ?? null, status ?? null, currentPeriodEnd ?? null, now, now)
+            .bind(id, userId, tier, provider ?? null, providerCustomerId ?? null, providerSubscriptionId ?? null, status ?? null, currentPeriodEnd ?? null, now, now)
             .run();
 
         const subscription = await this.getSubscriptionById(id);
@@ -42,13 +43,13 @@ export class SubscriptionsDB {
         return result || null;
     }
 
-    async getSubscriptionByStripeCustomerId(customerId: string): Promise<Subscription | null> {
-        const result = await this.db.prepare(`SELECT * FROM subscriptions WHERE stripe_customer_id = ?`).bind(customerId).first<Subscription>();
+    async getSubscriptionByProviderCustomerId(customerId: string, provider: string = 'stripe'): Promise<Subscription | null> {
+        const result = await this.db.prepare(`SELECT * FROM subscriptions WHERE provider_customer_id = ? AND provider = ?`).bind(customerId, provider).first<Subscription>();
         return result || null;
     }
 
-    async getSubscriptionByStripeSubscriptionId(subscriptionId: string): Promise<Subscription | null> {
-        const result = await this.db.prepare(`SELECT * FROM subscriptions WHERE stripe_subscription_id = ?`).bind(subscriptionId).first<Subscription>();
+    async getSubscriptionByProviderSubscriptionId(subscriptionId: string, provider: string = 'stripe'): Promise<Subscription | null> {
+        const result = await this.db.prepare(`SELECT * FROM subscriptions WHERE provider_subscription_id = ? AND provider = ?`).bind(subscriptionId, provider).first<Subscription>();
         return result || null;
     }
 
@@ -60,13 +61,17 @@ export class SubscriptionsDB {
             fields.push('tier = ?');
             values.push(updates.tier);
         }
-        if (updates.stripe_customer_id !== undefined) {
-            fields.push('stripe_customer_id = ?');
-            values.push(updates.stripe_customer_id);
+        if (updates.provider !== undefined) {
+            fields.push('provider = ?');
+            values.push(updates.provider);
         }
-        if (updates.stripe_subscription_id !== undefined) {
-            fields.push('stripe_subscription_id = ?');
-            values.push(updates.stripe_subscription_id);
+        if (updates.provider_customer_id !== undefined) {
+            fields.push('provider_customer_id = ?');
+            values.push(updates.provider_customer_id);
+        }
+        if (updates.provider_subscription_id !== undefined) {
+            fields.push('provider_subscription_id = ?');
+            values.push(updates.provider_subscription_id);
         }
         if (updates.status !== undefined) {
             fields.push('status = ?');
