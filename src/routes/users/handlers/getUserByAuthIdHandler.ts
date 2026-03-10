@@ -24,6 +24,7 @@ const getUserByAuthIdHandler: RequestHandler = async (request) => {
             const defaultSubscription: Subscription = {
                 id: 'default',
                 user_id: user.id,
+                has_reached_limit: 0,
                 tier: SubscriptionTier.Free,
                 provider: null,
                 provider_customer_id: null,

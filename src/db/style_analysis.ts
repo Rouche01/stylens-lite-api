@@ -285,4 +285,15 @@ export class StyleAnalysisDB {
 
 		return result?.count ?? 0;
 	}
+
+	async countTotalSessions(userId: string): Promise<number> {
+		const result = await this.db
+			.prepare(
+				`SELECT COUNT(*) as count FROM style_analysis_histories WHERE user_id = ?`
+			)
+			.bind(userId)
+			.first<{ count: number }>();
+
+		return result?.count ?? 0;
+	}
 }

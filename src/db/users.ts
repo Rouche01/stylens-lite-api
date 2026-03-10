@@ -12,6 +12,7 @@ export class UsersDB {
 				s.provider_subscription_id as s_provider_subscription_id,
 				s.status as s_status,
 				s.current_period_end as s_current_period_end,
+				s.has_reached_limit as s_has_reached_limit,
 				s.created_at as s_created_at,
 				s.updated_at as s_updated_at
 			FROM users u
@@ -44,6 +45,7 @@ export class UsersDB {
 				provider_subscription_id: row.s_provider_subscription_id,
 				status: row.s_status,
 				current_period_end: row.s_current_period_end,
+				has_reached_limit: row.s_has_reached_limit,
 				created_at: row.s_created_at,
 				updated_at: row.s_updated_at,
 			};
@@ -70,8 +72,8 @@ export class UsersDB {
 		const insertSubscriptionStmt = this.db
 			.prepare(
 				`
-				INSERT INTO subscriptions (id, user_id, tier, provider, provider_customer_id, provider_subscription_id, status, current_period_end, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				INSERT INTO subscriptions (id, user_id, tier, provider, provider_customer_id, provider_subscription_id, status, current_period_end, has_reached_limit, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
 				`
 			)
 			.bind(subscriptionId, userId, SubscriptionTier.Free, null, null, null, 'active', null, now, now);

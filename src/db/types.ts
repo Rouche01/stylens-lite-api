@@ -62,6 +62,7 @@ export type Subscription = {
 	provider_subscription_id: string | null;
 	status: string | null;
 	current_period_end: number | null;
+	has_reached_limit: 0 | 1;
 	created_at: number;
 	updated_at: number;
 };

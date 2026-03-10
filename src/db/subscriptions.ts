@@ -82,6 +82,11 @@ export class SubscriptionsDB {
             values.push(updates.current_period_end);
         }
 
+        if (updates.has_reached_limit !== undefined) {
+            fields.push('has_reached_limit = ?');
+            values.push(updates.has_reached_limit);
+        }
+
         if (fields.length === 0) return this.getSubscriptionById(id);
 
         fields.push('updated_at = ?');
@@ -95,6 +100,55 @@ export class SubscriptionsDB {
             .run();
 
         return this.getSubscriptionById(id);
+    }
+
+    async updateSubscriptionByUserId(userId: string, updates: Partial<Omit<Subscription, 'id' | 'user_id' | 'created_at'>>): Promise<Subscription | null> {
+        const fields = [];
+        const values = [];
+
+        if (updates.tier !== undefined) {
+            fields.push('tier = ?');
+            values.push(updates.tier);
+        }
+        if (updates.provider !== undefined) {
+            fields.push('provider = ?');
+            values.push(updates.provider);
+        }
+        if (updates.provider_customer_id !== undefined) {
+            fields.push('provider_customer_id = ?');
+            values.push(updates.provider_customer_id);
+        }
+        if (updates.provider_subscription_id !== undefined) {
+            fields.push('provider_subscription_id = ?');
+            values.push(updates.provider_subscription_id);
+        }
+        if (updates.status !== undefined) {
+            fields.push('status = ?');
+            values.push(updates.status);
+        }
+        if (updates.current_period_end !== undefined) {
+            fields.push('current_period_end = ?');
+            values.push(updates.current_period_end);
+        }
+
+        if (updates.has_reached_limit !== undefined) {
+            fields.push('has_reached_limit = ?');
+            values.push(updates.has_reached_limit);
+        }
+
+        if (fields.length === 0) return this.getSubscriptionByUserId(userId);
+
+        fields.push('updated_at = ?');
+        values.push(Date.now());
+
+        values.push(userId);
+
+        await this.db
+            .prepare(`UPDATE subscriptions SET ${fields.join(', ')} WHERE user_id = ?`)
+            .bind(...values)
+            .run();
+
+        return this.getSubscriptionByUserId(userId);
     }
 
     async deleteSubscriptionByUserId(userId: string): Promise<void> {

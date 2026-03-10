@@ -30,15 +30,12 @@ const createSessionHandler: RequestHandler<AuthRequest> = async (request) => {
 		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
 		const subscriptionsDB = createSubscriptionsDB(env.gostylens_db);
 
-		// Subscription Check
 		const subscription = await subscriptionsDB.getSubscriptionByUserId(request.user.dbId);
-		const currentTier = subscription?.tier || SubscriptionTier.Free;
+		const currentUserTier = subscription?.tier || SubscriptionTier.Free;
+		const hasReachedLimit = subscription?.has_reached_limit === 1;
 
-		if (currentTier === SubscriptionTier.Free) {
-			const activeSessionsCount = await styleAnalysisDB.countActiveSessions(request.user.dbId);
-			if (activeSessionsCount >= 3) {
-				return error(403, 'FREE_LIMIT_REACHED: Upgrade to GoStylens Core for unlimited sessions.');
-			}
+		if (currentUserTier === SubscriptionTier.Free && hasReachedLimit) {
+			return error(403, 'FREE_LIMIT_REACHED: Upgrade to GoStylens Core for unlimited sessions.');
 		}
 
 		// Create session with initial message
@@ -46,9 +43,9 @@ const createSessionHandler: RequestHandler<AuthRequest> = async (request) => {
 
 		// If no explicit title was provided, generate one asynchronously and persist it.
 		// Fire-and-forget; does not block the response to the client.
-		if (!body.title) {
-			const ctx = (request as any).ctx as ExecutionContext;
+		const ctx = (request as any).ctx as ExecutionContext;
 
+		if (!body.title) {
 			const titleGenerationPromise = (async () => {
 				try {
 					const generated = await generateTitle(body.messages, { timeoutMs: 30000 });
@@ -59,6 +56,7 @@ const createSessionHandler: RequestHandler<AuthRequest> = async (request) => {
 						console.log(`Session ${sessionResult.sessionId}: no title generated`);
 					}
 				} catch (err) {
+					// Important log
 					console.warn('Async title update failed for session', sessionResult.sessionId, err);
 				}
 			})();
@@ -66,6 +64,30 @@ const createSessionHandler: RequestHandler<AuthRequest> = async (request) => {
 			if (ctx?.waitUntil) {
 				ctx.waitUntil(titleGenerationPromise);
 			}
+		}
+
+		// Asynchronously check if the new session pushes them to/over the limit
+		const limitCheckPromise = (async () => {
+			try {
+				if (currentUserTier === SubscriptionTier.Free) {
+					const freeTierLimit = parseInt((env as unknown as Env).FREE_TIER_SESSION_LIMIT || '3', 10);
+					const totalSessionsCount = await styleAnalysisDB.countTotalSessions(request.user.dbId);
+					if (totalSessionsCount >= freeTierLimit) {
+						const sub = await subscriptionsDB.getSubscriptionByUserId(request.user.dbId);
+						if (sub && sub.id) {
+							await subscriptionsDB.updateSubscription(sub.id, { has_reached_limit: 1 });
+
+						}
+					}
+				}
+			} catch (err) {
+				// Important log
+				console.warn('Async limit check failed for user', request.user.dbId, err);
+			}
+		})();
+
+		if (ctx?.waitUntil) {
+			ctx.waitUntil(limitCheckPromise);
 		}
 
 		return new Response(

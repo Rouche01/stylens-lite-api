@@ -29,7 +29,8 @@
 		"MODEL_ENDPOINT_URL": "https://api.openai.com/v1",
 		"OPENAI_MODEL_VERSION": "gpt-5-mini",
 		"OUTFIT_PHOTOS_BUCKET_NAME": "outfit-photos",
-		"R2_ACCOUNT_ID": "d7978583c6d20c1a4c8cce3ed6ac71b2"
+		"R2_ACCOUNT_ID": "d7978583c6d20c1a4c8cce3ed6ac71b2",
+		"FREE_TIER_SESSION_LIMIT": "3"
 	},
 	"d1_databases": [
 		{
