@@ -15,16 +15,11 @@ export const authMiddleware: RequestHandler = async (request) => {
         const authService = createAuthService();
         const payload = await authService.verifyJWT(token);
 
-        if (!payload.app_metadata.dbId) {
-            // TODO: Find user in database by authId and update app_metadata with dbId
-            return error(401, 'Unauthorized: User not found in database');
-        }
-
         const authUser: AuthUser = {
             authId: payload.sub,
             email: payload.email,
-            role: payload.app_metadata.role,
-            dbId: payload.app_metadata.dbId,
+            role: payload.app_metadata?.role,
+            dbId: payload.app_metadata?.dbId,
         }
 
         // Attach user info to request

@@ -1,9 +1,9 @@
 import { error, RequestHandler } from 'itty-router';
 import { createSubscriptionsDB } from 'db';
 import { env } from 'cloudflare:workers';
-import { AuthRequest } from 'types';
+import { ProvisionedAuthRequest } from 'types';
 
-const getSubscriptionByUserIdHandler: RequestHandler<AuthRequest> = async (request) => {
+const getSubscriptionByUserIdHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
     try {
         const { userId } = request.params;
 

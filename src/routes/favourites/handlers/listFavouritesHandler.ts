@@ -1,9 +1,9 @@
 import { error, RequestHandler } from 'itty-router';
 import { createFavouritesDB } from 'db';
 import { env } from 'cloudflare:workers';
-import { AuthRequest } from 'types';
+import { ProvisionedAuthRequest } from 'types';
 
-const listFavouritesHandler: RequestHandler<AuthRequest> = async (request) => {
+const listFavouritesHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
     try {
         const favouritesDB = createFavouritesDB(env.gostylens_db);
 

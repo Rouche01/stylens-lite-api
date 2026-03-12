@@ -2,21 +2,21 @@ import { env } from 'cloudflare:workers';
 import { createUsersDB } from 'db';
 import { error, RequestHandler } from 'itty-router';
 import { createAuthService } from 'services/auth.svc';
-import { AppRoles, Gender } from 'types';
+import { AppRoles, AuthRequest, Gender } from 'types';
 
 type CreateUserBody = {
-	authId: string;
 	name: string;
 	email?: string;
 	gender?: Gender;
 };
 
-const createUserHandler: RequestHandler = async (request) => {
+const createUserHandler: RequestHandler<AuthRequest> = async (request) => {
 	try {
 		const body = (await request.json()) as CreateUserBody;
+		const { authId } = request.user;
 
-		if (!body.authId || !body.name) {
-			return error(400, 'authId and name are required to create a user');
+		if (!authId || !body.name) {
+			return error(400, 'authId (from token) and name are required to create a user');
 		}
 
 		if (body.gender !== undefined && body.gender !== null && !Object.values(Gender).includes(body.gender)) {
@@ -25,13 +25,13 @@ const createUserHandler: RequestHandler = async (request) => {
 
 		const usersDB = createUsersDB(env.gostylens_db);
 
-		const existingUser = await usersDB.getUserByAuthId(body.authId);
+		const existingUser = await usersDB.getUserByAuthId(authId);
 		if (existingUser) {
 			return error(409, 'User already exists');
 		}
 
 		const newUser = await usersDB.createUser({
-			authId: body.authId,
+			authId: authId,
 			name: body.name,
 			email: body.email,
 			gender: body.gender,
@@ -41,7 +41,7 @@ const createUserHandler: RequestHandler = async (request) => {
 
 		try {
 			// Update the user's app_metadata in Supabase
-			await authService.updateUserAuthMetadata(body.authId, {
+			await authService.updateUserAuthMetadata(authId, {
 				role: AppRoles.DefaultUser,
 				dbId: newUser.id,
 			});

@@ -1,14 +1,18 @@
 import { env } from 'cloudflare:workers';
 import { createUsersDB } from 'db';
 import { error, RequestHandler } from 'itty-router';
-import { SubscriptionTier } from 'types';
+import { AuthRequest, SubscriptionTier } from 'types';
 import type { Subscription } from 'db/types';
 
-const getUserByAuthIdHandler: RequestHandler = async (request) => {
+const getUserByAuthIdHandler: RequestHandler<AuthRequest> = async (request) => {
     try {
         const { authId } = request.params;
         if (!authId) {
             return error(400, 'authId query parameter is required');
+        }
+
+        if (authId !== request.user.authId) {
+            return error(403, 'Forbidden: You can only access your own user data');
         }
 
         const usersDB = createUsersDB(env.gostylens_db);

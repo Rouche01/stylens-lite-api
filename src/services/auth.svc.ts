@@ -50,6 +50,21 @@ export class AuthService {
             const errorText = await res.text();
             throw new Error(`Failed to update user app_metadata: ${res.status} ${errorText}`);
         }
+    }
+
+    async deleteUser(userId: string) {
+        const res = await fetch(`${this.svcUrl}/auth/v1/admin/users/${userId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${this.svcRoleKey}`,
+                'apikey': this.svcRoleKey,
+            }
+        });
+
+        if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(`Failed to delete user from Supabase: ${res.status} ${errorText}`);
+        }
 
         return res.json();
     }

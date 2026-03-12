@@ -1,13 +1,13 @@
 import { error, RequestHandler } from 'itty-router';
 import { createFavouritesDB, createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
-import { AuthRequest } from 'types';
+import { ProvisionedAuthRequest } from 'types';
 
 export type ToggleFavouriteBody = {
     isFavourite: boolean;
 };
 
-const toggleSessionFavouriteHandler: RequestHandler<AuthRequest> = async (request) => {
+const toggleSessionFavouriteHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
     try {
         const sessionId = request.params.sessionId;
         if (!sessionId) {

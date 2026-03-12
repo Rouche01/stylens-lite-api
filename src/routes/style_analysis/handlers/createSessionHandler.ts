@@ -4,7 +4,7 @@ import { env } from 'cloudflare:workers';
 import { createStyleAnalysisDB, createSubscriptionsDB } from 'db';
 import { generateTitle } from 'utils/style_analysis_session.utils';
 import { isValidMessageEntry } from '../utils';
-import { AuthRequest, SubscriptionTier } from 'types';
+import { ProvisionedAuthRequest, SubscriptionTier } from 'types';
 
 type CreateSessionBody = {
 	title?: string;
@@ -12,7 +12,7 @@ type CreateSessionBody = {
 	messages: MessageEntry[];
 };
 
-const createSessionHandler: RequestHandler<AuthRequest> = async (request) => {
+const createSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
 		const body = (await request.json()) as CreateSessionBody;
 

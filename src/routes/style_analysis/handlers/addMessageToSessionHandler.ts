@@ -3,13 +3,13 @@ import { MessageEntry } from 'utils/types';
 import { isValidMessageEntry } from '../utils';
 import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
-import { AuthRequest } from 'types';
+import { ProvisionedAuthRequest } from 'types';
 
 type AddMessageToSessionBody = {
 	message: MessageEntry;
 };
 
-const addMessageToSessionHandler: RequestHandler<AuthRequest> = async (request) => {
+const addMessageToSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
 		const { sessionId } = request.params as { sessionId: string };
 		const body = (await request.json()) as AddMessageToSessionBody;

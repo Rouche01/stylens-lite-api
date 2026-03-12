@@ -24,9 +24,17 @@ export type AuthUser = {
     authId: string;
     email: string;
     role?: AppRole;
-    dbId: string;
+    dbId?: string;
 }
 
 export type AuthRequest = IRequest & {
     user: AuthUser;
-}   
+}
+
+export type ProvisionedAuthUser = AuthUser & {
+    dbId: string;
+}
+
+export type ProvisionedAuthRequest = IRequest & {
+    user: ProvisionedAuthUser;
+}

@@ -3,9 +3,9 @@ import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { createLLMService } from 'services/llm.svc';
 import { MessageEntry } from 'utils/types';
-import { AuthRequest } from 'types';
+import { ProvisionedAuthRequest } from 'types';
 
-const streamSessionHandler: RequestHandler<AuthRequest> = async (request) => {
+const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
 		const { sessionId } = request.params as { sessionId: string };
 		const url = new URL(request.url);

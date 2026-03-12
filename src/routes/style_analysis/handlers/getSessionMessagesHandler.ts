@@ -2,9 +2,9 @@ import { error, RequestHandler } from 'itty-router';
 import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { getPaginationMetadata } from '../utils';
-import { AuthRequest } from 'types';
+import { ProvisionedAuthRequest } from 'types';
 
-const getSessionMessagesHandler: RequestHandler<AuthRequest> = async (request) => {
+const getSessionMessagesHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
 		const { sessionId } = request.params as { sessionId: string };
 

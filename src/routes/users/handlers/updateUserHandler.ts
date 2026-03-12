@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { createUsersDB } from 'db';
 import { error, RequestHandler } from 'itty-router';
-import { Gender } from 'types';
+import { AuthRequest, Gender } from 'types';
 
 type UpdateUserBody = {
 	name?: string;
@@ -9,11 +9,15 @@ type UpdateUserBody = {
 	gender?: Gender;
 };
 
-const updateUserHandler: RequestHandler = async (request) => {
+const updateUserHandler: RequestHandler<AuthRequest> = async (request) => {
 	try {
 		const { userId } = request.params;
 		if (!userId) {
 			return error(400, 'userId query parameter is required');
+		}
+
+		if (request.user.dbId !== userId && request.user.role !== 'root-admin') {
+			return error(403, 'Forbidden: You can only access your own user data');
 		}
 
 		const body = (await request.json()) as UpdateUserBody;
