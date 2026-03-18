@@ -1,5 +1,6 @@
 import { error, RequestHandler } from 'itty-router';
 import { env } from 'cloudflare:workers';
+import { verifyTimingSafe } from 'utils/crypto';
 
 export const adminApiKeyMiddleware: RequestHandler = async (request) => {
     const apiKey = request.headers.get('x-api-key');
@@ -15,15 +16,9 @@ export const adminApiKeyMiddleware: RequestHandler = async (request) => {
         return error(500, 'Internal server error');
     }
 
-    // Use timing-safe comparison to prevent timing attacks
-    const encoder = new TextEncoder();
-    const a = encoder.encode(apiKey);
-    const b = encoder.encode(expectedKey);
-
-    if (a.byteLength !== b.byteLength || !crypto.subtle.timingSafeEqual(a, b)) {
+    if (!verifyTimingSafe(apiKey, expectedKey)) {
         return error(403, 'Forbidden: Invalid API key');
     }
 
-    // Tag the request as admin-authenticated
     request.isAdmin = true;
 };

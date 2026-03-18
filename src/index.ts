@@ -5,6 +5,7 @@ import usersRouter from './routes/users';
 import outfitsRouter from './routes/outfits';
 import favouritesRouter from './routes/favourites';
 import subscriptionsRouter from './routes/subscriptions';
+import webhooksRouter from './routes/webhooks';
 
 const router = Router();
 
@@ -15,6 +16,7 @@ router.all('/users/*', usersRouter.fetch); // Mount users router
 router.all('/outfits/*', outfitsRouter.fetch);
 router.all('/favourites/*', favouritesRouter.fetch);
 router.all('/subscriptions/*', subscriptionsRouter.fetch);
+router.all('/webhooks/*', webhooksRouter.fetch);
 
 router.get('/', () => new Response('Style Analysis API is running'));
 
