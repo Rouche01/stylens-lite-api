@@ -51,22 +51,31 @@ const revenueCatWebhookHandler = async (request: Request) => {
 
         // Map entitlements to our internal tiers
         const hasCoreEntitlement = event.entitlement_ids ? event.entitlement_ids.includes('gostylens_core') : false;
-        const targetTier = hasCoreEntitlement ? SubscriptionTier.Core : SubscriptionTier.Free;
 
-        // Determine status based on event type
+        // Determine based on event type
+        let targetTier = hasCoreEntitlement ? SubscriptionTier.Core : SubscriptionTier.Free;
         let status = 'active';
+        let hasReachedLimit = 0;
+
+
         if (event.type === 'CANCELLATION' || event.type === 'EXPIRATION') {
             if (event.type === 'CANCELLATION') status = 'cancelled';
-            if (event.type === 'EXPIRATION') status = 'expired';
+            if (event.type === 'EXPIRATION') {
+                status = 'expired'
+                targetTier = SubscriptionTier.Free
+                hasReachedLimit = 1
+            };
         }
 
-        if (event.type === 'INITIAL_PURCHASE') {
+        if (event.type === 'INITIAL_PURCHASE' || event.type === 'RENEWAL') {
             status = 'active';
+            hasReachedLimit = 0;
         }
 
         const currentPeriodEnd = event.expiration_at_ms ? Math.floor(event.expiration_at_ms / 1000) : undefined;
 
         if (existingSubscription) {
+
             const updates: any = {
                 tier: targetTier,
                 provider: 'revenuecat',
@@ -74,12 +83,10 @@ const revenueCatWebhookHandler = async (request: Request) => {
                 current_period_end: currentPeriodEnd,
                 provider_customer_id: event.original_app_user_id,
                 provider_subscription_id: event.original_transaction_id,
+                has_reached_limit: hasReachedLimit,
             };
 
-            // Reset limit if they just moved to a paid tier
-            if (targetTier !== SubscriptionTier.Free && existingSubscription.tier === SubscriptionTier.Free) {
-                updates.has_reached_limit = 0;
-            }
+
 
             await subscriptionsDB.updateSubscriptionByUserId(userId, updates);
         } else {
