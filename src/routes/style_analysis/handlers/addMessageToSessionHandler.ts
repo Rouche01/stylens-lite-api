@@ -35,6 +35,7 @@ const addMessageToSessionHandler: RequestHandler<ProvisionedAuthRequest> = async
 			role: body.message.role,
 			content: body.message.prompt,
 			remoteImage: body.message.remoteImage,
+			remoteImages: body.message.remoteImages,
 		});
 
 		return new Response(JSON.stringify({ sessionId: sessionId, messageId: messageEntryId }), {

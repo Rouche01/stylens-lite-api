@@ -4,7 +4,8 @@ export type RemoteImage = {
 };
 
 export type MessageEntry = {
-	remoteImage?: RemoteImage;
+	remoteImage?: RemoteImage; // Deprecated: use remoteImages
+	remoteImages?: RemoteImage[];
 	prompt?: string;
 	role: 'user' | 'assistant' | 'system';
 };

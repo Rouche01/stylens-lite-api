@@ -8,7 +8,6 @@ import { ProvisionedAuthRequest, SubscriptionTier } from 'types';
 
 type CreateSessionBody = {
 	title?: string;
-	// Require initial message content
 	messages: MessageEntry[];
 };
 

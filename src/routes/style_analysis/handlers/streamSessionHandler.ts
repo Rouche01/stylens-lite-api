@@ -38,14 +38,14 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 
 			case 'last':
 				// Send only the last user message
-				const lastUserMessage = [...allMessages].reverse().find((msg) => msg.role === 'user');
+				const lastUserMessage = allMessages.find((msg) => msg.role === 'user');
 				messagesToSend = lastUserMessage ? [lastUserMessage] : [];
 				break;
 
 			case 'recent':
 			default:
-				// Send last N messages (recommended for balance)
-				messagesToSend = allMessages.slice(-recentCount);
+				// Send last N messages (newest first in DESC, so take from start)
+				messagesToSend = allMessages.slice(0, recentCount);
 				break;
 		}
 
@@ -54,10 +54,11 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 			role: m.role as 'user' | 'assistant' | 'system',
 			prompt: m.content || undefined,
 			remoteImage: m.image_url || m.image_key ? { url: m?.image_url || '', key: m.image_key || '' } : undefined,
+			remoteImages: m.images ? m.images.map(img => ({ url: img.url, key: img.key })) : undefined,
 		}));
 
-		// Prepare for LLM
-		const preparedMessages = await llmService.prepareMessagesForLLM(messageEntries);
+		// Prepare for LLM (Reverse to make it ASC for the AI)
+		const preparedMessages = await llmService.prepareMessagesForLLM(messageEntries.reverse());
 
 		// Get streaming response
 		const stream = await llmService.generateStreamingResponse(sessionId, preparedMessages, async (completeText) => {

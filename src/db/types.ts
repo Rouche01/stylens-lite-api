@@ -17,15 +17,16 @@ export type StyleAnalysisEntry = {
 	style_analysis_history_id: string;
 	role: 'user' | 'assistant' | 'system';
 	content?: string;
-	image_url?: string | null;
-	image_key?: string | null;
+	image_url?: string | null;  // Deprecated: image_url
+	image_key?: string | null;  // Deprecated: image_key
+	images?: RemoteImage[];     // Array of images
 	created_at: number;
 };
 
 export type CreateSessionParams = {
 	userId: string;
 	title?: string;
-	messages: Array<{ remoteImage?: RemoteImage; prompt?: string; role: 'user' | 'assistant' | 'system' }>;
+	messages: Array<{ remoteImage?: RemoteImage; remoteImages?: RemoteImage[]; prompt?: string; role: 'user' | 'assistant' | 'system' }>;
 };
 
 export type CreateSessionResult = {
@@ -38,7 +39,8 @@ export type AddMessageParams = {
 	sessionId: string;
 	role: 'user' | 'assistant' | 'system';
 	content?: string;
-	remoteImage?: RemoteImage;
+	remoteImage?: RemoteImage;  // Deprecated
+	remoteImages?: RemoteImage[];
 };
 
 export type User = {

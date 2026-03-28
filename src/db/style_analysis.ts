@@ -17,7 +17,9 @@ export class StyleAnalysisDB {
 
 		// Validate each message
 		for (const message of messages) {
-			if ((!message.remoteImage && !message.prompt) || !message.role) {
+			const hasImage = (message.remoteImage && (message.remoteImage.url || message.remoteImage.key)) || 
+							 (message.remoteImages && message.remoteImages.length > 0);
+			if ((!hasImage && !message.prompt) || !message.role) {
 				throw new Error('Each message must have either image or prompt and a role');
 			}
 		}
@@ -27,9 +29,10 @@ export class StyleAnalysisDB {
 		const sessionTitle = title || 'New Style Analysis';
 
 		// Extract first image_url and image_key from messages for the session thumbnail
-		const firstMessage = messages.find((m) => m.remoteImage);
-		const firstMsgImageUrl = firstMessage?.remoteImage?.url || null;
-		const firstMsgImageKey = firstMessage?.remoteImage?.key || null;
+		const firstMessageWithImage = messages.find((m) => m.remoteImage || (m.remoteImages && m.remoteImages.length > 0));
+		const firstMsgImage = firstMessageWithImage?.remoteImage || firstMessageWithImage?.remoteImages?.[0];
+		const firstMsgImageUrl = firstMsgImage?.url || null;
+		const firstMsgImageKey = firstMsgImage?.key || null;
 
 		// Create session
 		await this.db
@@ -64,6 +67,24 @@ export class StyleAnalysisDB {
 				)
 				.run();
 
+			// Add multiple images if present
+			const imagesToSave = [...(message.remoteImages || [])];
+			if (message.remoteImage && !message.remoteImages?.some(img => img.url === message.remoteImage?.url)) {
+				// Avoid duplication if they provided both
+			}
+
+			for (const img of imagesToSave) {
+				await this.db
+					.prepare(
+						`
+						INSERT INTO style_analysis_entry_images (id, style_analysis_entry_id, url, key, created_at)
+						VALUES (?, ?, ?, ?, ?)
+						`
+					)
+					.bind(crypto.randomUUID(), messageId, img.url, img.key, now)
+					.run();
+			}
+
 			messageIds.push(messageId);
 		}
 
@@ -91,8 +112,22 @@ export class StyleAnalysisDB {
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `
 			)
-			.bind(messageId, sessionId, role, content || null, remoteImage?.url || null, remoteImage?.key || null, now)
+			.bind(messageId, sessionId, role, content || null, params.remoteImage?.url || null, params.remoteImage?.key || null, now)
 			.run();
+
+		// Add multiple images
+		const imagesToSave = params.remoteImages || [];
+		for (const img of imagesToSave) {
+			await this.db
+				.prepare(
+					`
+					INSERT INTO style_analysis_entry_images (id, style_analysis_entry_id, url, key, created_at)
+					VALUES (?, ?, ?, ?, ?)
+					`
+				)
+				.bind(crypto.randomUUID(), messageId, img.url, img.key, now)
+				.run();
+		}
 
 		// Update session timestamp if it's a user or assistant message
 		if (role === 'user' || role === 'assistant') {
@@ -154,7 +189,42 @@ export class StyleAnalysisDB {
 			.bind(sessionId, pageSize, offset)
 			.all<StyleAnalysisEntry>();
 
-		return { messages: result.results || [], total };
+		const messages = result.results || [];
+
+		// Fetch images for these messages
+		if (messages.length > 0) {
+			const messageIds = messages.map(m => m.id);
+			const placeholders = messageIds.map(() => '?').join(',');
+			const imagesResult = await this.db
+				.prepare(
+					`
+					SELECT * FROM style_analysis_entry_images
+					WHERE style_analysis_entry_id IN (${placeholders})
+					ORDER BY created_at ASC
+					`
+				)
+				.bind(...messageIds)
+				.all<{ style_analysis_entry_id: string; url: string; key: string }>();
+
+			const imagesByMessageId = (imagesResult.results || []).reduce((acc, img) => {
+				if (!acc[img.style_analysis_entry_id]) {
+					acc[img.style_analysis_entry_id] = [];
+				}
+				acc[img.style_analysis_entry_id].push({ url: img.url, key: img.key });
+				return acc;
+			}, {} as Record<string, { url: string; key: string }[]>);
+
+			messages.forEach(m => {
+				m.images = imagesByMessageId[m.id] || [];
+				// For backward compatibility, if only one image exists, populate image_url/key if they are null
+				if (m.images.length > 0 && !m.image_url) {
+					m.image_url = m.images[0].url;
+					m.image_key = m.images[0].key;
+				}
+			});
+		}
+
+		return { messages, total };
 	}
 
 	async getUserSessions(

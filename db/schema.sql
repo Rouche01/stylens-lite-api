@@ -31,6 +31,18 @@ CREATE TABLE IF NOT EXISTS style_analysis_entries (
     ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS style_analysis_entry_images (
+  id TEXT PRIMARY KEY,
+  style_analysis_entry_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  key TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (style_analysis_entry_id) REFERENCES style_analysis_entries(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_style_analysis_entry_images_history
+  ON style_analysis_entry_images (style_analysis_entry_id, created_at ASC);
+
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,           -- Local unique user ID (e.g., UUID)
   auth_id TEXT UNIQUE NOT NULL,  -- External Auth system user ID

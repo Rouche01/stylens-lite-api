@@ -162,14 +162,29 @@ export class LLMService {
 		return readable;
 	}
 
-	// Helper method to convert MessageEntry to LLMInput
 	static _messageEntryToLLMInput(entry: MessageEntry): LLMInput {
+		const content: Array<LLMContentItem> = [];
+
+		if (entry.prompt) {
+			content.push({ type: 'input_text' as const, text: entry.prompt });
+		}
+
+		if (entry.remoteImage) {
+			content.push({ type: 'input_image' as const, image_url: entry.remoteImage.url });
+		}
+
+		if (entry.remoteImages && entry.remoteImages.length > 0) {
+			for (const img of entry.remoteImages) {
+				// Avoid duplication if the same image is in both
+				if (!entry.remoteImage || entry.remoteImage.url !== img.url) {
+					content.push({ type: 'input_image' as const, image_url: img.url });
+				}
+			}
+		}
+
 		return {
 			role: 'user',
-			content: [
-				...(entry.prompt ? [{ type: 'input_text' as const, text: entry.prompt }] : []),
-				...(entry.remoteImage ? [{ type: 'input_image' as const, image_url: entry.remoteImage.url }] : []),
-			],
+			content,
 		};
 	}
 
@@ -209,6 +224,7 @@ export class LLMService {
 						content.push({ type: 'input_text', text: message.prompt });
 					}
 
+					// Handle single image (legacy)
 					if (message.remoteImage) {
 						const freshSignedUrl = await regenerateSignedUrl(message.remoteImage.url);
 						content.push({
@@ -216,6 +232,21 @@ export class LLMService {
 							image_url: freshSignedUrl,
 						});
 					}
+
+					// Handle multiple images
+					if (message.remoteImages && message.remoteImages.length > 0) {
+						for (const img of message.remoteImages) {
+							// Avoid duplication if the same image is in both
+							if (!message.remoteImage || message.remoteImage.url !== img.url) {
+								const freshSignedUrl = await regenerateSignedUrl(img.url);
+								content.push({
+									type: 'input_image',
+									image_url: freshSignedUrl,
+								});
+							}
+						}
+					}
+
 					processedMessages.push({
 						role: 'user',
 						content,
