@@ -1,13 +1,15 @@
 import { env } from 'cloudflare:workers';
 import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMResponse, MessageEntry } from '../utils/types';
 import { regenerateSignedUrl } from '../utils/assets.utils';
+import { waitForImages } from '../utils/r2.utils';
 
 export class LLMService {
 	constructor(
 		private endpoint: string,
 		private apiKey: string,
 		private model: string,
-	) {}
+		private bucket?: R2Bucket
+	) { }
 
 	async generateResponse(
 		input: LLMInput[],
@@ -81,7 +83,7 @@ export class LLMService {
 
 		// If an external AbortSignal aborts, close/abort our writer and cancel the reader.
 		const onAbort = () => {
-			reader.cancel().catch(() => {});
+			reader.cancel().catch(() => { });
 			writer.abort(new Error('Aborted'));
 		};
 
@@ -90,7 +92,7 @@ export class LLMService {
 			if (signal.aborted) {
 				onAbort();
 				// return an empty readable to avoid hanging
-				writer.close().catch(() => {});
+				writer.close().catch(() => { });
 				return readable;
 			}
 			signal.addEventListener('abort', onAbort);
@@ -196,6 +198,26 @@ export class LLMService {
 
 	// Process initial style analysis session messages for LLM input
 	async prepareMessagesForLLM(messages: MessageEntry[]): Promise<LLMInput[]> {
+		// 1. Collect all unique image keys for polling
+		if (this.bucket) {
+			const uniqueKeys = new Set<string>();
+			for (const msg of messages) {
+				if (msg.role === 'user') {
+					if (msg.remoteImage?.key) uniqueKeys.add(msg.remoteImage.key);
+					if (msg.remoteImages) {
+						for (const img of msg.remoteImages) {
+							if (img.key) uniqueKeys.add(img.key);
+						}
+					}
+				}
+			}
+
+			if (uniqueKeys.size > 0) {
+				console.log(`Polling R2 for ${uniqueKeys.size} images...`);
+				await waitForImages(this.bucket, Array.from(uniqueKeys));
+			}
+		}
+
 		const processedMessages: LLMInput[] = [];
 		let systemPrompts: string[] = [];
 
@@ -276,6 +298,7 @@ type LLMServiceOpts = Partial<{
 	endpoint: string;
 	apiKey: string;
 	model: string;
+	bucket: R2Bucket;
 }>;
 
 export const createLLMService = (opts?: LLMServiceOpts): LLMService => {
@@ -283,5 +306,6 @@ export const createLLMService = (opts?: LLMServiceOpts): LLMService => {
 		opts?.endpoint ?? env.MODEL_ENDPOINT_URL,
 		opts?.apiKey ?? env.MODEL_API_KEY,
 		opts?.model ?? env.OPENAI_MODEL_VERSION,
+		opts?.bucket ?? env.OUTFIT_PHOTOS_BUCKET
 	);
 };

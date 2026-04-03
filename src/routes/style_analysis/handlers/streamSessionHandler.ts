@@ -4,6 +4,8 @@ import { env } from 'cloudflare:workers';
 import { createLLMService } from 'services/llm.svc';
 import { MessageEntry } from 'utils/types';
 import { ProvisionedAuthRequest } from 'types';
+import { ImageUploadTimeoutError } from 'utils/r2.utils';
+import { apiError } from 'utils/error';
 
 const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
@@ -73,6 +75,9 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 			},
 		});
 	} catch (err) {
+		if (err instanceof ImageUploadTimeoutError) {
+			return apiError(408, err.message, 'IMAGE_UPLOAD_TIMEOUT');
+		}
 		if (err instanceof Error) {
 			return error(400, err.message);
 		}
