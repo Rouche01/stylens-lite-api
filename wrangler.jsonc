@@ -1,7 +1,3 @@
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "stylens-lite-api",
@@ -10,53 +6,26 @@
 	"observability": {
 		"enabled": true
 	},
-	/**
-	 * Smart Placement
-	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
-	 */
-	// "placement": { "mode": "smart" }
-	/**
-	 * Bindings
-	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-	 * databases, object storage, AI inference, real-time communication and more.
-	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-	 */
-	/**
-	 * Environment Variables
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-	 */
 	"vars": {
+		"ENV_NAME": "production",
 		"MODEL_ENDPOINT_URL": "https://api.openai.com/v1",
 		"OPENAI_MODEL_VERSION": "gpt-5-mini",
 		"OUTFIT_PHOTOS_BUCKET_NAME": "outfit-photos",
-		"R2_ACCOUNT_ID": "d7978583c6d20c1a4c8cce3ed6ac71b2",
+		"R2_ACCOUNT_ID": "167f1b399b1e2edd077f392c7afbd031",
 		"FREE_TIER_SESSION_LIMIT": "3"
 	},
 	"d1_databases": [
 		{
 			"binding": "gostylens_db",
 			"database_name": "gostylens-db",
-			"database_id": "d10c69e6-f37e-4ac6-9342-423d8b9e2cfe"
+			"database_id": "2da1cd0b-e9e5-4c6e-a2bf-d050e2a55209"
 		}
 	],
 	"r2_buckets": [
 		{
 			"binding": "OUTFIT_PHOTOS_BUCKET",
-			"bucket_name": "outfit-photos"
+			"bucket_name": "outfit-photos",
+			"remote": true
 		}
 	]
-	/**
-	 * Note: Use secrets to store sensitive data.
-	 * https://developers.cloudflare.com/workers/configuration/secrets/
-	 */
-	/**
-	 * Static Assets
-	 * https://developers.cloudflare.com/workers/static-assets/binding/
-	 */
-	// "assets": { "directory": "./public/", "binding": "ASSETS" }
-	/**
-	 * Service Bindings (communicate between multiple Workers)
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
-	 */
-	// "services": [{ "binding": "MY_SERVICE", "service": "my-service" }]
 }

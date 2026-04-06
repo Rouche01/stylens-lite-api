@@ -33,7 +33,28 @@ export async function waitForImages(
 
 		const checkPromises = Array.from(remainingKeys).map(async (key) => {
 			try {
-				const obj = await bucket.head(key);
+				// 1. Try exact key
+				let obj = await bucket.head(key);
+
+				// 2. Fallback: Decode URL-encoded characters (like %20 -> space)
+				if (obj === null && key.includes('%')) {
+					const decoded = decodeURIComponent(key);
+					if (decoded !== key) {
+						obj = await bucket.head(decoded);
+					}
+				}
+
+				// 3. Fallback: Strip leading slash
+				if (obj === null && key.startsWith('/')) {
+					const strippedKey = key.slice(1);
+					obj = await bucket.head(strippedKey);
+					// Also try decoded stripped key
+					if (obj === null && strippedKey.includes('%')) {
+						const decodedStripped = decodeURIComponent(strippedKey);
+						obj = await bucket.head(decodedStripped);
+					}
+				}
+
 				if (obj !== null) {
 					remainingKeys.delete(key);
 				}

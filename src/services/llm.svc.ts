@@ -102,7 +102,6 @@ export class LLMService {
 		(async () => {
 			try {
 				let buffer = '';
-				let fullResponse = ''; // Track complete response for logging
 				let currentChunk = ''; // Accumulate deltas
 
 				while (true) {
@@ -130,12 +129,10 @@ export class LLMService {
 									// Stream each delta immediately to client
 									const streamedDelta = sessionPrefix + parsed.delta;
 									await writer.write(new TextEncoder().encode(streamedDelta));
-									fullResponse += parsed.delta;
 								}
 
-								// When done, log the complete chunk
+								// When done, notify completion
 								if (parsed.type === 'response.output_text.done') {
-									console.log('Complete chunk:', currentChunk);
 									await onComplete?.(currentChunk);
 									currentChunk = ''; // Reset for next message
 								}
@@ -151,9 +148,6 @@ export class LLMService {
 						}
 					}
 				}
-				// Log the complete response when done
-				console.log('Complete streamed response:', fullResponse);
-				console.log('Total characters streamed:', fullResponse.length);
 
 				await writer.close();
 			} catch (error) {
@@ -213,7 +207,6 @@ export class LLMService {
 			}
 
 			if (uniqueKeys.size > 0) {
-				console.log(`Polling R2 for ${uniqueKeys.size} images...`);
 				await waitForImages(this.bucket, Array.from(uniqueKeys));
 			}
 		}
