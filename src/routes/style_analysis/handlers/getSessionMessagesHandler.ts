@@ -38,7 +38,7 @@ const getSessionMessagesHandler: RequestHandler<ProvisionedAuthRequest> = async 
 				pagination: paginationMetadata,
 			}),
 			{
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store, must-revalidate' },
 			}
 		);
 	} catch (err) {

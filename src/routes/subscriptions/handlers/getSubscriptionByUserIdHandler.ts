@@ -25,7 +25,7 @@ const getSubscriptionByUserIdHandler: RequestHandler<ProvisionedAuthRequest> = a
         }
 
         return new Response(JSON.stringify(subscription), {
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store, must-revalidate' },
             status: 200,
         });
     } catch (err) {

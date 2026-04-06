@@ -13,7 +13,9 @@ const getDownloadUrlHandler: (config: AssetConfig) => RequestHandler = ({ client
 
 		const presigned = await client.sign(new Request(url, { method: 'GET' }), { aws: { signQuery: true } });
 
-		return new Response(presigned.url);
+		return new Response(presigned.url, {
+			headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+		});
 	};
 };
 

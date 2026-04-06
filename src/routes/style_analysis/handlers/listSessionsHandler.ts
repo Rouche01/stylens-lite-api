@@ -30,7 +30,7 @@ const listSessionsHandler: RequestHandler<ProvisionedAuthRequest> = async (reque
 		const paginationMetadata = getPaginationMetadata(total, page, pageSize);
 
 		return new Response(JSON.stringify({ sessions, pagination: paginationMetadata }), {
-			headers: { 'Content-Type': 'application/json' },
+			headers: { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=300' },
 		});
 	} catch (err) {
 		if (err instanceof Error) {

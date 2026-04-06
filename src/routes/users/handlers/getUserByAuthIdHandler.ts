@@ -43,7 +43,7 @@ const getUserByAuthIdHandler: RequestHandler<AuthRequest> = async (request) => {
         }
 
         return new Response(JSON.stringify(user), {
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store, must-revalidate' },
             status: 200,
         });
     } catch (err) {
