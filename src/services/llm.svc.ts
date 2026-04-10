@@ -3,6 +3,7 @@ import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMResponse, MessageEnt
 import { regenerateSignedUrl } from '../utils/assets.utils';
 import { waitForImages } from '../utils/r2.utils';
 import { GO_STYLENS_SYSTEM_PROMPT } from './prompts/gostylens';
+import { ModelUseCase, ModelConfigService, ModelProvider } from './model_config.svc';
 
 export class LLMService {
 	constructor(
@@ -302,13 +303,26 @@ type LLMServiceOpts = Partial<{
 	apiKey: string;
 	model: string;
 	bucket: R2Bucket;
+	useCase: ModelUseCase;
+	provider: ModelProvider;
 }>;
 
 export const createLLMService = (opts?: LLMServiceOpts): LLMService => {
+	if (opts?.useCase) {
+		const configService = new ModelConfigService(opts?.provider);
+		const config = configService.getConfig(opts.useCase);
+		return new LLMService(
+			opts.endpoint ?? config.endpoint,
+			opts.apiKey ?? config.apiKey,
+			opts.model ?? config.model,
+			opts.bucket ?? config.bucket
+		);
+	}
+
 	return new LLMService(
-		opts?.endpoint ?? env.MODEL_ENDPOINT_URL,
-		opts?.apiKey ?? env.MODEL_API_KEY,
-		opts?.model ?? env.OPENAI_MODEL_VERSION,
+		opts?.endpoint ?? env.OPENAI_MODEL_ENDPOINT_URL,
+		opts?.apiKey ?? env.OPENAI_MODEL_API_KEY,
+		opts?.model ?? env.OPENAI_FAST_TASK_MODEL_VERSION,
 		opts?.bucket ?? env.OUTFIT_PHOTOS_BUCKET
 	);
 };

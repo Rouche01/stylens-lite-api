@@ -1,4 +1,5 @@
 import { createLLMService } from '../services/llm.svc';
+import { ModelUseCase } from '../services/model_config.svc';
 import type { LLMMessageRole, MessageEntry } from './types';
 
 /**
@@ -50,7 +51,7 @@ export async function generateTitle(
 		},
 	];
 
-	const llmService = createLLMService();
+	const llmService = createLLMService({ useCase: ModelUseCase.TITLE_GENERATION });
 
 	// Use AbortController to cancel the underlying fetch when timeout elapses
 	const controller = new AbortController();

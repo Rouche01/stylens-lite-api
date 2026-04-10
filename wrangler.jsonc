@@ -8,8 +8,6 @@
 	},
 	"vars": {
 		"ENV_NAME": "production",
-		"MODEL_ENDPOINT_URL": "https://api.openai.com/v1",
-		"OPENAI_MODEL_VERSION": "gpt-5-mini",
 		"OUTFIT_PHOTOS_BUCKET_NAME": "outfit-photos",
 		"R2_ACCOUNT_ID": "167f1b399b1e2edd077f392c7afbd031",
 		"FREE_TIER_SESSION_LIMIT": "3"

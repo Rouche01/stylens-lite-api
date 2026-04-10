@@ -87,9 +87,11 @@ export class ClassificationService {
 /**
  * Factory function to create the ClassificationService.
  */
+import { ModelUseCase } from './model_config.svc';
+
 export const createClassificationService = (database: D1Database) => {
-	// We use the default LLMService which is configured with the 'Mini' model for cost efficiency
-	const llmService = createLLMService();
+	// Use the dedicated classification model configuration (usually a fast/cheap 'Mini' model)
+	const llmService = createLLMService({ useCase: ModelUseCase.CLASSIFICATION });
 	const styleAnalysisDB = new StyleAnalysisDB(database);
 	return new ClassificationService(llmService, styleAnalysisDB);
 };

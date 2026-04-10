@@ -2,6 +2,7 @@ import { error, RequestHandler } from 'itty-router';
 import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { createLLMService } from 'services/llm.svc';
+import { ModelUseCase } from 'services/model_config.svc';
 import { createClassificationService } from 'services/classification.svc';
 import { MessageEntry } from 'utils/types';
 import { ProvisionedAuthRequest } from 'types';
@@ -18,7 +19,7 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 		const recentCount = parseInt(url.searchParams.get('recentCount') || '10'); // Default to last 10 messages
 
 		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
-		const llmService = createLLMService();
+		const llmService = createLLMService({ useCase: ModelUseCase.STYLE_ANALYSIS });
 
 		// Verify session exists
 		const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);
