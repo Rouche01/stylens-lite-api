@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMResponse, MessageEntry } from '../utils/types';
 import { regenerateSignedUrl } from '../utils/assets.utils';
 import { waitForImages } from '../utils/r2.utils';
+import { GO_STYLENS_SYSTEM_PROMPT } from './prompts/gostylens';
 
 export class LLMService {
 	constructor(
@@ -223,7 +224,7 @@ export class LLMService {
 				if (systemPrompts.length > 0 && i > 0) {
 					// This is a user response to system prompts - create developer message
 					const lastSystemPrompt = systemPrompts[systemPrompts.length - 1];
-					const developerMessage = `Here is the response to "${lastSystemPrompt}": ${message.prompt}. Use that information and talk like a personal stylist.`;
+					const developerMessage = `Here is the response to "${lastSystemPrompt}": ${message.prompt}.`;
 
 					processedMessages.push({
 						role: 'developer',
@@ -276,11 +277,20 @@ export class LLMService {
 				// Include assistant responses for context
 				if (message.prompt) {
 					processedMessages.push({
-						role: 'assistant', // or map to appropriate role
+						role: 'assistant',
 						content: message.prompt,
 					});
 				}
 			}
+		}
+
+		// Prepend the GoStylens persona if it's not already there
+		const hasPersona = processedMessages.some(m => m.role === 'developer' && m.content?.toString().includes('GoStylens'));
+		if (!hasPersona) {
+			processedMessages.unshift({
+				role: 'developer',
+				content: GO_STYLENS_SYSTEM_PROMPT,
+			});
 		}
 
 		return processedMessages;
