@@ -2,6 +2,7 @@ import { MessageEntry } from 'utils/types';
 import { error, RequestHandler } from 'itty-router';
 import { env } from 'cloudflare:workers';
 import { createStyleAnalysisDB, createSubscriptionsDB } from 'db';
+import { createClassificationService } from 'services/classification.svc';
 import { generateTitle } from 'utils/style_analysis_session.utils';
 import { isValidMessageEntry } from '../utils';
 import { ProvisionedAuthRequest, SubscriptionTier } from 'types';
@@ -87,6 +88,12 @@ const createSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 
 		if (ctx?.waitUntil) {
 			ctx.waitUntil(limitCheckPromise);
+		}
+
+		// Trigger classification in the background for each initial message
+		const classificationService = createClassificationService(env.gostylens_db);
+		for (let i = 0; i < body.messages.length; i++) {
+			classificationService.tagEntryInBackground(sessionResult.messageIds[i], body.messages[i], ctx, sessionResult.sessionId);
 		}
 
 		return new Response(

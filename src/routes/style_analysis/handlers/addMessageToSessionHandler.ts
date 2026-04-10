@@ -2,6 +2,7 @@ import { error, RequestHandler } from 'itty-router';
 import { MessageEntry } from 'utils/types';
 import { isValidMessageEntry } from '../utils';
 import { createStyleAnalysisDB } from 'db';
+import { createClassificationService } from 'services/classification.svc';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
 
@@ -37,6 +38,10 @@ const addMessageToSessionHandler: RequestHandler<ProvisionedAuthRequest> = async
 			remoteImage: body.message.remoteImage,
 			remoteImages: body.message.remoteImages,
 		});
+
+		// Trigger classification in the background
+		const classificationService = createClassificationService(env.gostylens_db);
+		classificationService.tagEntryInBackground(messageEntryId, body.message, (request as any).ctx, sessionId);
 
 		return new Response(JSON.stringify({ sessionId: sessionId, messageId: messageEntryId }), {
 			headers: { 'Content-Type': 'application/json' },

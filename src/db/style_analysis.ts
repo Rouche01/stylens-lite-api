@@ -17,8 +17,8 @@ export class StyleAnalysisDB {
 
 		// Validate each message
 		for (const message of messages) {
-			const hasImage = (message.remoteImage && (message.remoteImage.url || message.remoteImage.key)) || 
-							 (message.remoteImages && message.remoteImages.length > 0);
+			const hasImage = (message.remoteImage && (message.remoteImage.url || message.remoteImage.key)) ||
+				(message.remoteImages && message.remoteImages.length > 0);
 			if ((!hasImage && !message.prompt) || !message.role) {
 				throw new Error('Each message must have either image or prompt and a role');
 			}
@@ -343,6 +343,36 @@ export class StyleAnalysisDB {
 		if (result.meta.changes === 0) {
 			throw new Error('Session not found or title unchanged');
 		}
+	}
+
+	async hasPrimaryOutfitTag(sessionId: string): Promise<boolean> {
+		const result = await this.db
+			.prepare(
+				`
+				SELECT 1 FROM style_analysis_entry_tags t
+				JOIN style_analysis_entries e ON t.style_analysis_entry_id = e.id
+				WHERE e.style_analysis_history_id = ? AND t.tag = 'session_state:primary_outfit_image'
+				LIMIT 1
+				`
+			)
+			.bind(sessionId)
+			.first();
+
+		return !!result;
+	}
+
+	async addEntryTags(entryId: string, tags: { tag: string; payload?: any }[]): Promise<void> {
+		const now = Date.now();
+		const batch = tags.map((t) => {
+			return this.db.prepare(
+				`
+				INSERT INTO style_analysis_entry_tags (id, style_analysis_entry_id, tag, payload, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?)
+				`
+			).bind(crypto.randomUUID(), entryId, t.tag, JSON.stringify(t.payload || {}), now, now);
+		});
+
+		await this.db.batch(batch);
 	}
 
 	async countActiveSessions(userId: string): Promise<number> {

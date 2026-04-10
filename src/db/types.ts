@@ -12,6 +12,19 @@ export type StyleAnalysisHistory = {
 	is_favourite?: boolean;
 };
 
+export type StyleEntryTagName =
+	| 'session_state:primary_outfit_image'
+	| 'session_state:alt_outfit_image'
+	| 'session_state:occasion'
+	| 'session_state:constraint'
+	| 'session_state:user_prefs'
+	| 'session_state:final_verdict';
+
+export type StyleEntryTag = {
+	tag: StyleEntryTagName;
+	payload?: any;
+};
+
 export type StyleAnalysisEntry = {
 	id: string;
 	style_analysis_history_id: string;
@@ -20,6 +33,7 @@ export type StyleAnalysisEntry = {
 	image_url?: string | null;  // Deprecated: image_url
 	image_key?: string | null;  // Deprecated: image_key
 	images?: RemoteImage[];     // Array of images
+	tags?: StyleEntryTag[]; // Classification tags
 	created_at: number;
 };
 

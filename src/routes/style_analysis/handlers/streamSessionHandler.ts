@@ -2,6 +2,7 @@ import { error, RequestHandler } from 'itty-router';
 import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { createLLMService } from 'services/llm.svc';
+import { createClassificationService } from 'services/classification.svc';
 import { MessageEntry } from 'utils/types';
 import { ProvisionedAuthRequest } from 'types';
 import { ImageUploadTimeoutError } from 'utils/r2.utils';
@@ -64,7 +65,11 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 
 		// Get streaming response
 		const stream = await llmService.generateStreamingResponse(sessionId, preparedMessages, async (completeText) => {
-			await styleAnalysisDB.addMessage({ role: 'assistant', sessionId, content: completeText });
+			const messageEntryId = await styleAnalysisDB.addMessage({ role: 'assistant', sessionId, content: completeText });
+
+			// Trigger classification in the background for assistant's verdict
+			const classificationService = createClassificationService(env.gostylens_db);
+			classificationService.tagEntryInBackground(messageEntryId, { role: 'assistant', prompt: completeText }, (request as any).ctx, sessionId);
 		});
 
 		return new Response(stream, {
