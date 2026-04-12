@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMResponse, MessageEntry } from '../utils/types';
 import { regenerateSignedUrl } from '../utils/assets.utils';
 import { waitForImages } from '../utils/r2.utils';
-import { GO_STYLENS_SYSTEM_PROMPT } from './prompts/gostylens';
+import { GO_STYLENS_SYSTEM_PROMPT } from '../llm/prompts/gostylens';
 import { ModelUseCase, ModelConfigService, ModelProvider } from './model_config.svc';
 
 export class LLMService {
@@ -16,7 +16,7 @@ export class LLMService {
 	async generateResponse(
 		input: LLMInput[],
 		signal?: AbortSignal,
-		format?: { type: 'json_schema' | 'text' | 'json_object'; name: string; schema: object },
+		format?: { type: 'json_schema' | 'text' | 'json_object'; name?: string; schema?: object },
 	): Promise<LLMOutputContentItem[]> {
 		const response = await fetch(`${this.endpoint}/responses`, {
 			method: 'POST',

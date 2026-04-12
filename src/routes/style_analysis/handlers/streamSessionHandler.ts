@@ -69,8 +69,9 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 			const messageEntryId = await styleAnalysisDB.addMessage({ role: 'assistant', sessionId, content: completeText });
 
 			// Trigger classification in the background for assistant's verdict
-			const classificationService = createClassificationService(env.gostylens_db);
-			classificationService.tagEntryInBackground(messageEntryId, { role: 'assistant', prompt: completeText }, (request as any).ctx, sessionId);
+			// Ignore for now
+			// const classificationService = createClassificationService(env.gostylens_db);
+			// classificationService.tagEntryInBackground(messageEntryId, { role: 'assistant', prompt: completeText }, (request as any).ctx, sessionId);
 		});
 
 		return new Response(stream, {

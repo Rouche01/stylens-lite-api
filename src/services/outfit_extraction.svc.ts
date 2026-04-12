@@ -1,5 +1,8 @@
 import { env } from 'cloudflare:workers';
-import { LLMService } from './llm.svc';
+import { createLLMService, LLMService } from './llm.svc';
+import { ModelUseCase } from './model_config.svc';
+import { OUTFIT_EXTRACTION_SCHEMA } from '../llm/schemas/outfit_extraction.schema';
+import { OUTFIT_EXTRACTION_SYSTEM_PROMPT, OUTFIT_EXTRACTION_USER_PROMPT } from '../llm/prompts/outfit_extraction';
 
 export type OutfitItem = {
 	category: 'outerwear' | 'top' | 'bottom' | 'dress' | 'shoes' | 'accessories';
@@ -20,72 +23,19 @@ export type OutfitExtractionResult = {
 };
 
 export class OutfitExtractionService {
-	static SYSTEM_PROMPT = `
-        You are a fashion computer vision system.
-
-        Your task:
-        - Identify all visible clothing items worn by the person.
-        - Ignore background objects.
-        - Treat layered clothing as separate items.
-
-        Output rules:
-        - Output valid JSON only.
-        - No explanations.
-        - No markdown.
-        - No extra keys.
-
-        If you are unsure about an attribute, set it to null.
-    `.trim();
-
-	static USER_PROMPT = 'Extract all clothing items from this image.';
-
-	static OUTFIT_EXTRACTION_SCHEMA = {
-		type: 'object',
-		additionalProperties: false,
-		properties: {
-			items: {
-				type: 'array',
-				items: {
-					type: 'object',
-					additionalProperties: false,
-					properties: {
-						category: {
-							type: 'string',
-							enum: ['outerwear', 'top', 'bottom', 'dress', 'shoes', 'accessories'],
-						},
-						subcategory: { type: 'string' },
-						color: { type: 'string' },
-						material: { type: ['string', 'null'] },
-						style: {
-							type: 'array',
-							items: { type: 'string' },
-						},
-						confidence: {
-							type: 'number',
-							minimum: 0,
-							maximum: 1,
-						},
-					},
-					required: ['category', 'subcategory', 'color', 'material', 'style', 'confidence'],
-				},
-			},
-		},
-		required: ['items'],
-	};
-
-	constructor(private llmService: LLMService) {}
+	constructor(private llmService: LLMService) { }
 
 	async extractOutfitItems({ imageUrl, signal }: ExtractOutfitItemParams): Promise<OutfitExtractionResult | null> {
 		const res = await this.llmService.generateResponse(
 			[
 				{
 					role: 'system',
-					content: OutfitExtractionService.SYSTEM_PROMPT,
+					content: OUTFIT_EXTRACTION_SYSTEM_PROMPT,
 				},
 				{
 					role: 'user',
 					content: [
-						{ type: 'input_text', text: OutfitExtractionService.USER_PROMPT },
+						{ type: 'input_text', text: OUTFIT_EXTRACTION_USER_PROMPT },
 						{
 							type: 'input_image',
 							image_url: imageUrl,
@@ -94,7 +44,7 @@ export class OutfitExtractionService {
 				},
 			],
 			signal,
-			{ type: 'json_schema', name: 'OutfitExtraction', schema: OutfitExtractionService.OUTFIT_EXTRACTION_SCHEMA },
+			{ type: 'json_schema', name: 'OutfitExtraction', schema: OUTFIT_EXTRACTION_SCHEMA },
 		);
 
 		const resultText = res[0]?.text;
@@ -110,6 +60,6 @@ export class OutfitExtractionService {
 }
 
 export const createOutfitExtractionService = () => {
-	const llmService = new LLMService(env.OUTFIT_EXTRACTION_MODEL_ENDPOINT, env.OUTFIT_EXTRACTION_MODEL_API_KEY, env.OUTFIT_EXTRACTION_MODEL);
+	const llmService = createLLMService({ useCase: ModelUseCase.OUTFIT_EXTRACTION })
 	return new OutfitExtractionService(llmService);
 };
