@@ -375,6 +375,35 @@ export class StyleAnalysisDB {
 		await this.db.batch(batch);
 	}
 
+	async getSessionMemoryLines(sessionId: string): Promise<string[]> {
+		const result = await this.db.prepare(`
+			SELECT t.tag, t.payload 
+			FROM style_analysis_entry_tags t
+			JOIN style_analysis_entries e ON t.style_analysis_entry_id = e.id
+			WHERE e.style_analysis_history_id = ? 
+			ORDER BY t.created_at ASC
+		`).bind(sessionId).all<{ tag: string, payload: string }>();
+
+		const lines: string[] = [];
+		if (!result.results) return lines;
+
+		for (const row of result.results) {
+			try {
+				const payloadObj = JSON.parse(row.payload);
+				if (payloadObj && payloadObj.summary) {
+					// Convert 'session_state:occasion' to 'Occasion'
+					const cleanTag = row.tag.replace('session_state:', '');
+					const formattedTag = cleanTag.charAt(0).toUpperCase() + cleanTag.slice(1).replace('_', ' ');
+					lines.push(`- ${formattedTag}: ${payloadObj.summary}`);
+				}
+			} catch (e) {
+				console.error('Failed to parse tag payload', row.payload, e);
+			}
+		}
+
+		return lines;
+	}
+
 	async countActiveSessions(userId: string): Promise<number> {
 		const result = await this.db
 			.prepare(

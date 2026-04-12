@@ -2,7 +2,6 @@ import { env } from 'cloudflare:workers';
 import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMResponse, MessageEntry } from '../utils/types';
 import { regenerateSignedUrl } from '../utils/assets.utils';
 import { waitForImages } from '../utils/r2.utils';
-import { GO_STYLENS_SYSTEM_PROMPT } from '../llm/prompts/gostylens';
 import { ModelUseCase, ModelConfigService, ModelProvider } from './model_config.svc';
 
 export class LLMService {
@@ -160,7 +159,7 @@ export class LLMService {
 		return readable;
 	}
 
-	static _messageEntryToLLMInput(entry: MessageEntry): LLMInput {
+	messageEntryToLLMInput(entry: MessageEntry): LLMInput {
 		const content: Array<LLMContentItem> = [];
 
 		if (entry.prompt) {
@@ -188,7 +187,7 @@ export class LLMService {
 
 	// Convenience method for single message
 	async generateAssistantResponse(userMessage: MessageEntry): Promise<any> {
-		const message = LLMService._messageEntryToLLMInput(userMessage);
+		const message = this.messageEntryToLLMInput(userMessage);
 		return this.generateResponse([message]);
 	}
 
@@ -214,65 +213,50 @@ export class LLMService {
 		}
 
 		const processedMessages: LLMInput[] = [];
-		let systemPrompts: string[] = [];
 
-		for (let i = 0; i < messages.length; i++) {
-			const message = messages[i];
-
+		for (const message of messages) {
 			if (message.role === 'user') {
-				// Check if this user message follows system prompts
-				// Modify user messages following system prompts to be developer role
-				if (systemPrompts.length > 0 && i > 0) {
-					// This is a user response to system prompts - create developer message
-					const lastSystemPrompt = systemPrompts[systemPrompts.length - 1];
-					const developerMessage = `Here is the response to "${lastSystemPrompt}": ${message.prompt}.`;
+				// Regular user message with content array
+				const content: Array<LLMContentItem> = [];
 
-					processedMessages.push({
-						role: 'developer',
-						content: developerMessage,
-					});
+				if (message.prompt) {
+					content.push({ type: 'input_text', text: message.prompt });
+				}
 
-					systemPrompts = []; // Clear system prompts after processing
-				} else {
-					// Regular user message with content array
-					const content: Array<LLMContentItem> = [];
-
-					if (message.prompt) {
-						content.push({ type: 'input_text', text: message.prompt });
-					}
-
-					// Handle single image (legacy)
-					if (message.remoteImage) {
-						const freshSignedUrl = await regenerateSignedUrl(message.remoteImage.url);
-						content.push({
-							type: 'input_image',
-							image_url: freshSignedUrl,
-						});
-					}
-
-					// Handle multiple images
-					if (message.remoteImages && message.remoteImages.length > 0) {
-						for (const img of message.remoteImages) {
-							// Avoid duplication if the same image is in both
-							if (!message.remoteImage || message.remoteImage.url !== img.url) {
-								const freshSignedUrl = await regenerateSignedUrl(img.url);
-								content.push({
-									type: 'input_image',
-									image_url: freshSignedUrl,
-								});
-							}
-						}
-					}
-
-					processedMessages.push({
-						role: 'user',
-						content,
+				// Handle single image (legacy)
+				if (message.remoteImage) {
+					const freshSignedUrl = await regenerateSignedUrl(message.remoteImage.url);
+					content.push({
+						type: 'input_image',
+						image_url: freshSignedUrl,
 					});
 				}
+
+				// Handle multiple images
+				if (message.remoteImages && message.remoteImages.length > 0) {
+					for (const img of message.remoteImages) {
+						// Avoid duplication if the same image is in both
+						if (!message.remoteImage || message.remoteImage.url !== img.url) {
+							const freshSignedUrl = await regenerateSignedUrl(img.url);
+							content.push({
+								type: 'input_image',
+								image_url: freshSignedUrl,
+							});
+						}
+					}
+				}
+
+				processedMessages.push({
+					role: 'user',
+					content,
+				});
 			} else if (message.role === 'system') {
-				// Collect system prompts for later processing
+				// Direct mapping of system messages to developer role for clear context setting
 				if (message.prompt) {
-					systemPrompts.push(message.prompt);
+					processedMessages.push({
+						role: 'developer',
+						content: message.prompt,
+					});
 				}
 			} else if (message.role === 'assistant') {
 				// Include assistant responses for context
@@ -283,15 +267,6 @@ export class LLMService {
 					});
 				}
 			}
-		}
-
-		// Prepend the GoStylens persona if it's not already there
-		const hasPersona = processedMessages.some(m => m.role === 'developer' && m.content?.toString().includes('GoStylens'));
-		if (!hasPersona) {
-			processedMessages.unshift({
-				role: 'developer',
-				content: GO_STYLENS_SYSTEM_PROMPT,
-			});
 		}
 
 		return processedMessages;

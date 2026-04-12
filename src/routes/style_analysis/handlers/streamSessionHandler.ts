@@ -1,9 +1,7 @@
 import { error, RequestHandler } from 'itty-router';
 import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
-import { createLLMService } from 'services/llm.svc';
-import { ModelUseCase } from 'services/model_config.svc';
-import { createClassificationService } from 'services/classification.svc';
+import { createStyleAnalysisService } from 'services/style_analysis.svc';
 import { MessageEntry } from 'utils/types';
 import { ProvisionedAuthRequest } from 'types';
 import { ImageUploadTimeoutError } from 'utils/r2.utils';
@@ -19,7 +17,7 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 		const recentCount = parseInt(url.searchParams.get('recentCount') || '10'); // Default to last 10 messages
 
 		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
-		const llmService = createLLMService({ useCase: ModelUseCase.STYLE_ANALYSIS });
+		const styleAnalysisService = createStyleAnalysisService(styleAnalysisDB);
 
 		// Verify session exists
 		const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);
@@ -61,11 +59,11 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 			remoteImages: m.images ? m.images.map(img => ({ url: img.url, key: img.key })) : undefined,
 		}));
 
-		// Prepare for LLM (Reverse to make it ASC for the AI)
-		const preparedMessages = await llmService.prepareMessagesForLLM(messageEntries.reverse());
+		// The service requires messages in chronological order (oldest first), so we reverse the DESC slice
+		const messagesChronological = messageEntries.reverse();
 
 		// Get streaming response
-		const stream = await llmService.generateStreamingResponse(sessionId, preparedMessages, async (completeText) => {
+		const stream = await styleAnalysisService.generateStyleAdviceStream(sessionId, messagesChronological, async (completeText) => {
 			const messageEntryId = await styleAnalysisDB.addMessage({ role: 'assistant', sessionId, content: completeText });
 
 			// Trigger classification in the background for assistant's verdict
