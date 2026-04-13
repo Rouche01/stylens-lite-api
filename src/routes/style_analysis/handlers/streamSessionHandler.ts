@@ -2,7 +2,6 @@ import { error, RequestHandler } from 'itty-router';
 import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { createStyleAnalysisService } from 'services/style_analysis.svc';
-import { MessageEntry } from 'utils/types';
 import { ProvisionedAuthRequest } from 'types';
 import { ImageUploadTimeoutError } from 'utils/r2.utils';
 import { apiError } from 'utils/error';
@@ -12,64 +11,27 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 		const { sessionId } = request.params as { sessionId: string };
 		const url = new URL(request.url);
 
-		// New parameter to control context strategy
-		const contextMode = url.searchParams.get('contextMode') || 'recent'; // 'all', 'recent', 'last'
-		const recentCount = parseInt(url.searchParams.get('recentCount') || '10'); // Default to last 10 messages
+		const contextMode = (url.searchParams.get('contextMode') || 'recent') as 'all' | 'recent' | 'last';
+		const recentCount = parseInt(url.searchParams.get('recentCount') || '10');
 
 		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
-		const styleAnalysisService = createStyleAnalysisService(styleAnalysisDB);
+		const styleAnalysisService = createStyleAnalysisService(env);
 
-		// Verify session exists
-		const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);
-		if (!session) {
-			return error(404, 'Session not found or access denied');
-		}
-
-		// Get all session messages
-		// TODO: implement pagination if needed
-		const { messages: allMessages } = await styleAnalysisDB.getSessionMessages(sessionId);
-
-		// Filter messages based on context mode
-		let messagesToSend: typeof allMessages;
-
-		switch (contextMode) {
-			case 'all':
-				// Send entire conversation history
-				messagesToSend = allMessages;
-				break;
-
-			case 'last':
-				// Send only the last user message
-				const lastUserMessage = allMessages.find((msg) => msg.role === 'user');
-				messagesToSend = lastUserMessage ? [lastUserMessage] : [];
-				break;
-
-			case 'recent':
-			default:
-				// Send last N messages (newest first in DESC, so take from start)
-				messagesToSend = allMessages.slice(0, recentCount);
-				break;
-		}
-
-		// Convert to MessageEntry format
-		const messageEntries: MessageEntry[] = messagesToSend.map((m) => ({
-			role: m.role as 'user' | 'assistant' | 'system',
-			prompt: m.content || undefined,
-			remoteImage: m.image_url || m.image_key ? { url: m?.image_url || '', key: m.image_key || '' } : undefined,
-			remoteImages: m.images ? m.images.map(img => ({ url: img.url, key: img.key })) : undefined,
-		}));
-
-		// The service requires messages in chronological order (oldest first), so we reverse the DESC slice
-		const messagesChronological = messageEntries.reverse();
+		// Retrieve messages filtered by context mode, in chronological order
+		const messages = await styleAnalysisService.getLLMContextSessionMessages({
+			sessionId,
+			userId: request.user.dbId,
+			contextMode,
+			recentCount
+		});
 
 		// Get streaming response
-		const stream = await styleAnalysisService.generateStyleAdviceStream(sessionId, messagesChronological, async (completeText) => {
-			const messageEntryId = await styleAnalysisDB.addMessage({ role: 'assistant', sessionId, content: completeText });
-
-			// Trigger classification in the background for assistant's verdict
-			// Ignore for now
-			// const classificationService = createClassificationService(env.gostylens_db);
-			// classificationService.tagEntryInBackground(messageEntryId, { role: 'assistant', prompt: completeText }, (request as any).ctx, sessionId);
+		const stream = await styleAnalysisService.generateStyleAdviceStream({
+			sessionId,
+			messages,
+			onComplete: async (completeText) => {
+				await styleAnalysisDB.addMessage({ role: 'assistant', sessionId, content: completeText });
+			}
 		});
 
 		return new Response(stream, {
@@ -84,7 +46,8 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 			return apiError(408, err.message, 'IMAGE_UPLOAD_TIMEOUT');
 		}
 		if (err instanceof Error) {
-			return error(400, err.message);
+			const statusCode = err.message.includes('NOT_FOUND') ? 404 : 400;
+			return error(statusCode, err.message);
 		}
 		return error(500, 'Internal Server Error');
 	}

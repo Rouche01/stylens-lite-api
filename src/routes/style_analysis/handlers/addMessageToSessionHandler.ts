@@ -1,10 +1,9 @@
 import { error, RequestHandler } from 'itty-router';
 import { MessageEntry } from 'utils/types';
 import { isValidMessageEntry } from '../utils';
-import { createStyleAnalysisDB } from 'db';
-import { createClassificationService } from 'services/classification.svc';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
+import { createStyleAnalysisService } from 'services/style_analysis.svc';
 
 type AddMessageToSessionBody = {
 	message: MessageEntry;
@@ -23,32 +22,23 @@ const addMessageToSessionHandler: RequestHandler<ProvisionedAuthRequest> = async
 			return error(400, 'The message must contain either text content or an image');
 		}
 
-		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
+		const ctx = (request as any).ctx as ExecutionContext;
+		const styleAnalysisService = createStyleAnalysisService(env);
 
-		// First, verify session exists and belongs to user
-		const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);
-		if (!session) {
-			return error(404, 'Session not found or access denied');
-		}
-
-		const messageEntryId = await styleAnalysisDB.addMessage({
+		const result = await styleAnalysisService.addMessageToSession({
 			sessionId,
-			role: body.message.role,
-			content: body.message.prompt,
-			remoteImage: body.message.remoteImage,
-			remoteImages: body.message.remoteImages,
+			userId: request.user.dbId,
+			message: body.message,
+			ctx
 		});
 
-		// Trigger classification in the background
-		const classificationService = createClassificationService(env.gostylens_db);
-		classificationService.tagEntryInBackground(messageEntryId, body.message, (request as any).ctx, sessionId);
-
-		return new Response(JSON.stringify({ sessionId: sessionId, messageId: messageEntryId }), {
+		return new Response(JSON.stringify(result), {
 			headers: { 'Content-Type': 'application/json' },
 		});
 	} catch (err) {
 		if (err instanceof Error) {
-			return error(400, err.message);
+			const statusCode = err.message.includes('NOT_FOUND') ? 404 : 400;
+			return error(statusCode, err.message);
 		}
 		return error(500, 'Internal Server Error');
 	}
