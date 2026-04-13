@@ -1,5 +1,5 @@
 import { PaginationParams } from 'types';
-import type { StyleAnalysisHistory, StyleAnalysisEntry, CreateSessionParams, CreateSessionResult, AddMessageParams } from './types';
+import type { StyleAnalysisHistory, StyleAnalysisEntry, CreateSessionParams, CreateSessionResult, AddMessageParams, SessionMemoryItem } from './types';
 
 export class StyleAnalysisDB {
 	constructor(private db: D1Database) { }
@@ -375,7 +375,7 @@ export class StyleAnalysisDB {
 		await this.db.batch(batch);
 	}
 
-	async getSessionMemoryLines(sessionId: string): Promise<string[]> {
+	async getSessionMemory(sessionId: string): Promise<SessionMemoryItem[]> {
 		const result = await this.db.prepare(`
 			SELECT t.tag, t.payload 
 			FROM style_analysis_entry_tags t
@@ -384,24 +384,29 @@ export class StyleAnalysisDB {
 			ORDER BY t.created_at ASC
 		`).bind(sessionId).all<{ tag: string, payload: string }>();
 
-		const lines: string[] = [];
-		if (!result.results) return lines;
+		const items: SessionMemoryItem[] = [];
+		if (!result.results) return items;
 
 		for (const row of result.results) {
 			try {
 				const payloadObj = JSON.parse(row.payload);
-				if (payloadObj && payloadObj.summary) {
-					// Convert 'session_state:occasion' to 'Occasion'
-					const cleanTag = row.tag.replace('session_state:', '');
-					const formattedTag = cleanTag.charAt(0).toUpperCase() + cleanTag.slice(1).replace('_', ' ');
-					lines.push(`- ${formattedTag}: ${payloadObj.summary}`);
-				}
+				if (!payloadObj?.summary) continue;
+
+				// Convert 'session_state:occasion' to 'Occasion'
+				const cleanTag = row.tag.replace('session_state:', '');
+				const formattedTag = cleanTag.charAt(0).toUpperCase() + cleanTag.slice(1).replace('_', ' ');
+
+				items.push({
+					label: formattedTag,
+					summary: payloadObj.summary,
+					images: Array.isArray(payloadObj.images) ? payloadObj.images : [],
+				});
 			} catch (e) {
 				console.error('Failed to parse tag payload', row.payload, e);
 			}
 		}
 
-		return lines;
+		return items;
 	}
 
 	async countActiveSessions(userId: string): Promise<number> {

@@ -1,4 +1,4 @@
-export const OUTFIT_EXTRACTION_SCHEMA = {
+const OUTFIT_EXTRACTION_SCHEMA = {
 	type: 'object',
 	additionalProperties: false,
 	properties: {
@@ -30,4 +30,10 @@ export const OUTFIT_EXTRACTION_SCHEMA = {
 		},
 	},
 	required: ['items'],
+};
+
+export const OUTFIT_EXTRACTION_RESPONSE_FORMAT = {
+	type: 'json_schema' as const,
+	name: 'OutfitExtractionResponse',
+	schema: OUTFIT_EXTRACTION_SCHEMA
 };

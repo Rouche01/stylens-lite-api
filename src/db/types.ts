@@ -25,6 +25,12 @@ export type StyleEntryTag = {
 	payload?: any;
 };
 
+export type SessionMemoryItem = {
+	label: string;
+	summary: string;
+	images: RemoteImage[];
+};
+
 export type StyleAnalysisEntry = {
 	id: string;
 	style_analysis_history_id: string;

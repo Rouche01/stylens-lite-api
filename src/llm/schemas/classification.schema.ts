@@ -1,4 +1,4 @@
-export const CLASSIFICATION_SCHEMA = {
+const CLASSIFICATION_SCHEMA = {
 	type: 'object',
 	additionalProperties: false,
 	properties: {
@@ -17,10 +17,9 @@ export const CLASSIFICATION_SCHEMA = {
 							constraint: { type: ['string', 'null'] },
 							type: { type: ['string', 'null'] },
 							preference: { type: ['string', 'null'] },
-							url: { type: ['string', 'null'] },
 							summary: { type: ['string', 'null'] }
 						},
-						required: ['occasion', 'constraint', 'type', 'preference', 'url', 'summary']
+						required: ['occasion', 'constraint', 'type', 'preference', 'summary']
 					}
 				},
 				required: ['tag', 'payload']
@@ -28,4 +27,10 @@ export const CLASSIFICATION_SCHEMA = {
 		}
 	},
 	required: ['tags']
+};
+
+export const CLASSIFICATION_RESPONSE_FORMAT = {
+	type: 'json_schema' as const,
+	name: 'ClassificationResponse',
+	schema: CLASSIFICATION_SCHEMA
 };

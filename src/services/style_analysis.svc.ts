@@ -41,7 +41,7 @@ export class StyleAnalysisService {
 		const sessionResult = await this.styleAnalysisDB.createSessionWithInitialMessage({ userId, title, messages });
 
 		// Fire off all async background tasks
-		this.triggerSessionBackgroundTasks({
+		this.triggerOnCreateSessionBackgroundTasks({
 			sessionId: sessionResult.sessionId,
 			messageIds: sessionResult.messageIds,
 			title,
@@ -127,8 +127,7 @@ export class StyleAnalysisService {
 			remoteImage: message.remoteImage,
 			remoteImages: message.remoteImages,
 		});
-
-		// Trigger classification in the background
+		// Trigger classification in the background (previous message resolved internally)
 		this.classificationService.tagEntryInBackground(messageEntryId, message, ctx as ExecutionContext, sessionId);
 
 		return { sessionId, messageId: messageEntryId };
@@ -145,13 +144,33 @@ export class StyleAnalysisService {
 		signal?: AbortSignal;
 	}): Promise<ReadableStream> {
 		const { sessionId, messages, onComplete, signal } = params;
-		// 1. Fetch memory lines from DB
-		const memoryLines = await this.styleAnalysisDB.getSessionMemoryLines(sessionId);
+		// 1. Fetch chronologically ordered session memory
+		const memoryItems = await this.styleAnalysisDB.getSessionMemory(sessionId);
 
-		// 2. Construct dynamic context block
+		// 2. Build unified text context block and collect associated images
 		let memoryContext = '';
-		if (memoryLines.length > 0) {
-			memoryContext = `\n\n[SESSION MEMORY]\n${memoryLines.join('\n')}`;
+		const contextImages: MessageEntry[] = [];
+
+		if (memoryItems.length > 0) {
+			const textItems = memoryItems.filter(item => item.images.length === 0);
+			const imageItems = memoryItems.filter(item => item.images.length > 0);
+
+			// Build text-only memory block (occasions, constraints, preferences)
+			if (textItems.length > 0) {
+				const textLines = textItems.map(item => `- ${item.label}: ${item.summary}`);
+				memoryContext = `\n\n[SESSION MEMORY]\n${textLines.join('\n')}`;
+			}
+
+			// Build image context messages using their summaries as prompts
+			for (let i = 0; i < imageItems.length; i++) {
+				const item = imageItems[i];
+				const isLatest = i === imageItems.length - 1;
+				contextImages.push({
+					role: 'user',
+					prompt: isLatest ? `[LATEST] ${item.summary}` : item.summary,
+					remoteImages: item.images
+				});
+			}
 		}
 
 		// 3. Create the developer payload encapsulating the persona and current memory state
@@ -160,9 +179,9 @@ export class StyleAnalysisService {
 			prompt: STYLE_ANALYSIS_SYSTEM_PROMPT + memoryContext
 		};
 
-		// 4. Prepend the system instructions before processing for LLM
-		const messagesChronological = [...messages];
-		messagesChronological.unshift(systemMessage);
+		// 4. Assemble the full message sequence:
+		//    [system] → [session images in chronological order] → [conversation history]
+		const messagesChronological = [systemMessage, ...contextImages, ...messages];
 
 		// 5. Structure LLM Inputs and execute stream
 		const preparedMessages = await this.llmService.prepareMessagesForLLM(messagesChronological);
@@ -173,7 +192,7 @@ export class StyleAnalysisService {
 	/**
 	 * Orchestrates all non-blocking background tasks after session creation.
 	 */
-	private triggerSessionBackgroundTasks(params: {
+	private triggerOnCreateSessionBackgroundTasks(params: {
 		sessionId: string;
 		messageIds: string[];
 		title?: string;
@@ -208,9 +227,6 @@ export class StyleAnalysisService {
 				const generated = await generateTitle(messages, { timeoutMs: 30000 });
 				if (generated) {
 					await this.styleAnalysisDB.updateSessionTitle(sessionId, generated);
-					console.log(`Session ${sessionId} title updated to: ${generated}`);
-				} else {
-					console.log(`Session ${sessionId}: no title generated`);
 				}
 			} catch (err) {
 				console.warn('Async title update failed for session', sessionId, err);
@@ -266,7 +282,8 @@ export class StyleAnalysisService {
 		const { sessionId, messageIds, messages, ctx } = params;
 
 		for (let i = 0; i < messages.length; i++) {
-			this.classificationService.tagEntryInBackground(messageIds[i], messages[i], ctx as ExecutionContext, sessionId);
+			const previousMessage = i > 0 ? messages[i - 1] : null;
+			this.classificationService.tagEntryInBackground(messageIds[i], messages[i], ctx as ExecutionContext, sessionId, previousMessage);
 		}
 	}
 }

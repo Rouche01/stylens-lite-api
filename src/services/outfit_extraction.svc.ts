@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { createLLMService, LLMService } from './llm.svc';
 import { ModelUseCase } from './model_config.svc';
-import { OUTFIT_EXTRACTION_SCHEMA } from '../llm/schemas/outfit_extraction.schema';
+import { OUTFIT_EXTRACTION_RESPONSE_FORMAT } from '../llm/schemas/outfit_extraction.schema';
 import { OUTFIT_EXTRACTION_SYSTEM_PROMPT, OUTFIT_EXTRACTION_USER_PROMPT } from '../llm/prompts/outfit_extraction';
 
 export type OutfitItem = {
@@ -44,7 +44,7 @@ export class OutfitExtractionService {
 				},
 			],
 			signal,
-			{ type: 'json_schema', name: 'OutfitExtraction', schema: OUTFIT_EXTRACTION_SCHEMA },
+			OUTFIT_EXTRACTION_RESPONSE_FORMAT,
 		);
 
 		const resultText = res[0]?.text;
