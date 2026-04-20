@@ -16,6 +16,7 @@ export interface LLMConfig {
 	endpoint: string;
 	apiKey: string;
 	model: string;
+	provider: ModelProvider;
 	bucket?: R2Bucket;
 }
 
@@ -26,34 +27,40 @@ export class ModelConfigService {
 
 		const modelVersion = this._getModelVersionForUseCase(useCase);
 
+		const { provider, config: providerConfig } = this._getProviderConfig();
+
 		// Use specific flash/mini model for fast tasks
 		if (useCase === ModelUseCase.CLASSIFICATION || useCase === ModelUseCase.TITLE_GENERATION) {
 			return {
-				...this._getProviderConfig().config,
+				...providerConfig,
 				model: modelVersion,
+				provider: provider,
 				bucket: env.OUTFIT_PHOTOS_BUCKET
 			};
 		}
 
 		if (useCase === ModelUseCase.OUTFIT_EXTRACTION) {
 			return {
-				...this._getProviderConfig().config,
+				...providerConfig,
 				model: modelVersion,
+				provider: provider,
 				bucket: env.OUTFIT_PHOTOS_BUCKET
 			};
 		}
 
 		if (useCase === ModelUseCase.STYLE_ANALYSIS) {
 			return {
-				...this._getProviderConfig().config,
+				...providerConfig,
 				model: modelVersion,
+				provider: provider,
 				bucket: env.OUTFIT_PHOTOS_BUCKET
 			};
 		}
 
 		return {
-			...this._getProviderConfig().config,
+			...providerConfig,
 			model: modelVersion,
+			provider: provider,
 			bucket: env.OUTFIT_PHOTOS_BUCKET
 		};
 	}
