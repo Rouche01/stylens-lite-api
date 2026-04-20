@@ -64,6 +64,7 @@ export class ModelConfigService {
 			case ModelProvider.OPENAI:
 				return { provider: ModelProvider.OPENAI, config: { endpoint: env.OPENAI_MODEL_ENDPOINT_URL, apiKey: env.OPENAI_MODEL_API_KEY } };
 			case ModelProvider.CLAUDE:
+				return { provider: ModelProvider.CLAUDE, config: { endpoint: env.CLAUDE_ENDPOINT_URL, apiKey: env.CLAUDE_API_KEY } };
 			default:
 				throw new Error(`Unsupported model provider: ${this.provider}`);
 		}
@@ -79,6 +80,21 @@ export class ModelConfigService {
 					return env.OPENAI_OUTFIT_EXTRACTION_MODEL_VERSION;
 				case ModelUseCase.STYLE_ANALYSIS:
 					return env.OPENAI_STYLE_ANALYSIS_MODEL_VERSION;
+				default:
+					throw new Error(`Unsupported model use case: ${useCase}`);
+			}
+		}
+
+		if (this.provider === ModelProvider.CLAUDE) {
+			switch (useCase) {
+				case ModelUseCase.CLASSIFICATION:
+					return env.CLAUDE_FAST_TASK_MODEL_VERSION;
+				case ModelUseCase.TITLE_GENERATION:
+					return env.CLAUDE_FAST_TASK_MODEL_VERSION;
+				case ModelUseCase.OUTFIT_EXTRACTION:
+					return env.CLAUDE_OUTFIT_EXTRACTION_MODEL_VERSION;
+				case ModelUseCase.STYLE_ANALYSIS:
+					return env.CLAUDE_STYLE_ANALYSIS_MODEL_VERSION;
 				default:
 					throw new Error(`Unsupported model use case: ${useCase}`);
 			}
