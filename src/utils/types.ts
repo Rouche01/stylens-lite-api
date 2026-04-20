@@ -23,6 +23,57 @@ export type LLMInput = {
 	content: LLMContentItem[] | string;
 };
 
+// OpenAI-specific types
+export type OpenAIInputRole = 'user' | 'developer' | 'assistant' | 'system';
+
+export type OpenAIContentBlock = {
+	type: 'input_text' | 'input_image';
+	text?: string;
+	image_url?: string;
+}
+
+export type OpenAIMessage = {
+	role: OpenAIInputRole;
+	content: OpenAIContentBlock[] | string;
+}
+
+export type OpenAILLMInput = {
+	messages: OpenAIMessage[];
+}
+
+
+// Claude-specific types
+export type ClaudeInputRole = 'user' | 'assistant';
+
+export type ClaudeTextBlock = {
+	text: string;
+	type: 'text';
+}
+
+export type ClaudeImageBlock = {
+	source: {
+		type: 'url',
+		url: string;
+	}
+	type: 'image'
+}
+
+export type ClaudeContentBlock = ClaudeTextBlock | ClaudeImageBlock;
+
+export type ClaudeMessage = {
+	content: string | ClaudeContentBlock[];
+	role: ClaudeInputRole;
+}
+
+export type ClaudeSystemPrompt = string | ClaudeTextBlock[];
+
+export type ClaudeLLMInput = {
+	messages: ClaudeMessage[];
+	system?: ClaudeSystemPrompt;
+}
+
+export type LLMProviderInput = OpenAILLMInput | ClaudeLLMInput;
+
 export type LLMOutputContentItem = {
 	type: 'output_text';
 	text: string;

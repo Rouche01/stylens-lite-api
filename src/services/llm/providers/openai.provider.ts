@@ -1,4 +1,5 @@
-import { LLMInput, LLMOutputContentItem, LLMResponse } from '../../../utils/types';
+import { LLMContentItem, LLMOutputContentItem, LLMProviderInput, LLMResponse, MessageEntry, OpenAILLMInput, OpenAIMessage } from '../../../utils/types';
+import { regenerateSignedUrl } from '../../../utils/assets.utils';
 import { ILLMProvider } from './base.provider';
 
 export class OpenAIProvider implements ILLMProvider {
@@ -8,8 +9,69 @@ export class OpenAIProvider implements ILLMProvider {
 		private model: string
 	) { }
 
+	async prepareMessagesForLLM(messages: MessageEntry[]): Promise<OpenAILLMInput> {
+		const processedMessages: OpenAIMessage[] = [];
+
+		for (const message of messages) {
+			if (message.role === 'user') {
+				// Regular user message with content array
+				const content: Array<LLMContentItem> = [];
+
+				if (message.prompt) {
+					content.push({ type: 'input_text', text: message.prompt });
+				}
+
+				// Handle single image (legacy)
+				if (message.remoteImage) {
+					const freshSignedUrl = await regenerateSignedUrl(message.remoteImage.url);
+					content.push({
+						type: 'input_image',
+						image_url: freshSignedUrl,
+					});
+				}
+
+				// Handle multiple images
+				if (message.remoteImages && message.remoteImages.length > 0) {
+					for (const img of message.remoteImages) {
+						// Avoid duplication if the same image is in both
+						if (!message.remoteImage || message.remoteImage.url !== img.url) {
+							const freshSignedUrl = await regenerateSignedUrl(img.url);
+							content.push({
+								type: 'input_image',
+								image_url: freshSignedUrl,
+							});
+						}
+					}
+				}
+
+				processedMessages.push({
+					role: 'user',
+					content,
+				});
+			} else if (message.role === 'system') {
+				// Direct mapping of system messages to developer role for clear context setting
+				if (message.prompt) {
+					processedMessages.push({
+						role: 'developer',
+						content: message.prompt,
+					});
+				}
+			} else if (message.role === 'assistant') {
+				// Include assistant responses for context
+				if (message.prompt) {
+					processedMessages.push({
+						role: 'assistant',
+						content: message.prompt,
+					});
+				}
+			}
+		}
+
+		return { messages: processedMessages };
+	}
+
 	async generateResponse(params: {
-		input: LLMInput[];
+		input: LLMProviderInput;
 		format?: { type: 'json_schema' | 'text' | 'json_object'; name?: string; schema?: object };
 		signal?: AbortSignal;
 		model?: string;
@@ -24,7 +86,7 @@ export class OpenAIProvider implements ILLMProvider {
 			signal,
 			body: JSON.stringify({
 				model: model || this.model,
-				input,
+				input: input.messages,
 				...(format ? { text: { format } } : {}),
 			}),
 		});
@@ -43,7 +105,7 @@ export class OpenAIProvider implements ILLMProvider {
 
 	async generateStreamingResponse(params: {
 		sessionId: string;
-		input: LLMInput[];
+		input: LLMProviderInput;
 		onComplete?: (completeStreamText: string) => Promise<void> | void;
 		signal?: AbortSignal;
 		model?: string;
@@ -51,7 +113,7 @@ export class OpenAIProvider implements ILLMProvider {
 		const { sessionId, input, onComplete, signal, model } = params;
 		const requestBody = {
 			model: model || this.model,
-			input,
+			input: input.messages,
 			stream: true,
 		};
 

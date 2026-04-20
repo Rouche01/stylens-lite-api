@@ -89,9 +89,6 @@ export class ClassificationService {
 
 		// 2. LLM Pipeline Fallback: Parse messy natural language
 		try {
-			// Leverage existing logic to wait for images and sign URLs correctly
-			const preparedInput = await this.llmService.prepareMessagesForLLM([message]);
-
 			// Session State Check: Has a primary outfit already been identified?
 			let stateHint = "";
 			if (sessionId) {
@@ -101,11 +98,17 @@ export class ClassificationService {
 					: "\n[STATE: No primary outfit has been identified for this session yet. If this message contains a valid outfit image, you MUST tag it as 'session_state:primary_outfit_image'.]";
 			}
 
+			// 2. Prepare unified message array for the LLM
+			const messagesForLLM: MessageEntry[] = [
+				{ role: 'system', prompt: CLASSIFICATION_SYSTEM_PROMPT + stateHint },
+				message
+			];
+
+			// Leverage provider-specific logic to wait for images, sign URLs, and format for the specific LLM
+			const preparedInput = await this.llmService.prepareMessagesForLLM(messagesForLLM);
+
 			const res = await this.llmService.generateResponse(
-				[
-					{ role: 'developer', content: CLASSIFICATION_SYSTEM_PROMPT + stateHint },
-					...preparedInput
-				],
+				preparedInput,
 				undefined,
 				CLASSIFICATION_RESPONSE_FORMAT
 			);

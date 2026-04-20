@@ -1,4 +1,5 @@
-import { LLMInput, LLMOutputContentItem } from '../../../utils/types';
+import { ClaudeContentBlock, ClaudeLLMInput, ClaudeMessage, ClaudeSystemPrompt, LLMOutputContentItem, MessageEntry } from '../../../utils/types';
+import { regenerateSignedUrl } from '../../../utils/assets.utils';
 import { ILLMProvider } from './base.provider';
 
 export class ClaudeProvider implements ILLMProvider {
@@ -8,22 +9,94 @@ export class ClaudeProvider implements ILLMProvider {
 		private model: string
 	) { }
 
+	async prepareMessagesForLLM(messages: MessageEntry[]): Promise<ClaudeLLMInput> {
+		const processedMessages: ClaudeMessage[] = [];
+		let systemPrompt: ClaudeSystemPrompt | undefined = undefined;
+
+		for (const message of messages) {
+			if (message.role === 'system') {
+				// Claude uses a separate system parameter
+				if (message.prompt) {
+					systemPrompt = message.prompt;
+				}
+				continue;
+			}
+
+			const role = message.role === 'user' ? 'user' : 'assistant';
+			const content: ClaudeContentBlock[] = [];
+
+			if (message.prompt) {
+				content.push({ type: 'text', text: message.prompt });
+			}
+
+			// Handle images
+			const images = [
+				...(message.remoteImage ? [message.remoteImage] : []),
+				...(message.remoteImages || [])
+			];
+
+			// Deduplicate if necessary (though remoteImages should already be clean)
+			const uniqueImages = Array.from(new Map(images.map(img => [img.url, img])).values());
+
+			for (const img of uniqueImages) {
+				const freshSignedUrl = await regenerateSignedUrl(img.url);
+				content.push({
+					type: 'image',
+					source: {
+						type: 'url',
+						url: freshSignedUrl,
+					}
+				});
+			}
+
+			processedMessages.push({
+				role,
+				content: content.length === 1 && content[0].type === 'text' ? (content[0] as any).text : content,
+			});
+		}
+
+		return {
+			messages: processedMessages,
+			system: systemPrompt,
+		};
+	}
+
 	async generateResponse(params: {
-		input: LLMInput[];
+		input: ClaudeLLMInput;
 		format?: { type: 'json_schema' | 'text' | 'json_object'; name?: string; schema?: object };
 		signal?: AbortSignal;
 		model?: string;
 	}): Promise<LLMOutputContentItem[]> {
+		const { input, format, signal, model } = params;
+		const response = await fetch(`${this.endpoint}/messages`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-api-key': this.apiKey,
+				'anthropic-version': '2023-06-01',
+			},
+			body: JSON.stringify({
+				model: model || this.model,
+				messages: input.messages,
+				system: input.system,
+				max_tokens: 1024,
+				...(format?.type === 'json_schema' ? {
+					// Handle JSON schema if supported by the specific Claude endpoint/wrapper
+					// For standard Anthropic, this might need different handling
+				} : {})
+			}),
+			signal,
+		});
 		// Placeholder for Claude implementation
 		// This would involve translating LLMInput to Claude's message structure
 		// and handling the Anthropic API response.
-		console.log('ClaudeProvider.generateResponse called with model:', params.model || this.model);
+		console.log('ClaudeProvider.generateResponse called with model:', model || this.model);
 		throw new Error('ClaudeProvider not fully implemented yet');
 	}
 
 	async generateStreamingResponse(params: {
 		sessionId: string;
-		input: LLMInput[];
+		input: ClaudeLLMInput;
 		onComplete?: (completeStreamText: string) => Promise<void> | void;
 		signal?: AbortSignal;
 		model?: string;

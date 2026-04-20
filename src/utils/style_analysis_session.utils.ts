@@ -44,10 +44,10 @@ export async function generateTitle(
 
 	if (!messagesSummary) return null;
 
-	const titlePrompt = [
+	const titleMessages: MessageEntry[] = [
 		{
-			role: 'user' as LLMMessageRole,
-			content: `Create a concise session title (max ${maxWords} words) for a personal-stylist style analysis based on the messages below. Return only the title in Title Case.\n\n${messagesSummary}\n\nTitle:`,
+			role: 'user',
+			prompt: `Create a concise session title (max ${maxWords} words) for a personal-stylist style analysis based on the messages below. Return only the title in Title Case.\n\n${messagesSummary}\n\nTitle:`,
 		},
 	];
 
@@ -64,8 +64,11 @@ export async function generateTitle(
 			controller.abort();
 		}, timeoutMs);
 
+		// Prepare messages for the specific provider (mapping roles, handling images, etc.)
+		const preparedInput = await llmService.prepareMessagesForLLM(titleMessages);
+
 		// Pass the signal into the LLM call so fetch can be aborted
-		const outputs = await llmService.generateResponse(titlePrompt, signal);
+		const outputs = await llmService.generateResponse(preparedInput, signal);
 
 		// Clear timeout on success
 		if (timeoutId) {

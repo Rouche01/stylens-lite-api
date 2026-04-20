@@ -1,8 +1,8 @@
-import { env } from 'cloudflare:workers';
 import { createLLMService, LLMService } from './llm.svc';
 import { ModelUseCase } from './model_config.svc';
 import { OUTFIT_EXTRACTION_RESPONSE_FORMAT } from '../llm/schemas/outfit_extraction.schema';
 import { OUTFIT_EXTRACTION_SYSTEM_PROMPT, OUTFIT_EXTRACTION_USER_PROMPT } from '../llm/prompts/outfit_extraction';
+import { MessageEntry } from 'utils/types';
 
 export type OutfitItem = {
 	category: 'outerwear' | 'top' | 'bottom' | 'dress' | 'shoes' | 'accessories';
@@ -26,23 +26,22 @@ export class OutfitExtractionService {
 	constructor(private llmService: LLMService) { }
 
 	async extractOutfitItems({ imageUrl, signal }: ExtractOutfitItemParams): Promise<OutfitExtractionResult | null> {
+		const messages: MessageEntry[] = [
+			{
+				role: 'system',
+				prompt: OUTFIT_EXTRACTION_SYSTEM_PROMPT,
+			},
+			{
+				role: 'user',
+				prompt: OUTFIT_EXTRACTION_USER_PROMPT,
+				remoteImage: { url: imageUrl, key: '' },
+			},
+		];
+
+		const preparedInput = await this.llmService.prepareMessagesForLLM(messages);
+
 		const res = await this.llmService.generateResponse(
-			[
-				{
-					role: 'system',
-					content: OUTFIT_EXTRACTION_SYSTEM_PROMPT,
-				},
-				{
-					role: 'user',
-					content: [
-						{ type: 'input_text', text: OUTFIT_EXTRACTION_USER_PROMPT },
-						{
-							type: 'input_image',
-							image_url: imageUrl,
-						},
-					],
-				},
-			],
+			preparedInput,
 			signal,
 			OUTFIT_EXTRACTION_RESPONSE_FORMAT,
 		);

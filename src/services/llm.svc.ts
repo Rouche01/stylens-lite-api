@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMResponse, MessageEntry } from '../utils/types';
+import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMProviderInput, LLMResponse, MessageEntry } from '../utils/types';
 import { regenerateSignedUrl } from '../utils/assets.utils';
 import { waitForImages } from '../utils/r2.utils';
 import { ModelUseCase, ModelConfigService, ModelProvider } from './model_config.svc';
@@ -13,7 +13,7 @@ export class LLMService {
 		private bucket?: R2Bucket
 	) { }
 	async generateResponse(
-		input: LLMInput[],
+		input: LLMProviderInput,
 		signal?: AbortSignal,
 		format?: { type: 'json_schema' | 'text' | 'json_object'; name?: string; schema?: object },
 		model?: string,
@@ -23,7 +23,7 @@ export class LLMService {
 
 	async generateStreamingResponse(
 		sessionId: string,
-		input: LLMInput[],
+		input: LLMProviderInput,
 		onComplete?: (completeStreamText: string) => Promise<void> | void,
 		signal?: AbortSignal,
 		model?: string,
@@ -59,13 +59,14 @@ export class LLMService {
 
 	// Convenience method for single message
 	async generateAssistantResponse(userMessage: MessageEntry): Promise<any> {
-		const message = this.messageEntryToLLMInput(userMessage);
-		return this.generateResponse([message]);
+		const preparedInput = await this.prepareMessagesForLLM([userMessage]);
+		return this.generateResponse(preparedInput);
 	}
 
 	// Process initial style analysis session messages for LLM input
-	async prepareMessagesForLLM(messages: MessageEntry[]): Promise<LLMInput[]> {
-		// 1. Collect all unique image keys for polling
+	// Process initial style analysis session messages for LLM input
+	async prepareMessagesForLLM(messages: MessageEntry[]): Promise<LLMProviderInput> {
+		// 1. Collect all unique image keys for polling (common across providers)
 		if (this.bucket) {
 			const uniqueKeys = new Set<string>();
 			for (const msg of messages) {
@@ -84,64 +85,8 @@ export class LLMService {
 			}
 		}
 
-		const processedMessages: LLMInput[] = [];
-
-		for (const message of messages) {
-			if (message.role === 'user') {
-				// Regular user message with content array
-				const content: Array<LLMContentItem> = [];
-
-				if (message.prompt) {
-					content.push({ type: 'input_text', text: message.prompt });
-				}
-
-				// Handle single image (legacy)
-				if (message.remoteImage) {
-					const freshSignedUrl = await regenerateSignedUrl(message.remoteImage.url);
-					content.push({
-						type: 'input_image',
-						image_url: freshSignedUrl,
-					});
-				}
-
-				// Handle multiple images
-				if (message.remoteImages && message.remoteImages.length > 0) {
-					for (const img of message.remoteImages) {
-						// Avoid duplication if the same image is in both
-						if (!message.remoteImage || message.remoteImage.url !== img.url) {
-							const freshSignedUrl = await regenerateSignedUrl(img.url);
-							content.push({
-								type: 'input_image',
-								image_url: freshSignedUrl,
-							});
-						}
-					}
-				}
-
-				processedMessages.push({
-					role: 'user',
-					content,
-				});
-			} else if (message.role === 'system') {
-				// Direct mapping of system messages to developer role for clear context setting
-				if (message.prompt) {
-					processedMessages.push({
-						role: 'developer',
-						content: message.prompt,
-					});
-				}
-			} else if (message.role === 'assistant') {
-				// Include assistant responses for context
-				if (message.prompt) {
-					processedMessages.push({
-						role: 'assistant',
-						content: message.prompt,
-					});
-				}
-			}
-		}
-
-		return processedMessages;
+		// 2. Delegate provider-specific transformation
+		return this.provider.prepareMessagesForLLM(messages);
 	}
 }
 
