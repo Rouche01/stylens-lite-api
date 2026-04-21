@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMProviderInput, LLMResponse, MessageEntry } from '../utils/types';
+import { LLMContentItem, LLMInput, LLMProviderInput, LLMProviderOutputContent, MessageEntry } from '../utils/types';
 import { waitForImages } from '../utils/r2.utils';
 import { ModelUseCase, ModelConfigService, ModelProvider } from './model_config.svc';
 import { ILLMProvider } from './llm/providers/base.provider';
@@ -16,7 +16,7 @@ export class LLMService {
 		signal?: AbortSignal,
 		format?: { type: 'json_schema' | 'text' | 'json_object'; name?: string; schema?: object },
 		model?: string,
-	): Promise<LLMOutputContentItem[]> {
+	): Promise<LLMProviderOutputContent[]> {
 		return this.provider.generateResponse({ input, format, signal, model });
 	}
 

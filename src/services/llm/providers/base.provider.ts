@@ -1,4 +1,4 @@
-import { LLMOutputContentItem, LLMProviderInput, MessageEntry } from '../../../utils/types';
+import { LLMProviderInput, LLMProviderOutputContent, MessageEntry } from '../../../utils/types';
 
 export interface ILLMProvider {
 	prepareMessagesForLLM(messages: MessageEntry[]): Promise<LLMProviderInput>;
@@ -8,7 +8,7 @@ export interface ILLMProvider {
 		format?: { type: 'json_schema' | 'text' | 'json_object'; name?: string; schema?: object };
 		signal?: AbortSignal;
 		model?: string;
-	}): Promise<LLMOutputContentItem[]>;
+	}): Promise<LLMProviderOutputContent[]>;
 
 	generateStreamingResponse(params: {
 		sessionId: string;

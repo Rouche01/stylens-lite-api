@@ -1,4 +1,4 @@
-import { ClaudeContentBlock, ClaudeLLMInput, ClaudeMessage, ClaudeSystemPrompt, LLMOutputContentItem, MessageEntry } from '../../../utils/types';
+import { ClaudeContentBlock, ClaudeLLMInput, ClaudeLLMResponse, ClaudeMessage, ClaudeSystemPrompt, LLMProviderOutputContent, MessageEntry } from '../../../utils/types';
 import { regenerateSignedUrl } from '../../../utils/assets.utils';
 import { ILLMProvider } from './base.provider';
 import { handleSSEStream } from '../../../utils/llm_stream.utils';
@@ -75,7 +75,7 @@ export class ClaudeProvider implements ILLMProvider {
 		format?: { type: 'json_schema' | 'text' | 'json_object'; name?: string; schema?: object };
 		signal?: AbortSignal;
 		model?: string;
-	}): Promise<LLMOutputContentItem[]> {
+	}): Promise<LLMProviderOutputContent[]> {
 		const { input, format, signal, model } = params;
 		const response = await fetch(`${this.endpoint}/messages`, {
 			method: 'POST',
@@ -87,14 +87,21 @@ export class ClaudeProvider implements ILLMProvider {
 				max_tokens: 1024,
 				...(format?.type === 'json_schema' ? {
 					// Handle JSON schema if supported by the specific Claude endpoint/wrapper
-					// For standard Anthropic, this might need different handling
 				} : {})
 			}),
 			signal,
 		});
+
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}));
+			const errorMessage = (errorData as any)?.error?.message ?? `LLM API error: ${response.status} ${response.statusText}`;
+			throw new Error(errorMessage);
+		}
+
 		console.log(response, 'response from claude');
-		console.log('ClaudeProvider.generateResponse called with model:', model || this.model);
-		throw new Error('ClaudeProvider not fully implemented yet');
+
+		const data: ClaudeLLMResponse = await response.json();
+		return data.content || [];
 	}
 
 	async generateStreamingResponse(params: {
@@ -120,7 +127,7 @@ export class ClaudeProvider implements ILLMProvider {
 			signal
 		});
 
-		console.log('response from claude');
+		console.log('streaming response from claude');
 
 		if (!response.ok) {
 			const errorText = await response.text().catch(() => 'Unknown error');

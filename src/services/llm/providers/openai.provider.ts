@@ -1,4 +1,4 @@
-import { LLMOutputContentItem, LLMProviderInput, LLMResponse, MessageEntry, OpenAIContentBlock, OpenAILLMInput, OpenAIMessage } from '../../../utils/types';
+import { LLMProviderInput, LLMProviderOutputContent, MessageEntry, OpenAIContentBlock, OpenAILLMInput, OpenAILLMResponse, OpenAIMessage } from '../../../utils/types';
 import { regenerateSignedUrl } from '../../../utils/assets.utils';
 import { ILLMProvider } from './base.provider';
 import { handleSSEStream } from '../../../utils/llm_stream.utils';
@@ -75,7 +75,7 @@ export class OpenAIProvider implements ILLMProvider {
 		format?: { type: 'json_schema' | 'text' | 'json_object'; name?: string; schema?: object };
 		signal?: AbortSignal;
 		model?: string;
-	}): Promise<LLMOutputContentItem[]> {
+	}): Promise<LLMProviderOutputContent[]> {
 		const { input, format, signal, model } = params;
 		const response = await fetch(`${this.endpoint}/responses`, {
 			method: 'POST',
@@ -97,7 +97,7 @@ export class OpenAIProvider implements ILLMProvider {
 			throw new Error(errorMessage);
 		}
 
-		const data: LLMResponse = await response.json();
+		const data: OpenAILLMResponse = await response.json();
 
 		// Get all outputs with message type, extract their content arrays, and flatten
 		return data.output?.filter((item) => item.type === 'message')?.flatMap((messageOutput) => messageOutput.content || []) || [];
