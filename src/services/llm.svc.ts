@@ -20,6 +20,15 @@ export class LLMService {
 		return this.provider.generateResponse({ input, format, signal, model });
 	}
 
+	/**
+	 * Normalizes provider-specific output blocks into a single text string.
+	 * Handles both 'text' (Claude) and 'output_text' (OpenAI) block types.
+	 */
+	static extractText(content: LLMProviderOutputContent[]): string | null {
+		const textBlock = content.find((item) => item.type === 'text' || item.type === 'output_text');
+		return textBlock?.text ?? null;
+	}
+
 	async generateStreamingResponse(
 		sessionId: string,
 		input: LLMProviderInput,

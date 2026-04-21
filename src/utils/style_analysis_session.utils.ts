@@ -1,6 +1,6 @@
-import { createLLMService } from '../services/llm.svc';
-import { ModelUseCase } from '../services/model_config.svc';
-import type { LLMMessageRole, MessageEntry } from './types';
+import { createLLMService, LLMService } from '../services/llm.svc';
+import { ModelProvider, ModelUseCase } from '../services/model_config.svc';
+import type { MessageEntry } from './types';
 
 /**
  * Sanitize LLM title output: take first line, collapse whitespace, clip length.
@@ -51,7 +51,7 @@ export async function generateTitle(
 		},
 	];
 
-	const llmService = createLLMService({ useCase: ModelUseCase.TITLE_GENERATION });
+	const llmService = createLLMService({ useCase: ModelUseCase.TITLE_GENERATION, provider: ModelProvider.CLAUDE });
 
 	// Use AbortController to cancel the underlying fetch when timeout elapses
 	const controller = new AbortController();
@@ -78,7 +78,7 @@ export async function generateTitle(
 
 		if (!outputs) return null;
 
-		const candidate = Array.isArray(outputs) ? (outputs.find((o: any) => o.type === 'output_text')?.text ?? null) : null;
+		const candidate = LLMService.extractText(outputs);
 		const cleaned = sanitizeTitle(candidate ?? undefined, maxLength);
 		return cleaned;
 	} catch (err: any) {

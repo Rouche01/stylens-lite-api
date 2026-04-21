@@ -98,7 +98,6 @@ export class ClaudeProvider implements ILLMProvider {
 			throw new Error(errorMessage);
 		}
 
-		console.log(response, 'response from claude');
 
 		const data: ClaudeLLMResponse = await response.json();
 		return data.content || [];
@@ -126,8 +125,6 @@ export class ClaudeProvider implements ILLMProvider {
 			body: JSON.stringify(requestBody),
 			signal
 		});
-
-		console.log('streaming response from claude');
 
 		if (!response.ok) {
 			const errorText = await response.text().catch(() => 'Unknown error');
