@@ -1,6 +1,5 @@
 import { env } from 'cloudflare:workers';
 import { LLMContentItem, LLMInput, LLMOutputContentItem, LLMProviderInput, LLMResponse, MessageEntry } from '../utils/types';
-import { regenerateSignedUrl } from '../utils/assets.utils';
 import { waitForImages } from '../utils/r2.utils';
 import { ModelUseCase, ModelConfigService, ModelProvider } from './model_config.svc';
 import { ILLMProvider } from './llm/providers/base.provider';
@@ -63,8 +62,6 @@ export class LLMService {
 		return this.generateResponse(preparedInput);
 	}
 
-	// Process initial style analysis session messages for LLM input
-	// Process initial style analysis session messages for LLM input
 	async prepareMessagesForLLM(messages: MessageEntry[]): Promise<LLMProviderInput> {
 		// 1. Collect all unique image keys for polling (common across providers)
 		if (this.bucket) {

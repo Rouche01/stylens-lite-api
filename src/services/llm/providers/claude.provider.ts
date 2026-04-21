@@ -1,6 +1,7 @@
 import { ClaudeContentBlock, ClaudeLLMInput, ClaudeMessage, ClaudeSystemPrompt, LLMOutputContentItem, MessageEntry } from '../../../utils/types';
 import { regenerateSignedUrl } from '../../../utils/assets.utils';
 import { ILLMProvider } from './base.provider';
+import { handleSSEStream } from '../../../utils/llm_stream.utils';
 
 export class ClaudeProvider implements ILLMProvider {
 	constructor(
@@ -61,6 +62,14 @@ export class ClaudeProvider implements ILLMProvider {
 		};
 	}
 
+	private getBaseHeaders() {
+		return {
+			'Content-Type': 'application/json',
+			'x-api-key': this.apiKey,
+			'anthropic-version': '2023-06-01',
+		};
+	}
+
 	async generateResponse(params: {
 		input: ClaudeLLMInput;
 		format?: { type: 'json_schema' | 'text' | 'json_object'; name?: string; schema?: object };
@@ -70,11 +79,7 @@ export class ClaudeProvider implements ILLMProvider {
 		const { input, format, signal, model } = params;
 		const response = await fetch(`${this.endpoint}/messages`, {
 			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'x-api-key': this.apiKey,
-				'anthropic-version': '2023-06-01',
-			},
+			headers: this.getBaseHeaders(),
 			body: JSON.stringify({
 				model: model || this.model,
 				messages: input.messages,
@@ -87,9 +92,7 @@ export class ClaudeProvider implements ILLMProvider {
 			}),
 			signal,
 		});
-		// Placeholder for Claude implementation
-		// This would involve translating LLMInput to Claude's message structure
-		// and handling the Anthropic API response.
+		console.log(response, 'response from claude');
 		console.log('ClaudeProvider.generateResponse called with model:', model || this.model);
 		throw new Error('ClaudeProvider not fully implemented yet');
 	}
@@ -101,8 +104,38 @@ export class ClaudeProvider implements ILLMProvider {
 		signal?: AbortSignal;
 		model?: string;
 	}): Promise<ReadableStream> {
-		// Placeholder for Claude streaming implementation
-		console.log('ClaudeProvider.generateStreamingResponse called with model:', params.model || this.model);
-		throw new Error('ClaudeProvider streaming not fully implemented yet');
+		const { sessionId, input, onComplete, signal, model } = params;
+		const requestBody = {
+			max_tokens: 1024,
+			model: model || this.model,
+			messages: input.messages,
+			system: input.system,
+			stream: true,
+		};
+
+		const response = await fetch(`${this.endpoint}/messages`, {
+			method: 'POST',
+			headers: this.getBaseHeaders(),
+			body: JSON.stringify(requestBody),
+			signal
+		});
+
+		console.log('response from claude');
+
+		if (!response.ok) {
+			const errorText = await response.text().catch(() => 'Unknown error');
+			throw new Error(errorText || `LLM API error: ${response.status} ${response.statusText}`);
+		}
+
+		return handleSSEStream({
+			response,
+			sessionId,
+			onComplete,
+			signal,
+			parser: (parsed) => ({
+				delta: (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') ? parsed.delta.text : undefined,
+				isDone: parsed.type === 'message_stop'
+			})
+		});
 	}
 }

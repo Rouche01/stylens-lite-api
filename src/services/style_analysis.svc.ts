@@ -4,7 +4,7 @@ import { SubscriptionsDB } from '../db/subscriptions';
 import { ClassificationService, createClassificationService } from './classification.svc';
 import { STYLE_ANALYSIS_SYSTEM_PROMPT } from '../llm/prompts/style_analysis';
 import { MessageEntry } from '../utils/types';
-import { ModelUseCase } from './model_config.svc';
+import { ModelProvider, ModelUseCase } from './model_config.svc';
 import { generateTitle } from '../utils/style_analysis_session.utils';
 import { SubscriptionTier } from '../types';
 import { createStyleAnalysisDB, createSubscriptionsDB } from '../db';
@@ -292,7 +292,7 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 	// Fallback to imported env if not provided
 	const applicationEnv = providedEnv || env;
 
-	const llmService = createLLMService({ useCase: ModelUseCase.STYLE_ANALYSIS });
+	const llmService = createLLMService({ useCase: ModelUseCase.STYLE_ANALYSIS, provider: ModelProvider.CLAUDE });
 	const styleAnalysisDB = createStyleAnalysisDB(applicationEnv.gostylens_db);
 	const subscriptionsDB = createSubscriptionsDB(applicationEnv.gostylens_db);
 	const classificationService = createClassificationService(applicationEnv.gostylens_db);

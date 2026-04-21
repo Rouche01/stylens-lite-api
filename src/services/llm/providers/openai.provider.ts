@@ -1,6 +1,7 @@
-import { LLMContentItem, LLMOutputContentItem, LLMProviderInput, LLMResponse, MessageEntry, OpenAILLMInput, OpenAIMessage } from '../../../utils/types';
+import { LLMOutputContentItem, LLMProviderInput, LLMResponse, MessageEntry, OpenAIContentBlock, OpenAILLMInput, OpenAIMessage } from '../../../utils/types';
 import { regenerateSignedUrl } from '../../../utils/assets.utils';
 import { ILLMProvider } from './base.provider';
+import { handleSSEStream } from '../../../utils/llm_stream.utils';
 
 export class OpenAIProvider implements ILLMProvider {
 	constructor(
@@ -14,8 +15,7 @@ export class OpenAIProvider implements ILLMProvider {
 
 		for (const message of messages) {
 			if (message.role === 'user') {
-				// Regular user message with content array
-				const content: Array<LLMContentItem> = [];
+				const content: Array<OpenAIContentBlock> = [];
 
 				if (message.prompt) {
 					content.push({ type: 'input_text', text: message.prompt });
@@ -132,73 +132,15 @@ export class OpenAIProvider implements ILLMProvider {
 			throw new Error(errorText || `LLM API error: ${response.status} ${response.statusText}`);
 		}
 
-		if (!response.body) {
-			throw new Error('Response body is null');
-		}
-
-		const { readable, writable } = new TransformStream();
-		const writer = writable.getWriter();
-		const reader = response.body.getReader();
-		const decoder = new TextDecoder();
-
-		const onAbort = () => {
-			reader.cancel().catch(() => { });
-			writer.abort(new Error('Aborted'));
-		};
-
-		if (signal) {
-			if (signal.aborted) {
-				onAbort();
-				writer.close().catch(() => { });
-				return readable;
-			}
-			signal.addEventListener('abort', onAbort);
-		}
-
-		(async () => {
-			try {
-				let buffer = '';
-				let currentChunk = '';
-
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-
-					buffer += decoder.decode(value, { stream: true });
-					const lines = buffer.split('\n');
-					buffer = lines.pop() || '';
-
-					for (const line of lines) {
-						if (line.startsWith('data: ')) {
-							const dataStr = line.slice(6);
-							if (dataStr === '[DONE]') continue;
-
-							try {
-								const parsed = JSON.parse(dataStr);
-
-								if (parsed.type === 'response.output_text.delta' && parsed.delta) {
-									const sessionPrefix = `|||sessionId_${sessionId}|||`;
-									currentChunk += parsed.delta;
-									const streamedDelta = sessionPrefix + parsed.delta;
-									await writer.write(new TextEncoder().encode(streamedDelta));
-								}
-
-								if (parsed.type === 'response.output_text.done') {
-									await onComplete?.(currentChunk);
-									currentChunk = '';
-								}
-							} catch (e) {
-								console.error('Error parsing SSE data:', e);
-							}
-						}
-					}
-				}
-				await writer.close();
-			} catch (error) {
-				await writer.abort(error);
-			}
-		})();
-
-		return readable;
+		return handleSSEStream({
+			response,
+			sessionId,
+			onComplete,
+			signal,
+			parser: (parsed) => ({
+				delta: (parsed.type === 'response.output_text.delta' && parsed.delta) ? parsed.delta : undefined,
+				isDone: parsed.type === 'response.output_text.done'
+			})
+		});
 	}
 }
