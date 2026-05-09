@@ -141,6 +141,7 @@ jobs:
       # Apply any new D1 migrations to production
       - name: Run D1 Migrations (Production)
         run: |
+          echo "Account from env: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
           for file in $(ls db/migrations/*.sql | sort -V); do
             MIGRATION_NAME=$(basename "$file")
             echo "🔍 Checking migration: $MIGRATION_NAME"
