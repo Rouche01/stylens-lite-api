@@ -4,7 +4,7 @@ import { error, RequestHandler } from 'itty-router';
 
 const getUsersHandler: RequestHandler = async () => {
     try {
-        const usersDB = createUsersDB(env.gostylens_db);
+        const usersDB = createUsersDB(env.GOSTYLENS_DB);
 
         const users = await usersDB.getUsers();
 

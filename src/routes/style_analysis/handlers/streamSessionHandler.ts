@@ -14,7 +14,7 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 		const contextMode = (url.searchParams.get('contextMode') || 'recent') as 'all' | 'recent' | 'last';
 		const recentCount = parseInt(url.searchParams.get('recentCount') || '10');
 
-		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
+		const styleAnalysisDB = createStyleAnalysisDB(env.GOSTYLENS_DB);
 		const styleAnalysisService = createStyleAnalysisService(env);
 
 		// Retrieve messages filtered by context mode, in chronological order

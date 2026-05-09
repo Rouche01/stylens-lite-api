@@ -16,7 +16,7 @@ const deleteUserHandler: RequestHandler<ProvisionedAuthRequest> = async (request
 			return error(403, 'Forbidden: You can only perform this action on your own user data');
 		}
 
-		const usersDB = createUsersDB(env.gostylens_db);
+		const usersDB = createUsersDB(env.GOSTYLENS_DB);
 		const user = await usersDB.getUserById(userId);
 
 		if (!user) {

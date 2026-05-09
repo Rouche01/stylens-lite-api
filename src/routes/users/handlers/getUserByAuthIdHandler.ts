@@ -16,7 +16,7 @@ const getUserByAuthIdHandler: RequestHandler<AuthRequest> = async (request) => {
             return apiError(403, 'Forbidden: You can only access your own user data');
         }
 
-        const usersDB = createUsersDB(env.gostylens_db);
+        const usersDB = createUsersDB(env.GOSTYLENS_DB);
 
         const user = await usersDB.getUserByAuthId(authId);
         if (!user) {

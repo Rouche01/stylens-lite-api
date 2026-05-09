@@ -19,8 +19,8 @@ const toggleSessionFavouriteHandler: RequestHandler<ProvisionedAuthRequest> = as
             return error(400, 'isFavourite boolean is required in the body');
         }
 
-        const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
-        const favouritesDB = createFavouritesDB(env.gostylens_db);
+        const styleAnalysisDB = createStyleAnalysisDB(env.GOSTYLENS_DB);
+        const favouritesDB = createFavouritesDB(env.GOSTYLENS_DB);
 
         // First ensure the session exists and belongs to the user
         const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);

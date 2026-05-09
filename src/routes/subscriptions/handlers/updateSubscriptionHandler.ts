@@ -25,7 +25,7 @@ const updateSubscriptionHandler: RequestHandler<ProvisionedAuthRequest> = async 
             return error(403, 'Forbidden: You can only update your own subscription');
         }
 
-        const subscriptionsDB = createSubscriptionsDB(env.gostylens_db);
+        const subscriptionsDB = createSubscriptionsDB(env.GOSTYLENS_DB);
         const subscription = await subscriptionsDB.getSubscriptionByUserId(userId);
 
         if (!subscription) {

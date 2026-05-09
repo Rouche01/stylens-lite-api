@@ -23,7 +23,7 @@ const listSessionsHandler: RequestHandler<ProvisionedAuthRequest> = async (reque
 			return error(400, 'page and pageSize must be positive integers');
 		}
 
-		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
+		const styleAnalysisDB = createStyleAnalysisDB(env.GOSTYLENS_DB);
 
 		// Get all sessions for the user, potentially filtered by favourites
 		const { sessions, total } = await styleAnalysisDB.getUserSessions(request.user.dbId, { page, pageSize, isFavourite });

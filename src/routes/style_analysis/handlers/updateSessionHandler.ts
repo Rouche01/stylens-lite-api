@@ -19,7 +19,7 @@ const updateSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
             return error(400, 'At least one field to update is required');
         }
 
-        const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
+        const styleAnalysisDB = createStyleAnalysisDB(env.GOSTYLENS_DB);
 
         // Ensure the session exists and belongs to the user
         const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);

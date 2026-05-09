@@ -293,9 +293,9 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 	const applicationEnv = providedEnv || env;
 
 	const llmService = createLLMService({ useCase: ModelUseCase.STYLE_ANALYSIS, provider: ModelProvider.CLAUDE });
-	const styleAnalysisDB = createStyleAnalysisDB(applicationEnv.gostylens_db);
-	const subscriptionsDB = createSubscriptionsDB(applicationEnv.gostylens_db);
-	const classificationService = createClassificationService(applicationEnv.gostylens_db);
+	const styleAnalysisDB = createStyleAnalysisDB(applicationEnv.GOSTYLENS_DB);
+	const subscriptionsDB = createSubscriptionsDB(applicationEnv.GOSTYLENS_DB);
+	const classificationService = createClassificationService(applicationEnv.GOSTYLENS_DB);
 
 	return new StyleAnalysisService(
 		llmService,

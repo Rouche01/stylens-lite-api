@@ -17,7 +17,7 @@ const getSessionMessagesHandler: RequestHandler<ProvisionedAuthRequest> = async 
 			return error(400, 'page and pageSize must be positive integers');
 		}
 
-		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
+		const styleAnalysisDB = createStyleAnalysisDB(env.GOSTYLENS_DB);
 
 		// First, verify session exists and belongs to user
 		const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);

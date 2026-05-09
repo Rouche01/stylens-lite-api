@@ -5,7 +5,7 @@ import { ProvisionedAuthRequest } from 'types';
 
 const listFavouritesHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
     try {
-        const favouritesDB = createFavouritesDB(env.gostylens_db);
+        const favouritesDB = createFavouritesDB(env.GOSTYLENS_DB);
 
         const favourites = await favouritesDB.getHistoryFavourites(request.user.dbId);
 

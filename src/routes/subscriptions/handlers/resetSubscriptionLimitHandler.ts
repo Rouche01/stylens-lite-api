@@ -15,7 +15,7 @@ const resetSubscriptionLimitHandler: RequestHandler<AuthRequest> = async (reques
             return error(400, 'userId is required');
         }
 
-        const subscriptionsDB = createSubscriptionsDB(env.gostylens_db);
+        const subscriptionsDB = createSubscriptionsDB(env.GOSTYLENS_DB);
 
         // First, check if the subscription even exists
         const subscription = await subscriptionsDB.getSubscriptionByUserId(userId);
@@ -24,7 +24,7 @@ const resetSubscriptionLimitHandler: RequestHandler<AuthRequest> = async (reques
         }
 
         // Hard delete only the most recent session for this user
-        await env.gostylens_db.prepare(
+        await env.GOSTYLENS_DB.prepare(
             `DELETE FROM style_analysis_histories WHERE id = (
                 SELECT id FROM style_analysis_histories WHERE user_id = ? ORDER BY created_at DESC LIMIT 1
             )`

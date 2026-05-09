@@ -39,14 +39,14 @@ const revenueCatWebhookHandler = async (request: Request) => {
             return error(400, 'app_user_id is missing from event');
         }
 
-        const userDB = createUsersDB(env.gostylens_db);
+        const userDB = createUsersDB(env.GOSTYLENS_DB);
         const user = await userDB.getUserById(userId);
 
         if (!user) {
             return error(404, 'User not found');
         }
 
-        const subscriptionsDB = createSubscriptionsDB(env.gostylens_db);
+        const subscriptionsDB = createSubscriptionsDB(env.GOSTYLENS_DB);
         const existingSubscription = await subscriptionsDB.getSubscriptionByUserId(userId);
 
         // Map entitlements to our internal tiers

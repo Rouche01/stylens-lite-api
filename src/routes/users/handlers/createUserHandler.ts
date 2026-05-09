@@ -23,7 +23,7 @@ const createUserHandler: RequestHandler<AuthRequest> = async (request) => {
 			return error(400, `gender must be one of: ${Object.values(Gender).join(', ')}`);
 		}
 
-		const usersDB = createUsersDB(env.gostylens_db);
+		const usersDB = createUsersDB(env.GOSTYLENS_DB);
 
 		const existingUser = await usersDB.getUserByAuthId(authId);
 		if (existingUser) {

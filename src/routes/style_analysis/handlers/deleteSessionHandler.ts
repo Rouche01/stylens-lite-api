@@ -7,7 +7,7 @@ const deleteSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 	try {
 		const { sessionId } = request.params as { sessionId: string };
 
-		const styleAnalysisDB = createStyleAnalysisDB(env.gostylens_db);
+		const styleAnalysisDB = createStyleAnalysisDB(env.GOSTYLENS_DB);
 
 		// First, verify session exists and belongs to user
 		const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);
