@@ -31,6 +31,9 @@ jobs:
               -e "s/__DB_ID__/00000000-0000-0000-0000-000000000000/g" \
               -e "s/__R2_BUCKET__/test-bucket/g" \
               wrangler.example.jsonc > wrangler.jsonc
+              
+      - name: Hydrate .dev.vars (Dummy for tests)
+        run: cp .dev.vars.example .dev.vars
 
       - run: npm test -- --run  # run vitest in non-watch mode
 
@@ -54,6 +57,9 @@ jobs:
               -e "s/__DB_ID__/00000000-0000-0000-0000-000000000000/g" \
               -e "s/__R2_BUCKET__/test-bucket/g" \
               wrangler.example.jsonc > wrangler.jsonc
+
+      - name: Hydrate .dev.vars (Dummy for size check)
+        run: cp .dev.vars.example .dev.vars
 
       - run: npm run check:size
 
