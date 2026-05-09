@@ -4,6 +4,7 @@ import deleteUserHandler from './handlers/deleteUserHandler';
 import updateUserHandler from './handlers/updateUserHandler';
 import getUserByAuthIdHandler from './handlers/getUserByAuthIdHandler';
 import getUsersHandler from './handlers/getUsersHandler';
+import updateUserLimitHandler from './handlers/updateUserLimitHandler';
 import { adminApiKeyMiddleware } from 'middlewares/adminApiKeyMiddleware';
 import { authMiddleware } from 'middlewares/authMiddleware';
 import { dbIdMiddleware } from 'middlewares/dbIdMiddleware';
@@ -12,6 +13,7 @@ const router = Router({ base: '/users' });
 
 router.post('/', authMiddleware, createUserHandler);
 router.get('/', adminApiKeyMiddleware, getUsersHandler);
+router.post('/limits', adminApiKeyMiddleware, updateUserLimitHandler);
 // We don't need dbIdMiddleware, as long as user is in authSvc
 // we can allow them access this route
 router.get('/auth/:authId', authMiddleware, getUserByAuthIdHandler);

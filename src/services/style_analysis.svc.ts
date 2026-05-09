@@ -1,13 +1,14 @@
 import { LLMService, createLLMService } from './llm.svc';
 import { StyleAnalysisDB } from '../db/style_analysis';
 import { SubscriptionsDB } from '../db/subscriptions';
+import { UserLimitsDB } from '../db/user_limits';
 import { ClassificationService, createClassificationService } from './classification.svc';
 import { STYLE_ANALYSIS_SYSTEM_PROMPT } from '../llm/prompts/style_analysis';
 import { MessageEntry } from '../utils/types';
 import { ModelProvider, ModelUseCase } from './model_config.svc';
 import { generateTitle } from '../utils/style_analysis_session.utils';
 import { SubscriptionTier } from '../types';
-import { createStyleAnalysisDB, createSubscriptionsDB } from '../db';
+import { createStyleAnalysisDB, createSubscriptionsDB, createUserLimitsDB } from '../db';
 import { env } from 'cloudflare:workers';
 
 export class StyleAnalysisService {
@@ -15,6 +16,7 @@ export class StyleAnalysisService {
 		private llmService: LLMService,
 		private styleAnalysisDB: StyleAnalysisDB,
 		private subscriptionsDB: SubscriptionsDB,
+		private userLimitsDB: UserLimitsDB,
 		private classificationService: ClassificationService,
 		private envVars: any
 	) { }
@@ -29,12 +31,14 @@ export class StyleAnalysisService {
 		ctx?: ExecutionContext;
 	}) {
 		const { userId, messages, title, ctx } = params;
-		const subscription = await this.subscriptionsDB.getSubscriptionByUserId(userId);
-		const currentUserTier = subscription?.tier || SubscriptionTier.Free;
-		const hasReachedLimit = subscription?.has_reached_limit === 1;
+		const limits = await this.getEffectiveLimits(userId);
 
-		if (currentUserTier === SubscriptionTier.Free && hasReachedLimit) {
-			throw new Error('FREE_LIMIT_REACHED: Upgrade to GoStylens Core for unlimited sessions.');
+		// Check session count limit
+		if (limits.sessionCountLimit !== -1) {
+			const totalSessionsCount = await this.styleAnalysisDB.countTotalSessions(userId);
+			if (totalSessionsCount >= limits.sessionCountLimit) {
+				throw new Error('FREE_LIMIT_REACHED: Session limit reached. Upgrade for more sessions.');
+			}
 		}
 
 		// Create session with initial message
@@ -47,7 +51,6 @@ export class StyleAnalysisService {
 			title,
 			messages,
 			userId,
-			currentUserTier,
 			ctx
 		});
 
@@ -118,6 +121,30 @@ export class StyleAnalysisService {
 		const session = await this.styleAnalysisDB.getSession(sessionId, userId);
 		if (!session) {
 			throw new Error('NOT_FOUND: Session not found or access denied');
+		}
+
+		const limits = await this.getEffectiveLimits(userId);
+
+		// Check message count limit for this session
+		if (limits.messagePerSessionLimit !== -1) {
+			const { total: messageCount } = await this.styleAnalysisDB.getSessionMessages(sessionId, { page: 1, pageSize: 1 });
+			if (messageCount >= limits.messagePerSessionLimit) {
+				throw new Error('FREE_LIMIT_REACHED: Maximum messages for this session reached. Start a new session or upgrade.');
+			}
+		}
+
+		// Check image count limit for this session
+		if (limits.imagePerSessionLimit !== -1) {
+			// Count total images in the session
+			const { messages: sessionMessages } = await this.styleAnalysisDB.getSessionMessages(sessionId, { page: 1, pageSize: 1000 });
+			const totalImages = sessionMessages.reduce((sum, msg) => sum + (msg.images?.length || 0), 0);
+
+			// Count images in the incoming message
+			const incomingImageCount = (message.remoteImage ? 1 : 0) + (message.remoteImages?.length || 0);
+
+			if (totalImages + incomingImageCount > limits.imagePerSessionLimit) {
+				throw new Error('FREE_LIMIT_REACHED: Maximum images for this session reached.');
+			}
 		}
 
 		const messageEntryId = await this.styleAnalysisDB.addMessage({
@@ -198,18 +225,18 @@ export class StyleAnalysisService {
 		title?: string;
 		messages: MessageEntry[];
 		userId: string;
-		currentUserTier: SubscriptionTier;
 		ctx?: ExecutionContext;
 	}) {
-		const { sessionId, messageIds, title, messages, userId, currentUserTier, ctx } = params;
+		const { sessionId, messageIds, title, messages, userId, ctx } = params;
 
 		if (!title) {
 			this.generateTitleInBackground({ sessionId, messages, ctx });
 		}
 
-		this.checkFreeTierLimitInBackground({ userId, currentUserTier, ctx });
-
 		this.classifyMessagesInBackground({ sessionId, messageIds, messages, ctx });
+
+		// Sync the has_reached_limit flag in the background for UI consistency
+		this.syncSessionLimitFlagInBackground({ userId, ctx });
 	}
 
 	/**
@@ -239,38 +266,6 @@ export class StyleAnalysisService {
 	}
 
 	/**
-	 * Checks whether a free-tier user has hit the session limit and flags the subscription.
-	 */
-	private checkFreeTierLimitInBackground(params: {
-		userId: string;
-		currentUserTier: SubscriptionTier;
-		ctx?: ExecutionContext;
-	}) {
-		const { userId, currentUserTier, ctx } = params;
-
-		const promise = (async () => {
-			try {
-				if (currentUserTier === SubscriptionTier.Free) {
-					const freeTierLimit = parseInt((this.envVars as any).FREE_TIER_SESSION_LIMIT || '3', 10);
-					const totalSessionsCount = await this.styleAnalysisDB.countTotalSessions(userId);
-					if (totalSessionsCount >= freeTierLimit) {
-						const sub = await this.subscriptionsDB.getSubscriptionByUserId(userId);
-						if (sub && sub.id) {
-							await this.subscriptionsDB.updateSubscription(sub.id, { has_reached_limit: 1 });
-						}
-					}
-				}
-			} catch (err) {
-				console.warn('Async limit check failed for user', userId, err);
-			}
-		})();
-
-		if (ctx?.waitUntil) {
-			ctx.waitUntil(promise);
-		}
-	}
-
-	/**
 	 * Triggers background classification for each message in the session.
 	 */
 	private classifyMessagesInBackground(params: {
@@ -286,6 +281,68 @@ export class StyleAnalysisService {
 			this.classificationService.tagEntryInBackground(messageIds[i], messages[i], ctx as ExecutionContext, sessionId, previousMessage);
 		}
 	}
+
+	/**
+	 * Syncs the global has_reached_limit flag in the subscription table based on current session count.
+	 * This is primarily used for UI consistency in the mobile app (e.g., showing upgrade banners).
+	 */
+	private syncSessionLimitFlagInBackground(params: {
+		userId: string;
+		ctx?: ExecutionContext;
+	}) {
+		const { userId, ctx } = params;
+
+		const promise = (async () => {
+			try {
+				const limits = await this.getEffectiveLimits(userId);
+				const sub = await this.subscriptionsDB.getSubscriptionByUserId(userId);
+				if (!sub) return;
+
+				let hasReachedLimit = 0;
+				if (limits.sessionCountLimit !== -1) {
+					const totalSessionsCount = await this.styleAnalysisDB.countTotalSessions(userId);
+					if (totalSessionsCount >= limits.sessionCountLimit) {
+						hasReachedLimit = 1;
+					}
+				}
+
+				// Only update if the flag has actually changed
+				if (sub.has_reached_limit !== hasReachedLimit) {
+					await this.subscriptionsDB.updateSubscription(sub.id, { has_reached_limit: hasReachedLimit as 0 | 1 });
+				}
+			} catch (err) {
+				console.warn('Async session limit sync failed for user', userId, err);
+			}
+		})();
+
+		if (ctx?.waitUntil) {
+			ctx.waitUntil(promise);
+		}
+	}
+
+	/**
+	 * Resolves effective limits for a user based on overrides, tier, and global defaults.
+	 */
+	private async getEffectiveLimits(userId: string) {
+		const override = await this.userLimitsDB.getUserLimit(userId);
+		const subscription = await this.subscriptionsDB.getSubscriptionByUserId(userId);
+		const tier = subscription?.tier || SubscriptionTier.Free;
+
+		// Session Count Limit
+		let sessionCountLimit = override?.session_count_limit ?? (tier === SubscriptionTier.Core ? -1 : parseInt(this.envVars.FREE_TIER_SESSION_LIMIT || '3', 10));
+
+		// Message Per Session Limit
+		let messagePerSessionLimit = override?.message_per_session_limit ?? (tier === SubscriptionTier.Core ? -1 : 20); // Default 20 for Free
+
+		// Image Per Session Limit
+		let imagePerSessionLimit = override?.image_per_session_limit ?? (tier === SubscriptionTier.Core ? -1 : 10); // Default 10 for Free
+
+		return {
+			sessionCountLimit,
+			messagePerSessionLimit,
+			imagePerSessionLimit
+		};
+	}
 }
 
 export const createStyleAnalysisService = (providedEnv?: any) => {
@@ -295,12 +352,14 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 	const llmService = createLLMService({ useCase: ModelUseCase.STYLE_ANALYSIS, provider: ModelProvider.CLAUDE });
 	const styleAnalysisDB = createStyleAnalysisDB(applicationEnv.GOSTYLENS_DB);
 	const subscriptionsDB = createSubscriptionsDB(applicationEnv.GOSTYLENS_DB);
+	const userLimitsDB = createUserLimitsDB(applicationEnv.GOSTYLENS_DB);
 	const classificationService = createClassificationService(applicationEnv.GOSTYLENS_DB);
 
 	return new StyleAnalysisService(
 		llmService,
 		styleAnalysisDB,
 		subscriptionsDB,
+		userLimitsDB,
 		classificationService,
 		applicationEnv
 	);

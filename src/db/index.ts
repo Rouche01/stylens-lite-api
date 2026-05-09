@@ -2,6 +2,7 @@ import { FavouritesDB } from './favourites';
 import { StyleAnalysisDB } from './style_analysis';
 import { SubscriptionsDB } from './subscriptions';
 import { UsersDB } from './users';
+import { UserLimitsDB } from './user_limits';
 
 export const createStyleAnalysisDB = (db: D1Database): StyleAnalysisDB => {
 	return new StyleAnalysisDB(db);
@@ -17,6 +18,10 @@ export const createFavouritesDB = (db: D1Database) => {
 
 export const createSubscriptionsDB = (db: D1Database) => {
 	return new SubscriptionsDB(db);
+};
+
+export const createUserLimitsDB = (db: D1Database) => {
+	return new UserLimitsDB(db);
 };
 
 export * from './types.js';
