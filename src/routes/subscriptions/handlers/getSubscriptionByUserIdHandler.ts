@@ -17,7 +17,7 @@ const getSubscriptionByUserIdHandler: RequestHandler<ProvisionedAuthRequest> = a
             return error(403, 'Forbidden: You can only access your own subscription data');
         }
 
-        const subscriptionDB = createSubscriptionsDB(env.gostylens_db);
+        const subscriptionDB = createSubscriptionsDB(env.GOSTYLENS_DB);
         const subscription = await subscriptionDB.getSubscriptionByUserId(userId);
 
         if (!subscription) {

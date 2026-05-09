@@ -6,22 +6,48 @@
 	"observability": {
 		"enabled": true
 	},
+	// Shared non-secret vars (production defaults)
 	"vars": {
 		"ENV_NAME": "production",
 		"FREE_TIER_SESSION_LIMIT": "3"
 	},
+	// Production bindings (default), to be changed for prod - these should be for staging
 	"d1_databases": [
 		{
-			"binding": "gostylens_db",
-			"database_name": "YOUR_DATABASE_NAME",
-			"database_id": "YOUR_DATABASE_ID"
+			"binding": "GOSTYLENS_DB",
+			"database_name": "__DB_NAME__",
+			"database_id": "__DB_ID__"
 		}
 	],
 	"r2_buckets": [
 		{
 			"binding": "OUTFIT_PHOTOS_BUCKET",
-			"bucket_name": "YOUR_BUCKET_NAME",
+			"bucket_name": "__R2_BUCKET__",
 			"remote": true
 		}
-	]
+	],
+	// ── Staging environment ──────────────────────────────
+	"env": {
+		"staging": {
+			"name": "stylens-lite-api-staging",
+			"vars": {
+				"ENV_NAME": "staging",
+				"FREE_TIER_SESSION_LIMIT": "3"
+			},
+			"d1_databases": [
+				{
+					"binding": "GOSTYLENS_DB",
+					"database_name": "__DB_NAME__",
+					"database_id": "__DB_ID__"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "OUTFIT_PHOTOS_BUCKET",
+					"bucket_name": "__R2_BUCKET__",
+					"remote": true
+				}
+			],
+		}
+	}
 }
