@@ -10,6 +10,7 @@ import { generateTitle } from '../utils/style_analysis_session.utils';
 import { SubscriptionTier } from '../types';
 import { createStyleAnalysisDB, createSubscriptionsDB, createUserLimitsDB } from '../db';
 import { env } from 'cloudflare:workers';
+import { RealtimeService, createRealtimeService } from './realtime.svc';
 
 export class StyleAnalysisService {
 	constructor(
@@ -17,6 +18,7 @@ export class StyleAnalysisService {
 		private styleAnalysisDB: StyleAnalysisDB,
 		private subscriptionsDB: SubscriptionsDB,
 		private userLimitsDB: UserLimitsDB,
+		private realtimeService: RealtimeService,
 		private classificationService: ClassificationService,
 		private envVars: any
 	) { }
@@ -309,6 +311,8 @@ export class StyleAnalysisService {
 				// Only update if the flag has actually changed
 				if (sub.has_reached_limit !== hasReachedLimit) {
 					await this.subscriptionsDB.updateSubscription(sub.id, { has_reached_limit: hasReachedLimit as 0 | 1 });
+					// Notify the Flutter app in real-time via Supabase Broadcast
+					await this.realtimeService.notifyLimitChanged(userId, hasReachedLimit === 1);
 				}
 			} catch (err) {
 				console.warn('Async session limit sync failed for user', userId, err);
@@ -323,7 +327,7 @@ export class StyleAnalysisService {
 	/**
 	 * Resolves effective limits for a user based on overrides, tier, and global defaults.
 	 */
-	private async getEffectiveLimits(userId: string) {
+	public async getEffectiveLimits(userId: string) {
 		const override = await this.userLimitsDB.getUserLimit(userId);
 		const subscription = await this.subscriptionsDB.getSubscriptionByUserId(userId);
 		const tier = subscription?.tier || SubscriptionTier.Free;
@@ -353,6 +357,7 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 	const styleAnalysisDB = createStyleAnalysisDB(applicationEnv.GOSTYLENS_DB);
 	const subscriptionsDB = createSubscriptionsDB(applicationEnv.GOSTYLENS_DB);
 	const userLimitsDB = createUserLimitsDB(applicationEnv.GOSTYLENS_DB);
+	const realtimeService = createRealtimeService();
 	const classificationService = createClassificationService(applicationEnv.GOSTYLENS_DB);
 
 	return new StyleAnalysisService(
@@ -360,6 +365,7 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 		styleAnalysisDB,
 		subscriptionsDB,
 		userLimitsDB,
+		realtimeService,
 		classificationService,
 		applicationEnv
 	);

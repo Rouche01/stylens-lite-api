@@ -33,7 +33,6 @@ export class AuthService {
     }
 
     async updateUserAuthMetadata(userId: string, appMetadata: UserAuthMetadata) {
-        console.log(this.svcRoleKey, this.svcAnonKey, this.svcUrl);
         const res = await fetch(`${this.svcUrl}/auth/v1/admin/users/${userId}`, {
             method: 'PUT',
             headers: {
