@@ -1,7 +1,8 @@
 import { error, RequestHandler } from 'itty-router';
-import { env } from 'cloudflare:workers';
 import { createUserLimitsDB } from 'db';
 import { AuthRequest } from 'types';
+import { createStyleAnalysisService } from 'services/style_analysis.svc';
+import { env } from 'cloudflare:workers';
 
 type UpdateUserLimitBody = {
 	userId: string;
@@ -12,8 +13,6 @@ type UpdateUserLimitBody = {
 
 const updateUserLimitHandler: RequestHandler<AuthRequest> = async (request) => {
 	try {
-		// Ideally, this should be restricted to admins
-		// For now, we'll implement the logic as requested
 		const body = (await request.json()) as UpdateUserLimitBody;
 
 		if (!body.userId) {
@@ -27,6 +26,11 @@ const updateUserLimitHandler: RequestHandler<AuthRequest> = async (request) => {
 			message_per_session_limit: body.messagePerSessionLimit,
 			image_per_session_limit: body.imagePerSessionLimit,
 		});
+
+		// Sync the has_reached_limit flag in the background so the mobile app UI reflects the change
+		const ctx = (request as any).ctx;
+		const styleAnalysisService = createStyleAnalysisService(env);
+		styleAnalysisService.syncSessionLimitFlagInBackground({ userId: body.userId, ctx });
 
 		return new Response(JSON.stringify(updatedLimit), {
 			headers: { 'Content-Type': 'application/json' },

@@ -286,7 +286,7 @@ export class StyleAnalysisService {
 	 * Syncs the global has_reached_limit flag in the subscription table based on current session count.
 	 * This is primarily used for UI consistency in the mobile app (e.g., showing upgrade banners).
 	 */
-	private syncSessionLimitFlagInBackground(params: {
+	public syncSessionLimitFlagInBackground(params: {
 		userId: string;
 		ctx?: ExecutionContext;
 	}) {
