@@ -95,14 +95,14 @@ jobs:
             
             # Check if migration has already been applied
             # Note: We use || true because the table might not exist on the very first run
-            EXISTS=$(npx wrangler d1 execute gostylens-db --remote --env staging --command "SELECT name FROM _migrations WHERE name = '$MIGRATION_NAME'" --json 2>/dev/null | jq -r '.[0].results | length' || echo "0")
+            EXISTS=$(npx wrangler d1 execute GOSTYLENS_DB --remote --env staging --command "SELECT name FROM _migrations WHERE name = '$MIGRATION_NAME'" --json 2>/dev/null | jq -r '.[0].results | length' || echo "0")
             
             if [ "$EXISTS" = "0" ]; then
               echo "⬆️ Applying migration: $MIGRATION_NAME"
-              npx wrangler d1 execute gostylens-db --remote --env staging --file="$file"
+              npx wrangler d1 execute GOSTYLENS_DB --remote --env staging --file="$file"
               
               # Record that the migration was applied
-              npx wrangler d1 execute gostylens-db --remote --env staging --command "INSERT INTO _migrations (name) VALUES ('$MIGRATION_NAME')"
+              npx wrangler d1 execute GOSTYLENS_DB --remote --env staging --command "INSERT INTO _migrations (name) VALUES ('$MIGRATION_NAME')"
             else
               echo "✅ Already applied: $MIGRATION_NAME"
             fi
@@ -149,14 +149,14 @@ jobs:
             echo "🔍 Checking migration: $MIGRATION_NAME"
             
             # Check if migration has already been applied
-            EXISTS=$(npx wrangler d1 execute gostylens-db-prod --remote --command "SELECT name FROM _migrations WHERE name = '$MIGRATION_NAME'" --json 2>/dev/null | jq -r '.[0].results | length' || echo "0")
+            EXISTS=$(npx wrangler d1 execute GOSTYLENS_DB --remote --command "SELECT name FROM _migrations WHERE name = '$MIGRATION_NAME'" --json 2>/dev/null | jq -r '.[0].results | length' || echo "0")
             
             if [ "$EXISTS" = "0" ]; then
               echo "⬆️ Applying migration: $MIGRATION_NAME"
-              npx wrangler d1 execute gostylens-db-prod --remote --file="$file"
+              npx wrangler d1 execute GOSTYLENS_DB --remote --file="$file"
               
               # Record that the migration was applied
-              npx wrangler d1 execute gostylens-db-prod --remote --command "INSERT INTO _migrations (name) VALUES ('$MIGRATION_NAME')"
+              npx wrangler d1 execute GOSTYLENS_DB --remote --command "INSERT INTO _migrations (name) VALUES ('$MIGRATION_NAME')"
             else
               echo "✅ Already applied: $MIGRATION_NAME"
             fi

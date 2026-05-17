@@ -111,11 +111,19 @@ export type ClaudeTextBlock = {
 	type: 'text';
 }
 
+export type ClaudeBase64ImageSource = {
+	data: string;
+	media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+	type: 'base64'
+}
+
+export type ClaudeURLImageSource = {
+	url: string;
+	type: 'url'
+}
+
 export type ClaudeImageBlock = {
-	source: {
-		type: 'url',
-		url: string;
-	}
+	source: ClaudeBase64ImageSource | ClaudeURLImageSource;
 	type: 'image'
 }
 

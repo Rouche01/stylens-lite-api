@@ -184,7 +184,7 @@ export class ClassificationService {
 /**
  * Factory function to create the ClassificationService.
  */
-import { ModelUseCase } from './model_config.svc';
+import { ModelProvider, ModelUseCase } from './model_config.svc';
 
 export const createClassificationService = (database: D1Database) => {
 	// Use the dedicated classification model configuration (usually a fast/cheap 'Mini' model)

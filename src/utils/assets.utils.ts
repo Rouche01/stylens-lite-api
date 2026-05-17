@@ -33,3 +33,20 @@ export const regenerateSignedUrl = async (imageUrl: string): Promise<string> => 
 		return imageUrl; // Fallback to original URL
 	}
 };
+
+export const fetchImageAsBase64 = async (imageUrl: string): Promise<{ base64: string; mediaType: string }> => {
+	const response = await fetch(imageUrl);
+	if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+
+	const arrayBuffer = await response.arrayBuffer();
+	let binary = '';
+	const bytes = new Uint8Array(arrayBuffer);
+	const len = bytes.byteLength;
+	for (let i = 0; i < len; i++) {
+		binary += String.fromCharCode(bytes[i]);
+	}
+	const base64 = btoa(binary);
+	const mediaType = response.headers.get('content-type') || 'image/jpeg';
+
+	return { base64, mediaType };
+};

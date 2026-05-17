@@ -71,7 +71,7 @@ export class LLMService {
 		return this.generateResponse(preparedInput);
 	}
 
-	async prepareMessagesForLLM(messages: MessageEntry[]): Promise<LLMProviderInput> {
+	async prepareMessagesForLLM(messages: MessageEntry[], imageFormat: 'url' | 'base64' = 'url'): Promise<LLMProviderInput> {
 		// 1. Collect all unique image keys for polling (common across providers)
 		if (this.bucket) {
 			const uniqueKeys = new Set<string>();
@@ -92,7 +92,7 @@ export class LLMService {
 		}
 
 		// 2. Delegate provider-specific transformation
-		return this.provider.prepareMessagesForLLM(messages);
+		return this.provider.prepareMessagesForLLM(messages, imageFormat);
 	}
 }
 

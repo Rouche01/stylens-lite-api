@@ -1,8 +1,8 @@
 import { Router } from 'itty-router';
-import analyzeOutfitHandler from './handlers/analyzeOutfitHandler';
+import extractOutfitHandler from './handlers/extractOutfitHandler';
 
 const router = Router({ base: '/outfits' });
 
-router.post('/analyze', analyzeOutfitHandler);
+router.post('/extract', extractOutfitHandler);
 
 export default router;

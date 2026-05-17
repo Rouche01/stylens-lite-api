@@ -6,12 +6,12 @@
 	"observability": {
 		"enabled": true
 	},
-	// Shared non-secret vars (production defaults)
+	// Shared non-secret vars (dev defaults)
 	"vars": {
-		"ENV_NAME": "production",
+		"ENV_NAME": "dev",
 		"FREE_TIER_SESSION_LIMIT": "3"
 	},
-	// Production bindings (default), to be changed for prod - these should be for staging
+	// Dev bindings (default) - this makes tools like d1studio work seamlessly locally
 	"d1_databases": [
 		{
 			"binding": "GOSTYLENS_DB",
@@ -26,8 +26,8 @@
 			"remote": true
 		}
 	],
-	// ── Staging environment ──────────────────────────────
 	"env": {
+		// ── Staging environment ──────────────────────────────
 		"staging": {
 			"name": "stylens-lite-api-staging",
 			"vars": {
@@ -47,7 +47,29 @@
 					"bucket_name": "__R2_BUCKET__",
 					"remote": true
 				}
+			]
+		},
+		// ── Production environment ──────────────────────────────
+		"production": {
+			"name": "stylens-lite-api-prod",
+			"vars": {
+				"ENV_NAME": "production",
+				"FREE_TIER_SESSION_LIMIT": "3"
+			},
+			"d1_databases": [
+				{
+					"binding": "GOSTYLENS_DB",
+					"database_name": "__DB_NAME__",
+					"database_id": "__DB_ID__"
+				}
 			],
+			"r2_buckets": [
+				{
+					"binding": "OUTFIT_PHOTOS_BUCKET",
+					"bucket_name": "__R2_BUCKET__",
+					"remote": true
+				}
+			]
 		}
 	}
 }
