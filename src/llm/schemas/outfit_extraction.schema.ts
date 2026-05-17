@@ -49,6 +49,19 @@ const OUTFIT_EXTRACTION_SCHEMA_V2 = {
 						enum: ["top", "bottom", "outerwear", "footwear", "accessory", "full-body"],
 						description: "The category of the clothing item",
 					},
+					subcategory: {
+						type: "string",
+						enum: [
+							"t-shirt", "shirt", "sweater", "hoodie", "sweatshirt", "tank-top", "polo", "crop-top",
+							"jeans", "pants", "shorts", "skirt", "sweatpants", "leggings",
+							"jacket", "coat", "blazer", "vest", "cardigan",
+							"sneakers", "boots", "loafers", "heels", "flats", "sandals", "slippers",
+							"dress", "jumpsuit", "suit",
+							"bag", "jewelry", "hat", "eyewear", "belt", "scarf", "watch", "socks", "gloves",
+							"other"
+						],
+						description: "The granular subcategory of the clothing item matching its category",
+					},
 					color: {
 						type: "string",
 						description: "Primary color as a plain word e.g. black, navy, olive",
@@ -66,8 +79,8 @@ const OUTFIT_EXTRACTION_SCHEMA_V2 = {
 					},
 					confidence: {
 						type: "string",
-						enum: ["high", "low"],
-						description: "high if clearly visible, low if partially obscured",
+						enum: ["high", "medium", "low"],
+						description: "high if clearly visible, medium if partially visible, low if heavily obscured",
 					},
 					bounding_box: {
 						type: "object",
@@ -96,6 +109,7 @@ const OUTFIT_EXTRACTION_SCHEMA_V2 = {
 				required: [
 					"label",
 					"category",
+					"subcategory",
 					"color",
 					"pattern",
 					"style_tags",

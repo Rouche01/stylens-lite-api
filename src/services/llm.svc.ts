@@ -29,6 +29,30 @@ export class LLMService {
 		return textBlock?.text ?? null;
 	}
 
+	/**
+	 * Extracts and parses structured JSON from the provider-specific output blocks.
+	 * Cleans markdown code block wrappers (e.g. ```json ... ```) if present.
+	 */
+	static extractJSON<T>(content: LLMProviderOutputContent[]): T | null {
+		const text = this.extractText(content);
+		if (!text) return null;
+
+		let cleanedText = text.trim();
+		if (cleanedText.startsWith('```')) {
+			cleanedText = cleanedText
+				.replace(/^```(?:json)?\n?/i, '')
+				.replace(/\n?```$/, '')
+				.trim();
+		}
+
+		try {
+			return JSON.parse(cleanedText) as T;
+		} catch (error) {
+			console.error('Failed to parse structured JSON from LLM response:', error, '\nRaw response was:', text);
+			return null;
+		}
+	}
+
 	async generateStreamingResponse(
 		sessionId: string,
 		input: LLMProviderInput,

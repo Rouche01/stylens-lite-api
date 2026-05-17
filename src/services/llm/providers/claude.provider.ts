@@ -11,11 +11,10 @@ export class ClaudeProvider implements ILLMProvider {
 	) { }
 
 	private async processImage(imgUrl: string, imageFormat: 'url' | 'base64'): Promise<ClaudeImageBlock> {
-		const freshSignedUrl = await regenerateSignedUrl(imgUrl);
 
 		if (imageFormat === 'base64') {
 			try {
-				const { base64, mediaType } = await fetchImageAsBase64(freshSignedUrl);
+				const { base64, mediaType } = await fetchImageAsBase64(imgUrl);
 				return {
 					type: 'image',
 					source: {
@@ -29,6 +28,7 @@ export class ClaudeProvider implements ILLMProvider {
 			}
 		}
 
+		const freshSignedUrl = await regenerateSignedUrl(imgUrl);
 		return {
 			type: 'image',
 			source: {

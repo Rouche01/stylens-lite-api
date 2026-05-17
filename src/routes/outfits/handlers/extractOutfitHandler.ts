@@ -15,12 +15,18 @@ const extractOutfitHandler: RequestHandler = async (request) => {
 
 		const outfitExtractionService = createOutfitExtractionService();
 
-		const extractedOutfitItems = await outfitExtractionService.extractOutfitItems({
+		const extractedOutfitResult = await outfitExtractionService.extractOutfitItems({
 			imageUrl: body.imageUrl,
 			signal: request.signal
 		});
 
-		return new Response(JSON.stringify({ message: `Outfit extraction started for ${body.imageUrl}`, extractedOutfitItems }), {
+		if (!extractedOutfitResult) {
+			return error(400, 'Failed to extract outfit items');
+		}
+
+
+
+		return new Response(JSON.stringify(extractedOutfitResult), {
 			headers: { 'Content-Type': 'application/json' },
 			status: 200,
 		});

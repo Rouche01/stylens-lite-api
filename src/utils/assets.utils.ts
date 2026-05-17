@@ -34,19 +34,58 @@ export const regenerateSignedUrl = async (imageUrl: string): Promise<string> => 
 	}
 };
 
+export function arrayBufferToBase64(buffer: ArrayBufferLike): string {
+	const bytes = new Uint8Array(buffer);
+	let binary = '';
+	const chunkSize = 0x8000; // 32KB chunks
+	for (let i = 0; i < bytes.length; i += chunkSize) {
+		const chunk = bytes.subarray(i, i + chunkSize);
+		binary += String.fromCharCode.apply(null, chunk as any);
+	}
+	return btoa(binary);
+}
+
+export const fetchImageAsArrayBuffer = async (imageUrl: string): Promise<ArrayBuffer> => {
+	if (imageUrl.startsWith('data:')) {
+		const match = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
+		if (match) {
+			const binaryStr = atob(match[2]);
+			const len = binaryStr.length;
+			const bytes = new Uint8Array(len);
+			for (let i = 0; i < len; i++) {
+				bytes[i] = binaryStr.charCodeAt(i);
+			}
+			return bytes.buffer;
+		}
+		throw new Error('Invalid data URL format');
+	}
+
+	const freshImageUrl = await regenerateSignedUrl(imageUrl);
+	const response = await fetch(freshImageUrl);
+	if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+	return response.arrayBuffer();
+};
+
 export const fetchImageAsBase64 = async (imageUrl: string): Promise<{ base64: string; mediaType: string }> => {
-	const response = await fetch(imageUrl);
+	if (imageUrl.startsWith('data:')) {
+		const match = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
+		if (match) {
+			return {
+				mediaType: match[1],
+				base64: match[2],
+			};
+		}
+		throw new Error('Invalid data URL format');
+	}
+
+	const freshImageUrl = await regenerateSignedUrl(imageUrl);
+	const response = await fetch(freshImageUrl);
 	if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
 
 	const arrayBuffer = await response.arrayBuffer();
-	let binary = '';
-	const bytes = new Uint8Array(arrayBuffer);
-	const len = bytes.byteLength;
-	for (let i = 0; i < len; i++) {
-		binary += String.fromCharCode(bytes[i]);
-	}
-	const base64 = btoa(binary);
+	const base64 = arrayBufferToBase64(arrayBuffer);
 	const mediaType = response.headers.get('content-type') || 'image/jpeg';
 
 	return { base64, mediaType };
 };
+
