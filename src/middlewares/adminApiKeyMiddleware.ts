@@ -3,10 +3,10 @@ import { env } from 'cloudflare:workers';
 import { verifyTimingSafe } from 'utils/crypto';
 
 export const adminApiKeyMiddleware: RequestHandler = async (request) => {
-    const apiKey = request.headers.get('x-api-key');
+    const apiKey = request.headers.get('x-admin-api-key');
 
     if (!apiKey) {
-        return error(401, 'Unauthorized: Missing API key');
+        return error(401, 'Unauthorized: Missing admin API key');
     }
 
     const expectedKey = env.ADMIN_API_KEY;

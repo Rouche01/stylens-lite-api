@@ -2,6 +2,7 @@ import { error, RequestHandler } from 'itty-router';
 import { createSubscriptionsDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
+import { createStyleAnalysisService } from 'services/style_analysis.svc';
 
 const getSubscriptionByUserIdHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
     try {
@@ -24,7 +25,18 @@ const getSubscriptionByUserIdHandler: RequestHandler<ProvisionedAuthRequest> = a
             return error(404, 'Subscription not found for the given user');
         }
 
-        return new Response(JSON.stringify(subscription), {
+        // Fetch effective limits to return with the subscription data
+        const styleAnalysisService = createStyleAnalysisService(env);
+        const limits = await styleAnalysisService.getEffectiveLimits(userId);
+
+        return new Response(JSON.stringify({
+            ...subscription,
+            limits: {
+                'session_count_limit': limits.sessionCountLimit,
+                'message_per_session_limit': limits.messagePerSessionLimit,
+                'image_per_session_limit': limits.imagePerSessionLimit,
+            }
+        }), {
             headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store, must-revalidate' },
             status: 200,
         });

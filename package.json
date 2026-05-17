@@ -11,9 +11,9 @@
 		"test": "vitest",
 		"cf-typegen": "wrangler types",
 		"db:migrate": "bash scripts/migrate.sh",
-		"db:init:local": "wrangler d1 execute gostylens_db --local --file=./db/schema.sql",
-		"db:init:prod": "wrangler d1 execute gostylens_db --remote --file=./db/schema.sql",
-		"db:init:staging": "wrangler d1 execute gostylens_db --remote --file=./db/schema.sql --env staging",
+		"db:init:local": "wrangler d1 execute GOSTYLENS_DB --local --file=./db/schema.sql",
+		"db:init:prod": "wrangler d1 execute GOSTYLENS_DB --remote --file=./db/schema.sql",
+		"db:init:staging": "wrangler d1 execute GOSTYLENS_DB --remote --file=./db/schema.sql --env staging",
 		"check:size": "npx wrangler deploy --dry-run --outdir=dist > /dev/null && SIZE=$(gzip -c dist/_worker.js | wc -c) && echo \"🗜️  Gzipped size: $((SIZE/1024)) KB\" && if [ $SIZE -gt 1048576 ]; then echo '❌ Exceeds 1 MB Cloudflare limit!' && exit 1; else echo '✅ Within limit'; fi"
 	},
 	"devDependencies": {
