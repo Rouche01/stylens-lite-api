@@ -89,3 +89,40 @@ export const fetchImageAsBase64 = async (imageUrl: string): Promise<{ base64: st
 	return { base64, mediaType };
 };
 
+export const getIsolatedItemUrl = (params: {
+	domain: string;
+	imageUrl: string;
+	boundingBox: { x: number; y: number; width: number; height: number };
+	dimensions: { width: number; height: number };
+}): string => {
+	const { domain, imageUrl, boundingBox, dimensions } = params;
+
+	// Extract the clean R2 storage object key from the imageUrl
+	let objectKey = imageUrl;
+	try {
+		if (imageUrl.startsWith('http')) {
+			const url = new URL(imageUrl);
+			// R2 storage paths are stored in the URL pathname (minus the leading slash)
+			objectKey = url.pathname.slice(1);
+		}
+	} catch (e) {
+		// Fallback to imageUrl as key if not a valid URL
+	}
+
+	const base = domain.startsWith('http') ? domain : `https://${domain}`;
+
+	// Build a secure local worker image isolation proxy URL
+	const searchParams = new URLSearchParams({
+		key: objectKey,
+		x: boundingBox.x.toString(),
+		y: boundingBox.y.toString(),
+		w: boundingBox.width.toString(),
+		h: boundingBox.height.toString(),
+		imgW: dimensions.width.toString(),
+		imgH: dimensions.height.toString()
+	});
+
+	return `${base}/assets/isolate?${searchParams.toString()}`;
+};
+
+

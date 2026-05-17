@@ -16,6 +16,7 @@ export interface ClothingItem {
     style_tags: string[];
     confidence: ExtractionConfidence;
     bounding_box: OutfitBoundingBox;
+    isolated_image_url?: string;
 }
 
 
