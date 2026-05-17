@@ -1,3 +1,4 @@
+import { env } from 'cloudflare:workers';
 import { error, RequestHandler } from 'itty-router';
 
 /**
@@ -5,7 +6,7 @@ import { error, RequestHandler } from 'itty-router';
  * Uses the private R2 bucket binding and Cloudflare's programmatic Images binding
  * to crop and strip the background entirely in-memory, locked behind worker authorization.
  */
-const getIsolatedItemHandler: RequestHandler = async (request, env) => {
+const getIsolatedItemHandler: RequestHandler = async (request) => {
 	try {
 		const { query } = request;
 
@@ -41,23 +42,28 @@ const getIsolatedItemHandler: RequestHandler = async (request, env) => {
 		}
 
 		// 3. Calculate gravity relative center (from 0.0 to 1.0)
-		const relativeCenterX = ((x + w / 2) / 100).toFixed(3);
-		const relativeCenterY = ((y + h / 2) / 100).toFixed(3);
+		const relativeCenterX = (x + w / 2) / 100;
+		const relativeCenterY = (y + h / 2) / 100;
 
 		// 4. Perform in-memory transformation using Cloudflare's native IMAGES binding
-		const transformedImage = await env.IMAGES.input(r2Object.body)
+		const transformedImage = (await env.IMAGES.input(r2Object.body)
 			.transform({
 				segment: 'foreground',
 				width: pxWidth,
 				height: pxHeight,
 				fit: 'crop',
-				gravity: `${relativeCenterX}x${relativeCenterY}`
+				gravity: {
+					x: relativeCenterX,
+					y: relativeCenterY,
+					mode: 'box-center'
+				}
 			})
 			.output({
-				format: 'webp',
+				format: 'image/png',
 				quality: 85
-			})
-			.response();
+			})).response();
+
+
 
 		// 5. Wrap response with strong caching headers to cache this exact isolated item at the Edge
 		const response = new Response(transformedImage.body, transformedImage);

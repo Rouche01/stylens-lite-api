@@ -26,6 +26,9 @@
 			"remote": true
 		}
 	],
+	"images": {
+		"binding": "IMAGES"
+	},
 	"env": {
 		// ── Staging environment ──────────────────────────────
 		"staging": {
@@ -47,7 +50,10 @@
 					"bucket_name": "__R2_BUCKET__",
 					"remote": true
 				}
-			]
+			],
+			"images": {
+				"binding": "IMAGES"
+			}
 		},
 		// ── Production environment ──────────────────────────────
 		"production": {
@@ -69,7 +75,10 @@
 					"bucket_name": "__R2_BUCKET__",
 					"remote": true
 				}
-			]
+			],
+			"images": {
+				"binding": "IMAGES"
+			}
 		}
 	}
 }
