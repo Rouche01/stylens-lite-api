@@ -8,6 +8,8 @@ import updateUserLimitHandler from './handlers/updateUserLimitHandler';
 import { adminApiKeyMiddleware } from 'middlewares/adminApiKeyMiddleware';
 import { authMiddleware } from 'middlewares/authMiddleware';
 import { dbIdMiddleware } from 'middlewares/dbIdMiddleware';
+import upsertPushTokenHandler from './handlers/upsertPushTokenHandler';
+import deletePushTokenHandler from './handlers/deletePushTokenHandler';
 
 const router = Router({ base: '/users' });
 
@@ -19,6 +21,8 @@ router.post('/limits', adminApiKeyMiddleware, updateUserLimitHandler);
 router.get('/auth/:authId', authMiddleware, getUserByAuthIdHandler);
 router.delete('/:userId', authMiddleware, dbIdMiddleware, deleteUserHandler);
 router.patch('/:userId', authMiddleware, dbIdMiddleware, updateUserHandler);
+router.put('/push-token', authMiddleware, dbIdMiddleware, upsertPushTokenHandler);
+router.delete('/push-token/:token', authMiddleware, dbIdMiddleware, deletePushTokenHandler);
 
 
 export default router;

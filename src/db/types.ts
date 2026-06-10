@@ -105,3 +105,12 @@ export type UserLimit = {
 	created_at: number;
 	updated_at: number;
 };
+
+export type PushToken = {
+	id: string;
+	user_id: string;
+	token: string;
+	platform: 'ios' | 'android';
+	created_at: number;
+	updated_at: number;
+};

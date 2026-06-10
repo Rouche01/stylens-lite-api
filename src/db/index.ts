@@ -4,6 +4,7 @@ import { SubscriptionsDB } from './subscriptions';
 import { UsersDB } from './users';
 import { UserLimitsDB } from './user_limits';
 import { ClosetDB } from './closet';
+import { PushTokensDB } from './push_tokens';
 
 export const createStyleAnalysisDB = (db: D1Database): StyleAnalysisDB => {
 	return new StyleAnalysisDB(db);
@@ -29,5 +30,9 @@ export const createClosetDB = (db: D1Database) => {
 	return new ClosetDB(db);
 };
 
+export const createPushTokensDB = (db: D1Database) => {
+	return new PushTokensDB(db);
+};
+
 export * from './types.js';
-export { StyleAnalysisDB, ClosetDB };
+export { StyleAnalysisDB, ClosetDB, PushTokensDB };
