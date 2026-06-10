@@ -10,6 +10,7 @@ export const authMiddleware: RequestHandler = async (request) => {
     }
 
     const token = authHeader.split(' ')[1];
+    // console.log("token: ", token);
 
     try {
         const authService = createAuthService();

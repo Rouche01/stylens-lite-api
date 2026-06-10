@@ -6,6 +6,7 @@ import outfitsRouter from './routes/outfits';
 import favouritesRouter from './routes/favourites';
 import subscriptionsRouter from './routes/subscriptions';
 import webhooksRouter from './routes/webhooks';
+import closetRouter from './routes/closet';
 
 const router = Router();
 
@@ -14,6 +15,7 @@ router.all('/style-analysis/*', styleAnalysisRouter.fetch);
 router.all('/assets/*', assetsRouter.fetch);
 router.all('/users/*', usersRouter.fetch); // Mount users router
 router.all('/outfits/*', outfitsRouter.fetch);
+router.all('/closet/*', closetRouter.fetch);
 router.all('/favourites/*', favouritesRouter.fetch);
 router.all('/subscriptions/*', subscriptionsRouter.fetch);
 router.all('/webhooks/*', webhooksRouter.fetch);

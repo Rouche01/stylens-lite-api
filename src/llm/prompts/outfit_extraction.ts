@@ -33,6 +33,7 @@ Classification Rules for Category & Subcategory:
 
 Extraction Rules:
 - Only include items that are clearly part of the outfit being worn.
+- Bounding boxes MUST fully and comfortably contain the entire item including all edges (sleeves, collar, hems, cuffs) with a small margin of breathing room. Never cut off the outer borders of a garment.
 - Do not include items in the background or held objects unless they are accessories being worn.
 - "confidence": "high" if clearly visible, "medium" if partially visible/obstructed, "low" if heavily obscured or uncertain.
 - If no outfit is visible, return { "items": [] }.

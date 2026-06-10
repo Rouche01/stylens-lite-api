@@ -1,0 +1,38 @@
+# SecureCoder ignore file
+# Exclude files from security scanning using glob patterns, one per line.
+# Patterns are matched against the full absolute file path.
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# Examples:
+#   *test*          - ignore any file whose path contains "test"
+#   *_test.*        - ignore files ending in _test.<ext>
+#   **/*_test.*     - same, across any directory depth
+#   **/test/**      - ignore everything inside a "test" directory
+#   vendor/**       - ignore all files in vendor/
+#   *.generated.*   - ignore generated files
+
+# --- Test files (enabled by default) ---
+*test.*
+*_test.*
+**/*_test.*
+**/test/**
+
+# --- External Dependencies ---
+**/node_modules/**
+
+# --- Build Artifacts & Generated Files ---
+**/dist/**
+**/.wrangler/**
+**/worker-configuration.d.ts
+
+# --- Secrets and Environment Files ---
+**/.dev.vars*
+**/.env*
+
+# --- Cache and Temporary Files ---
+**/scratch/**
+**/.eslintcache
+**/*.tsbuildinfo
+
+# --- Version Control ---
+**/.git/**

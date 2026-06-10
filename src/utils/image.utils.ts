@@ -23,6 +23,8 @@ export async function getImageDimensions(imageBuffer: ArrayBufferLike): Promise<
 
 	// 2. Detect JPEG
 	if (view.byteLength >= 2 && view.getUint16(0) === 0xFFD8) {
+		let width = 0;
+		let height = 0;
 		let offset = 2; // Skip SOI (FF D8)
 		while (offset < view.byteLength) {
 			const marker = view.getUint16(offset);
@@ -37,15 +39,23 @@ export async function getImageDimensions(imageBuffer: ArrayBufferLike): Promise<
 			// SOF0 - SOF3 (0xFFC0 - 0xFFC3) and SOF5 - SOF15 (0xFFC5 - 0xFFCF)
 			if ((marker >= 0xFFC0 && marker <= 0xFFC3) || (marker >= 0xFFC5 && marker <= 0xFFCF)) {
 				// SOF block structure: marker(2), length(2), precision(1), height(2), width(2)
-				return {
-					height: view.getUint16(offset + 3), // Big-endian uint16
-					width: view.getUint16(offset + 5),  // Big-endian uint16
-				};
+				height = view.getUint16(offset + 3); // Big-endian uint16
+				width = view.getUint16(offset + 5);  // Big-endian uint16
+				break;
 			}
 
 			// Read block length and skip to next segment
 			const length = view.getUint16(offset);
 			offset += length;
+		}
+
+		if (width > 0 && height > 0) {
+			const orientation = getExifOrientation(view);
+			// Orientations 5, 6, 7, 8 represent 90 or 270 degree rotation, which swaps visual width & height
+			if (orientation >= 5 && orientation <= 8) {
+				return { width: height, height: width };
+			}
+			return { width, height };
 		}
 	}
 
@@ -107,5 +117,68 @@ export function getImageMimeType(imageBuffer: ArrayBufferLike): string {
 	}
 
 	return 'image/jpeg'; // Fallback
+}
+
+/**
+ * Parsers JPEG EXIF headers from a DataView buffer to determine the image's orientation.
+ * 
+ * Safe, zero-dependency, and high-performance.
+ * @param view DataView of the image array buffer
+ * @returns Numeric EXIF orientation tag value (1-8, defaults to 1 if not found/invalid)
+ */
+function getExifOrientation(view: DataView): number {
+	if (view.byteLength < 2 || view.getUint16(0) !== 0xFFD8) {
+		return 1; // Not a JPEG
+	}
+
+	let offset = 2;
+	while (offset < view.byteLength) {
+		const marker = view.getUint16(offset);
+		offset += 2;
+
+		if (marker === 0xFFE1) {
+			// Found APP1 (EXIF) segment
+			const length = view.getUint16(offset);
+			// Validate EXIF header (Exif\0\0)
+			if (offset + 8 < view.byteLength && view.getUint32(offset + 2) === 0x45786966 && view.getUint16(offset + 6) === 0) {
+				const tiffOffset = offset + 8;
+				// Read byte order (II = Little Endian, MM = Big Endian)
+				const isLittleEndian = view.getUint16(tiffOffset) === 0x4949;
+				if (view.getUint16(tiffOffset + 2) !== 0x002A) {
+					return 1; // Invalid TIFF magic number
+				}
+
+				const firstIFDOffset = view.getUint32(tiffOffset + 4, isLittleEndian);
+				let ifdOffset = tiffOffset + firstIFDOffset;
+
+				if (ifdOffset + 2 < view.byteLength) {
+					const numEntries = view.getUint16(ifdOffset, isLittleEndian);
+					let entryOffset = ifdOffset + 2;
+
+					for (let i = 0; i < numEntries; i++) {
+						if (entryOffset + 12 > view.byteLength) break;
+						const tag = view.getUint16(entryOffset, isLittleEndian);
+						if (tag === 0x0112) {
+							// Tag 0x0112 is EXIF Orientation!
+							return view.getUint16(entryOffset + 8, isLittleEndian);
+						}
+						entryOffset += 12;
+					}
+				}
+			}
+			offset += length;
+		} else if ((marker & 0xFF00) === 0xFF00) {
+			// Skip other JPEG markers
+			if (marker === 0xFFD9 || marker === 0xFFDA) {
+				break; // End of metadata header segment
+			}
+			const length = view.getUint16(offset);
+			offset += length;
+		} else {
+			break;
+		}
+	}
+
+	return 1; // Default
 }
 

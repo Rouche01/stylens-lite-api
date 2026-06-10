@@ -94,8 +94,11 @@ export const getIsolatedItemUrl = (params: {
 	imageUrl: string;
 	boundingBox: { x: number; y: number; width: number; height: number };
 	dimensions: { width: number; height: number };
+	enhance?: boolean;
+	color?: string;
+	subcategory?: string;
 }): string => {
-	const { domain, imageUrl, boundingBox, dimensions } = params;
+	const { domain, imageUrl, boundingBox, dimensions, enhance, color, subcategory } = params;
 
 	// Extract the clean R2 storage object key from the imageUrl
 	let objectKey = imageUrl;
@@ -121,6 +124,10 @@ export const getIsolatedItemUrl = (params: {
 		imgW: dimensions.width.toString(),
 		imgH: dimensions.height.toString()
 	});
+
+	if (enhance) searchParams.append('enhance', 'true');
+	if (color) searchParams.append('color', color);
+	if (subcategory) searchParams.append('subcategory', subcategory);
 
 	return `${base}/assets/isolate?${searchParams.toString()}`;
 };
