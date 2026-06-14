@@ -1,60 +1,110 @@
 import { SignJWT, importPKCS8 } from 'jose';
 import { createPushTokensDB, PushTokensDB } from '../db';
 
+const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const FCM_MESSAGING_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
+const fcmSendMessageUrl = (projectId: string) =>
+	`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
+
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
+
+type FcmServiceAccount = {
+	project_id: string;
+	client_email: string;
+	private_key: string;
+};
+
+function maskToken(token: string): string {
+	if (token.length <= 12) return '***';
+	return `${token.slice(0, 8)}...${token.slice(-4)} (${token.length} chars)`;
+}
+
+function logFcmErrorDetails(errBody: any): void {
+	const details = errBody?.error?.details ?? [];
+	for (const detail of details) {
+		const type = detail['@type'] ?? '';
+		if (type.includes('FcmError') && detail.errorCode) {
+			console.error(`FCM errorCode: ${detail.errorCode}`);
+		}
+		if (type.includes('ApnsError')) {
+			console.error(
+				`APNs error: statusCode=${detail.statusCode}, reason=${detail.reason ?? 'unknown'}`
+			);
+		}
+	}
+}
 
 export class PushService {
 	constructor(
 		private pushTokensDB: PushTokensDB,
-		private serviceAccountJson: string
+		private serviceAccountJson: string,
+		private envName: string
 	) { }
+
+	private logDebug(...args: unknown[]): void {
+		if (this.envName !== 'production') {
+			console.log(...args);
+		}
+	}
+
+	private parseServiceAccount(): FcmServiceAccount {
+		if (!this.serviceAccountJson || this.serviceAccountJson === 'dummy') {
+			throw new Error('FCM_SERVICE_ACCOUNT_JSON is not configured or is set to dummy');
+		}
+
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(this.serviceAccountJson);
+		} catch (e) {
+			console.error('Failed to parse FCM_SERVICE_ACCOUNT_JSON:', e);
+			throw new Error('FCM_SERVICE_ACCOUNT_JSON is not valid JSON');
+		}
+
+		const serviceAccount = parsed as Partial<FcmServiceAccount>;
+		const { project_id, client_email, private_key } = serviceAccount;
+
+		if (!project_id) {
+			throw new Error('project_id missing from service account JSON');
+		}
+		if (!client_email || !private_key) {
+			throw new Error('FCM service account is missing private_key or client_email');
+		}
+
+		return { project_id, client_email, private_key };
+	}
 
 	/**
 	 * Retrieves a valid OAuth2 access token for the FCM API.
 	 * Uses jose to sign a JWT with the service account's private key,
 	 * then exchanges it for an access token. In-memory cached for reuse.
 	 */
-	private async getAccessToken(): Promise<string> {
-		if (!this.serviceAccountJson || this.serviceAccountJson === 'dummy') {
-			throw new Error('FCM_SERVICE_ACCOUNT_JSON is not configured or is set to dummy');
-		}
-
+	private async getAccessToken(serviceAccount: FcmServiceAccount): Promise<string> {
 		if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now() + 60000) {
+			this.logDebug(
+				`FCM OAuth: using cached access token (${cachedAccessToken.token.length} chars, expires in ${Math.round((cachedAccessToken.expiresAt - Date.now()) / 1000)}s)`
+			);
 			return cachedAccessToken.token;
 		}
 
-		let serviceAccount: any;
-		try {
-			serviceAccount = JSON.parse(this.serviceAccountJson);
-		} catch (e) {
-			console.error('Failed to parse FCM_SERVICE_ACCOUNT_JSON:', e);
-			throw new Error('FCM_SERVICE_ACCOUNT_JSON is not valid JSON');
-		}
-
-		const privateKeyPem = serviceAccount.private_key;
-		const clientEmail = serviceAccount.client_email;
-
-		if (!privateKeyPem || !clientEmail) {
-			throw new Error('FCM service account is missing private_key or client_email');
-		}
+		const { private_key: privateKeyPem, client_email: clientEmail } = serviceAccount;
 
 		// Import the PKCS#8 PEM private key for jose signing
 		const privateKey = await importPKCS8(privateKeyPem, 'RS256');
 
 		// Generate Google OAuth JWT
 		const jwt = await new SignJWT({
-			scope: 'https://www.googleapis.com/auth/firebase.messaging'
+			scope: FCM_MESSAGING_SCOPE
 		})
 			.setProtectedHeader({ alg: 'RS256' })
 			.setIssuer(clientEmail)
 			.setSubject(clientEmail)
-			.setAudience('https://oauth2.googleapis.com/token')
+			.setAudience(GOOGLE_OAUTH_TOKEN_URL)
 			.setExpirationTime('1h')
 			.setIssuedAt()
 			.sign(privateKey);
 
 		// Exchange JWT for access token
-		const response = await fetch('https://oauth2.googleapis.com/token', {
+		const response = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/x-www-form-urlencoded',
@@ -77,6 +127,10 @@ export class PushService {
 			expiresAt: Date.now() + data.expires_in * 1000
 		};
 
+		this.logDebug(
+			`FCM OAuth: token exchange succeeded (${data.access_token.length} chars, expires_in=${data.expires_in}s, client=${clientEmail})`
+		);
+
 		return data.access_token;
 	}
 
@@ -97,33 +151,37 @@ export class PushService {
 
 		const tokens = await this.pushTokensDB.getTokensByUserId(userId);
 		if (tokens.length === 0) {
-			console.log(`No registered push tokens found for user: ${userId}`);
+			this.logDebug(`No registered push tokens found for user: ${userId}`);
 			return;
 		}
 
 		let accessToken: string;
-		let projectId: string;
+		let serviceAccount: FcmServiceAccount;
 		try {
-			accessToken = await this.getAccessToken();
-			const parsed = JSON.parse(this.serviceAccountJson);
-			projectId = parsed.project_id;
-			if (!projectId) {
-				throw new Error('project_id missing from service account JSON');
-			}
+			serviceAccount = this.parseServiceAccount();
+			accessToken = await this.getAccessToken(serviceAccount);
 		} catch (e) {
 			console.error('Failed to initialize FCM credentials:', e);
 			return;
 		}
 
-		console.log(`Sending push notification to ${tokens.length} tokens for user ${userId}`);
+		const { project_id: projectId, client_email: clientEmail } = serviceAccount;
+		const fcmEndpoint = fcmSendMessageUrl(projectId);
+		this.logDebug(
+			`FCM send: user=${userId}, project=${projectId}, serviceAccount=${clientEmail}, endpoint=${fcmEndpoint}, tokens=${tokens.length}`
+		);
 
 		// Send to each token in parallel
 		await Promise.allSettled(
 			tokens.map(async (pushTokenObj) => {
 				const { token } = pushTokenObj;
 				try {
+					this.logDebug(
+						`FCM send attempt: platform=${pushTokenObj.platform}, token=${maskToken(token)}`
+					);
+
 					const res = await fetch(
-						`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+						fcmEndpoint,
 						{
 							method: 'POST',
 							headers: {
@@ -146,9 +204,10 @@ export class PushService {
 					if (!res.ok) {
 						const errBody = (await res.json().catch(() => null)) as any;
 						console.error(
-							`FCM send failure for token on platform ${pushTokenObj.platform}:`,
+							`FCM send failure for token on platform ${pushTokenObj.platform} (HTTP ${res.status}):`,
 							JSON.stringify(errBody)
 						);
+						logFcmErrorDetails(errBody);
 
 						const status = errBody?.error?.status;
 						const code = errBody?.error?.code;
@@ -171,7 +230,7 @@ export class PushService {
 							await this.pushTokensDB.deleteToken(token, userId);
 						}
 					} else {
-						console.log(`Successfully sent FCM notification to token on ${pushTokenObj.platform}`);
+						this.logDebug(`Successfully sent FCM notification to token on ${pushTokenObj.platform}`);
 					}
 				} catch (err) {
 					console.error(`Error sending push notification to token:`, err);
@@ -207,5 +266,5 @@ export class PushService {
 
 export const createPushService = (env: Env) => {
 	const pushTokensDB = createPushTokensDB(env.GOSTYLENS_DB);
-	return new PushService(pushTokensDB, env.FCM_SERVICE_ACCOUNT_JSON);
+	return new PushService(pushTokensDB, env.FCM_SERVICE_ACCOUNT_JSON, env.ENV_NAME);
 };

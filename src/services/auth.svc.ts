@@ -23,7 +23,6 @@ export class AuthService {
         }
 
         this.JWKS = jwksCache.get(this.svcUrl)!;
-        console.log("JWKS_TEST: ", this.JWKS);
     }
 
     async verifyJWT(token: string): Promise<DecodedJWT> {

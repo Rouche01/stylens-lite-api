@@ -41,7 +41,8 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 					request.user.dbId,
 					'Style Advice Ready',
 					'Your personalized style advice is ready!',
-					ctx
+					ctx,
+					{ 'sessionId': sessionId, 'type': 'style_advice_ready' }
 				);
 			}
 		});
