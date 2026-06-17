@@ -36,7 +36,7 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 
 				// Trigger FCM push notification to the user in the background (to test push notifications)
 				const ctx = (request as any).ctx as ExecutionContext;
-				const pushService = createPushService(env);
+				const pushService = createPushService(env, request.log);
 				pushService.sendPushNotificationInBackground(
 					request.user.dbId,
 					'Style Advice Ready',

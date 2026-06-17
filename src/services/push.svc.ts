@@ -1,5 +1,6 @@
 import { SignJWT, importPKCS8 } from 'jose';
 import { createPushTokensDB, PushTokensDB } from '../db';
+import { Logger, createLogger, maskToken } from 'utils/logger.utils';
 
 const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const FCM_MESSAGING_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
@@ -14,22 +15,34 @@ type FcmServiceAccount = {
 	private_key: string;
 };
 
-function maskToken(token: string): string {
-	if (token.length <= 12) return '***';
-	return `${token.slice(0, 8)}...${token.slice(-4)} (${token.length} chars)`;
-}
+type FcmErrorDetail = {
+	'@type'?: string;
+	errorCode?: string;
+	statusCode?: number;
+	reason?: string;
+};
 
-function logFcmErrorDetails(errBody: any): void {
-	const details = errBody?.error?.details ?? [];
+type FcmErrorBody = {
+	error?: {
+		status?: string;
+		code?: number;
+		message?: string;
+		details?: FcmErrorDetail[];
+	};
+};
+
+function logFcmErrorDetails(log: Logger, errBody: FcmErrorBody): void {
+	const details = errBody.error?.details ?? [];
 	for (const detail of details) {
 		const type = detail['@type'] ?? '';
 		if (type.includes('FcmError') && detail.errorCode) {
-			console.error(`FCM errorCode: ${detail.errorCode}`);
+			log.error('fcm_error_code', { fcm_error_code: detail.errorCode });
 		}
 		if (type.includes('ApnsError')) {
-			console.error(
-				`APNs error: statusCode=${detail.statusCode}, reason=${detail.reason ?? 'unknown'}`
-			);
+			log.error('apns_error', {
+				apns_status_code: detail.statusCode,
+				apns_reason: detail.reason ?? 'unknown',
+			});
 		}
 	}
 }
@@ -38,14 +51,8 @@ export class PushService {
 	constructor(
 		private pushTokensDB: PushTokensDB,
 		private serviceAccountJson: string,
-		private envName: string
+		private log: Logger
 	) { }
-
-	private logDebug(...args: unknown[]): void {
-		if (this.envName !== 'production') {
-			console.log(...args);
-		}
-	}
 
 	private parseServiceAccount(): FcmServiceAccount {
 		if (!this.serviceAccountJson || this.serviceAccountJson === 'dummy') {
@@ -56,7 +63,7 @@ export class PushService {
 		try {
 			parsed = JSON.parse(this.serviceAccountJson);
 		} catch (e) {
-			console.error('Failed to parse FCM_SERVICE_ACCOUNT_JSON:', e);
+			this.log.error('fcm_service_account_parse_failed', {}, e);
 			throw new Error('FCM_SERVICE_ACCOUNT_JSON is not valid JSON');
 		}
 
@@ -80,9 +87,10 @@ export class PushService {
 	 */
 	private async getAccessToken(serviceAccount: FcmServiceAccount): Promise<string> {
 		if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now() + 60000) {
-			this.logDebug(
-				`FCM OAuth: using cached access token (${cachedAccessToken.token.length} chars, expires in ${Math.round((cachedAccessToken.expiresAt - Date.now()) / 1000)}s)`
-			);
+			this.log.debug('fcm_oauth_using_cached_token', {
+				token_length: cachedAccessToken.token.length,
+				expires_in_seconds: Math.round((cachedAccessToken.expiresAt - Date.now()) / 1000),
+			});
 			return cachedAccessToken.token;
 		}
 
@@ -127,9 +135,11 @@ export class PushService {
 			expiresAt: Date.now() + data.expires_in * 1000
 		};
 
-		this.logDebug(
-			`FCM OAuth: token exchange succeeded (${data.access_token.length} chars, expires_in=${data.expires_in}s, client=${clientEmail})`
-		);
+		this.log.debug('fcm_oauth_token_exchange_succeeded', {
+			token_length: data.access_token.length,
+			expires_in_seconds: data.expires_in,
+			client_email: clientEmail,
+		});
 
 		return data.access_token;
 	}
@@ -144,14 +154,16 @@ export class PushService {
 		body: string,
 		data?: Record<string, string>
 	): Promise<void> {
+		const log = this.log.child({ user_id: userId });
+
 		if (!this.serviceAccountJson || this.serviceAccountJson === 'dummy') {
-			console.warn(`FCM not configured. Skipping push notification to user: ${userId}`);
+			log.warn('fcm_not_configured');
 			return;
 		}
 
 		const tokens = await this.pushTokensDB.getTokensByUserId(userId);
 		if (tokens.length === 0) {
-			this.logDebug(`No registered push tokens found for user: ${userId}`);
+			log.debug('no_push_tokens_found');
 			return;
 		}
 
@@ -161,24 +173,28 @@ export class PushService {
 			serviceAccount = this.parseServiceAccount();
 			accessToken = await this.getAccessToken(serviceAccount);
 		} catch (e) {
-			console.error('Failed to initialize FCM credentials:', e);
+			log.error('fcm_credentials_init_failed', {}, e);
 			return;
 		}
 
 		const { project_id: projectId, client_email: clientEmail } = serviceAccount;
 		const fcmEndpoint = fcmSendMessageUrl(projectId);
-		this.logDebug(
-			`FCM send: user=${userId}, project=${projectId}, serviceAccount=${clientEmail}, endpoint=${fcmEndpoint}, tokens=${tokens.length}`
-		);
+		log.debug('fcm_send_start', {
+			project_id: projectId,
+			service_account: clientEmail,
+			fcm_endpoint: fcmEndpoint,
+			token_count: tokens.length,
+		});
 
 		// Send to each token in parallel
 		await Promise.allSettled(
 			tokens.map(async (pushTokenObj) => {
 				const { token } = pushTokenObj;
 				try {
-					this.logDebug(
-						`FCM send attempt: platform=${pushTokenObj.platform}, token=${maskToken(token)}`
-					);
+					log.debug('fcm_send_attempt', {
+						platform: pushTokenObj.platform,
+						token: maskToken(token),
+					});
 
 					const res = await fetch(
 						fcmEndpoint,
@@ -202,12 +218,16 @@ export class PushService {
 					);
 
 					if (!res.ok) {
-						const errBody = (await res.json().catch(() => null)) as any;
-						console.error(
-							`FCM send failure for token on platform ${pushTokenObj.platform} (HTTP ${res.status}):`,
-							JSON.stringify(errBody)
-						);
-						logFcmErrorDetails(errBody);
+						const errBody = (await res.json().catch(() => null)) as FcmErrorBody | null;
+						log.error('fcm_send_failed', {
+							platform: pushTokenObj.platform,
+							http_status: res.status,
+							fcm_status: errBody?.error?.status,
+							fcm_code: errBody?.error?.code,
+						});
+						if (errBody) {
+							logFcmErrorDetails(log, errBody);
+						}
 
 						const status = errBody?.error?.status;
 						const code = errBody?.error?.code;
@@ -220,20 +240,22 @@ export class PushService {
 							message.includes('unregistered') ||
 							message.includes('not registered') ||
 							errBody?.error?.details?.some(
-								(d: any) => d.reason === 'REGISTRATION_TOKEN_NOT_REGISTERED'
+								(d) => d.reason === 'REGISTRATION_TOKEN_NOT_REGISTERED'
 							);
 
 						if (isUnregistered) {
-							console.log(
-								`Deleting stale/unregistered token for user ${userId} (${pushTokenObj.platform})`
-							);
+							log.info('fcm_stale_token_deleted', {
+								platform: pushTokenObj.platform,
+							});
 							await this.pushTokensDB.deleteToken(token, userId);
 						}
 					} else {
-						this.logDebug(`Successfully sent FCM notification to token on ${pushTokenObj.platform}`);
+						log.debug('fcm_send_succeeded', {
+							platform: pushTokenObj.platform,
+						});
 					}
 				} catch (err) {
-					console.error(`Error sending push notification to token:`, err);
+					log.error('fcm_send_exception', { platform: pushTokenObj.platform }, err);
 				}
 			})
 		);
@@ -254,7 +276,7 @@ export class PushService {
 			try {
 				await this.sendPushNotification(userId, title, body, data);
 			} catch (err) {
-				console.error(`Failed to send push notification background task for user ${userId}:`, err);
+				this.log.error('fcm_background_send_failed', { user_id: userId }, err);
 			}
 		})();
 
@@ -264,7 +286,8 @@ export class PushService {
 	}
 }
 
-export const createPushService = (env: Env) => {
+export const createPushService = (env: Env, log?: Logger) => {
 	const pushTokensDB = createPushTokensDB(env.GOSTYLENS_DB);
-	return new PushService(pushTokensDB, env.FCM_SERVICE_ACCOUNT_JSON, env.ENV_NAME);
+	const logger = (log ?? createLogger({ env: env.ENV_NAME })).child({ service: 'push' });
+	return new PushService(pushTokensDB, env.FCM_SERVICE_ACCOUNT_JSON, logger);
 };

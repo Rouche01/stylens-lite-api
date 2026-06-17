@@ -1,4 +1,5 @@
 import { error, Router } from 'itty-router';
+import { loggingMiddleware } from './middlewares/loggingMiddleware';
 import styleAnalysisRouter from './routes/style_analysis';
 import assetsRouter from './routes/assets';
 import usersRouter from './routes/users';
@@ -9,6 +10,8 @@ import webhooksRouter from './routes/webhooks';
 import closetRouter from './routes/closet';
 
 const router = Router();
+
+router.all('*', loggingMiddleware);
 
 // Mount the style analysis router at the /style-analysis path
 router.all('/style-analysis/*', styleAnalysisRouter.fetch);

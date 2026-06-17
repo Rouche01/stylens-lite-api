@@ -1,4 +1,9 @@
 import { IRequest } from "itty-router";
+import { Logger } from "utils/logger.utils";
+
+export type ApiRequest = IRequest & {
+	log: Logger;
+};
 
 export const AppRoles = {
     DefaultUser: 'defaultuser',
@@ -27,7 +32,7 @@ export type AuthUser = {
     dbId?: string;
 }
 
-export type AuthRequest = IRequest & {
+export type AuthRequest = ApiRequest & {
     user: AuthUser;
 }
 
@@ -35,6 +40,6 @@ export type ProvisionedAuthUser = AuthUser & {
     dbId: string;
 }
 
-export type ProvisionedAuthRequest = IRequest & {
+export type ProvisionedAuthRequest = ApiRequest & {
     user: ProvisionedAuthUser;
 }
