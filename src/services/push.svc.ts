@@ -31,6 +31,15 @@ type FcmErrorBody = {
 	};
 };
 
+export type PushSendResult = {
+	tokensFound: number;
+	tokensSent: number;
+	tokensFailed: number;
+	staleTokensRemoved: number;
+};
+
+type TokenSendOutcome = 'sent' | 'failed' | 'stale_removed';
+
 function logFcmErrorDetails(log: Logger, errBody: FcmErrorBody): void {
 	const details = errBody.error?.details ?? [];
 	for (const detail of details) {
@@ -144,6 +153,88 @@ export class PushService {
 		return data.access_token;
 	}
 
+	private async sendToToken(params: {
+		pushTokenObj: { token: string; platform: 'ios' | 'android' };
+		userId: string;
+		title: string;
+		body: string;
+		data?: Record<string, string>;
+		accessToken: string;
+		fcmEndpoint: string;
+		log: Logger;
+	}): Promise<TokenSendOutcome> {
+		const { pushTokenObj, userId, title, body, data, accessToken, fcmEndpoint, log } = params;
+		const { token } = pushTokenObj;
+
+		try {
+			log.debug('fcm_send_attempt', {
+				platform: pushTokenObj.platform,
+				token: maskToken(token),
+			});
+
+			const res = await fetch(fcmEndpoint, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${accessToken}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					message: {
+						token,
+						notification: {
+							title,
+							body,
+						},
+						...(data ? { data } : {}),
+					},
+				}),
+			});
+
+			if (!res.ok) {
+				const errBody = (await res.json().catch(() => null)) as FcmErrorBody | null;
+				log.error('fcm_send_failed', {
+					platform: pushTokenObj.platform,
+					http_status: res.status,
+					fcm_status: errBody?.error?.status,
+					fcm_code: errBody?.error?.code,
+				});
+				if (errBody) {
+					logFcmErrorDetails(log, errBody);
+				}
+
+				const status = errBody?.error?.status;
+				const code = errBody?.error?.code;
+				const message = errBody?.error?.message?.toLowerCase() || '';
+
+				const isUnregistered =
+					status === 'NOT_FOUND' ||
+					code === 404 ||
+					message.includes('not found') ||
+					message.includes('unregistered') ||
+					message.includes('not registered') ||
+					errBody?.error?.details?.some((d) => d.reason === 'REGISTRATION_TOKEN_NOT_REGISTERED');
+
+				if (isUnregistered) {
+					log.info('fcm_stale_token_deleted', {
+						platform: pushTokenObj.platform,
+					});
+					await this.pushTokensDB.deleteToken(token, userId);
+					return 'stale_removed';
+				}
+
+				return 'failed';
+			}
+
+			log.debug('fcm_send_succeeded', {
+				platform: pushTokenObj.platform,
+			});
+			return 'sent';
+		} catch (err) {
+			log.error('fcm_send_exception', { platform: pushTokenObj.platform }, err);
+			return 'failed';
+		}
+	}
+
 	/**
 	 * Sends a push notification to all registered tokens of a user.
 	 * Prunes any unregistered or stale tokens from the database.
@@ -153,29 +244,27 @@ export class PushService {
 		title: string,
 		body: string,
 		data?: Record<string, string>
-	): Promise<void> {
+	): Promise<PushSendResult> {
 		const log = this.log.child({ user_id: userId });
 
 		if (!this.serviceAccountJson || this.serviceAccountJson === 'dummy') {
 			log.warn('fcm_not_configured');
-			return;
+			throw new Error('FCM_SERVICE_ACCOUNT_JSON is not configured');
 		}
 
 		const tokens = await this.pushTokensDB.getTokensByUserId(userId);
 		if (tokens.length === 0) {
 			log.debug('no_push_tokens_found');
-			return;
+			return {
+				tokensFound: 0,
+				tokensSent: 0,
+				tokensFailed: 0,
+				staleTokensRemoved: 0,
+			};
 		}
 
-		let accessToken: string;
-		let serviceAccount: FcmServiceAccount;
-		try {
-			serviceAccount = this.parseServiceAccount();
-			accessToken = await this.getAccessToken(serviceAccount);
-		} catch (e) {
-			log.error('fcm_credentials_init_failed', {}, e);
-			return;
-		}
+		const serviceAccount = this.parseServiceAccount();
+		const accessToken = await this.getAccessToken(serviceAccount);
 
 		const { project_id: projectId, client_email: clientEmail } = serviceAccount;
 		const fcmEndpoint = fcmSendMessageUrl(projectId);
@@ -186,79 +275,30 @@ export class PushService {
 			token_count: tokens.length,
 		});
 
-		// Send to each token in parallel
-		await Promise.allSettled(
-			tokens.map(async (pushTokenObj) => {
-				const { token } = pushTokenObj;
-				try {
-					log.debug('fcm_send_attempt', {
-						platform: pushTokenObj.platform,
-						token: maskToken(token),
-					});
-
-					const res = await fetch(
-						fcmEndpoint,
-						{
-							method: 'POST',
-							headers: {
-								'Authorization': `Bearer ${accessToken}`,
-								'Content-Type': 'application/json'
-							},
-							body: JSON.stringify({
-								message: {
-									token,
-									notification: {
-										title,
-										body
-									},
-									...(data ? { data } : {})
-								}
-							})
-						}
-					);
-
-					if (!res.ok) {
-						const errBody = (await res.json().catch(() => null)) as FcmErrorBody | null;
-						log.error('fcm_send_failed', {
-							platform: pushTokenObj.platform,
-							http_status: res.status,
-							fcm_status: errBody?.error?.status,
-							fcm_code: errBody?.error?.code,
-						});
-						if (errBody) {
-							logFcmErrorDetails(log, errBody);
-						}
-
-						const status = errBody?.error?.status;
-						const code = errBody?.error?.code;
-						const message = errBody?.error?.message?.toLowerCase() || '';
-
-						const isUnregistered =
-							status === 'NOT_FOUND' ||
-							code === 404 ||
-							message.includes('not found') ||
-							message.includes('unregistered') ||
-							message.includes('not registered') ||
-							errBody?.error?.details?.some(
-								(d) => d.reason === 'REGISTRATION_TOKEN_NOT_REGISTERED'
-							);
-
-						if (isUnregistered) {
-							log.info('fcm_stale_token_deleted', {
-								platform: pushTokenObj.platform,
-							});
-							await this.pushTokensDB.deleteToken(token, userId);
-						}
-					} else {
-						log.debug('fcm_send_succeeded', {
-							platform: pushTokenObj.platform,
-						});
-					}
-				} catch (err) {
-					log.error('fcm_send_exception', { platform: pushTokenObj.platform }, err);
-				}
-			})
+		const outcomes = await Promise.all(
+			tokens.map((pushTokenObj) =>
+				this.sendToToken({
+					pushTokenObj,
+					userId,
+					title,
+					body,
+					data,
+					accessToken,
+					fcmEndpoint,
+					log,
+				})
+			)
 		);
+
+		const result: PushSendResult = {
+			tokensFound: tokens.length,
+			tokensSent: outcomes.filter((o) => o === 'sent').length,
+			tokensFailed: outcomes.filter((o) => o === 'failed').length,
+			staleTokensRemoved: outcomes.filter((o) => o === 'stale_removed').length,
+		};
+
+		log.info('fcm_send_complete', result);
+		return result;
 	}
 
 	/**

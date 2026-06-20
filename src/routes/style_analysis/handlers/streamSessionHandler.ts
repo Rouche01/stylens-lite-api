@@ -42,7 +42,7 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 					'Style Advice Ready',
 					'Your personalized style advice is ready!',
 					ctx,
-					{ 'sessionId': sessionId, 'type': 'style_advice_ready' }
+					{ link: `gostylens://session/${sessionId}`, type: 'style_advice_ready', sessionId }
 				);
 			}
 		});

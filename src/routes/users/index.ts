@@ -10,12 +10,14 @@ import { authMiddleware } from 'middlewares/authMiddleware';
 import { dbIdMiddleware } from 'middlewares/dbIdMiddleware';
 import upsertPushTokenHandler from './handlers/upsertPushTokenHandler';
 import deletePushTokenHandler from './handlers/deletePushTokenHandler';
+import sendPushNotificationHandler from './handlers/sendPushNotificationHandler';
 
 const router = Router({ base: '/users' });
 
 router.post('/', authMiddleware, createUserHandler);
 router.get('/', adminApiKeyMiddleware, getUsersHandler);
 router.post('/limits', adminApiKeyMiddleware, updateUserLimitHandler);
+router.post('/push-notification', adminApiKeyMiddleware, sendPushNotificationHandler);
 // We don't need dbIdMiddleware, as long as user is in authSvc
 // we can allow them access this route
 router.get('/auth/:authId', authMiddleware, getUserByAuthIdHandler);
