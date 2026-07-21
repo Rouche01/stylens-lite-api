@@ -23,6 +23,7 @@
 		"wrangler": "4.80.0"
 	},
 	"dependencies": {
+		"@voltmem/client": "^0.1.0",
 		"aws4fetch": "1.0.20",
 		"itty-router": "5.0.22",
 		"jose": "6.1.3"

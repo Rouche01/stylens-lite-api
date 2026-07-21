@@ -11,6 +11,8 @@ import { SubscriptionTier } from '../types';
 import { createStyleAnalysisDB, createSubscriptionsDB, createUserLimitsDB } from '../db';
 import { env } from 'cloudflare:workers';
 import { RealtimeService, createRealtimeService } from './realtime.svc';
+import { createVoltMemService, type VoltMemService } from './voltmem.svc';
+import { createLogger } from '../utils/logger.utils';
 
 export class StyleAnalysisService {
 	constructor(
@@ -20,7 +22,8 @@ export class StyleAnalysisService {
 		private userLimitsDB: UserLimitsDB,
 		private realtimeService: RealtimeService,
 		private classificationService: ClassificationService,
-		private envVars: any
+		private envVars: any,
+		private voltmem: VoltMemService | null = null
 	) { }
 
 	/**
@@ -157,22 +160,30 @@ export class StyleAnalysisService {
 			remoteImages: message.remoteImages,
 		});
 		// Trigger classification in the background (previous message resolved internally)
-		this.classificationService.tagEntryInBackground(messageEntryId, message, ctx as ExecutionContext, sessionId);
+		this.classificationService.tagEntryInBackground(
+			messageEntryId,
+			message,
+			ctx as ExecutionContext,
+			sessionId,
+			undefined,
+			userId
+		);
 
 		return { sessionId, messageId: messageEntryId };
 	}
 
 	/**
 	 * Generates a streaming response for the style analysis session,
-	 * injecting the persona and dynamically fetching session memory.
+	 * injecting the persona and dynamically fetching session + cross-session memory.
 	 */
 	async generateStyleAdviceStream(params: {
 		sessionId: string;
+		userId: string;
 		messages: MessageEntry[];
 		onComplete?: (completeStreamText: string) => Promise<void> | void;
 		signal?: AbortSignal;
 	}): Promise<ReadableStream> {
-		const { sessionId, messages, onComplete, signal } = params;
+		const { sessionId, userId, messages, onComplete, signal } = params;
 		// 1. Fetch chronologically ordered session memory
 		const memoryItems = await this.styleAnalysisDB.getSessionMemory(sessionId);
 
@@ -202,14 +213,44 @@ export class StyleAnalysisService {
 			}
 		}
 
+		// 2b. Cross-session USER MEMORY from VoltMem (fail-open; session memory stays first)
+		let userMemoryContext = '';
+		if (this.voltmem) {
+			const hits = await this.voltmem.searchPrefs(
+				userId,
+				'style preferences constraints occasion',
+				5
+			);
+			if (hits.length > 0) {
+				const lines = hits.map((h) => `- ${h.memory} (domain=${h.domain})`);
+				userMemoryContext = `\n\n[USER MEMORY]\n${lines.join('\n')}`;
+			}
+
+			if (this.envVars.ENV_NAME !== 'production') {
+				const log = createLogger({ env: this.envVars.ENV_NAME }).child({ service: 'voltmem' });
+				const stats = await this.voltmem.domainStats(userId);
+				const auditSummary = stats
+					? Object.entries(stats)
+							.map(([domain, s]) => `${domain}:${s.audit_rate ?? 0}`)
+							.join(',')
+					: '';
+				log.info('voltmem_prompt_injection', {
+					user_id: userId,
+					session_id: sessionId,
+					hit_count: hits.length,
+					domain_audit_rates: auditSummary || undefined,
+				});
+			}
+		}
+
 		// 3. Create the developer payload encapsulating the persona and current memory state
 		const systemMessage: MessageEntry = {
 			role: 'system',
-			prompt: STYLE_ANALYSIS_SYSTEM_PROMPT + memoryContext
+			prompt: STYLE_ANALYSIS_SYSTEM_PROMPT + memoryContext + userMemoryContext
 		};
 
 		// 4. Assemble the full message sequence:
-		//    [system] → [session images in chronological order] → [conversation history]
+		//    [system + SESSION MEMORY + USER MEMORY] → [session images] → [conversation history]
 		const messagesChronological = [systemMessage, ...contextImages, ...messages];
 
 		// 5. Structure LLM Inputs and execute stream
@@ -235,7 +276,7 @@ export class StyleAnalysisService {
 			this.generateTitleInBackground({ sessionId, messages, ctx });
 		}
 
-		this.classifyMessagesInBackground({ sessionId, messageIds, messages, ctx });
+		this.classifyMessagesInBackground({ sessionId, messageIds, messages, userId, ctx });
 
 		// Sync the has_reached_limit flag in the background for UI consistency
 		this.syncSessionLimitFlagInBackground({ userId, ctx });
@@ -274,13 +315,21 @@ export class StyleAnalysisService {
 		sessionId: string;
 		messageIds: string[];
 		messages: MessageEntry[];
+		userId: string;
 		ctx?: ExecutionContext;
 	}) {
-		const { sessionId, messageIds, messages, ctx } = params;
+		const { sessionId, messageIds, messages, userId, ctx } = params;
 
 		for (let i = 0; i < messages.length; i++) {
 			const previousMessage = i > 0 ? messages[i - 1] : null;
-			this.classificationService.tagEntryInBackground(messageIds[i], messages[i], ctx as ExecutionContext, sessionId, previousMessage);
+			this.classificationService.tagEntryInBackground(
+				messageIds[i],
+				messages[i],
+				ctx as ExecutionContext,
+				sessionId,
+				previousMessage,
+				userId
+			);
 		}
 	}
 
@@ -358,7 +407,8 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 	const subscriptionsDB = createSubscriptionsDB(applicationEnv.GOSTYLENS_DB);
 	const userLimitsDB = createUserLimitsDB(applicationEnv.GOSTYLENS_DB);
 	const realtimeService = createRealtimeService();
-	const classificationService = createClassificationService(applicationEnv.GOSTYLENS_DB);
+	const classificationService = createClassificationService(applicationEnv.GOSTYLENS_DB, applicationEnv);
+	const voltmem = createVoltMemService(applicationEnv);
 
 	return new StyleAnalysisService(
 		llmService,
@@ -367,6 +417,7 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 		userLimitsDB,
 		realtimeService,
 		classificationService,
-		applicationEnv
+		applicationEnv,
+		voltmem
 	);
 };

@@ -29,6 +29,7 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 		// Get streaming response
 		const stream = await styleAnalysisService.generateStyleAdviceStream({
 			sessionId,
+			userId: request.user.dbId,
 			messages,
 			onComplete: async (completeText) => {
 				// Save the assistant response in the D1 DB

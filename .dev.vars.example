@@ -35,3 +35,8 @@ FREE_TIER_SESSION_LIMIT=3
 # Firebase Cloud Messaging
 FCM_SERVICE_ACCOUNT_JSON=dummy
 
+# VoltMem sidecar (local wrangler dev — not --remote)
+# Same API key as voltmem/.env VOLTMEM_API_KEY
+VOLTMEM_URL=http://127.0.0.1:8080
+VOLTMEM_API_KEY=dev-secret
+
