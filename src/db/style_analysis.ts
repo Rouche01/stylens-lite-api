@@ -67,10 +67,10 @@ export class StyleAnalysisDB {
 				)
 				.run();
 
-			// Add multiple images if present
+			// Persist all images (remoteImages + legacy remoteImage if not already included)
 			const imagesToSave = [...(message.remoteImages || [])];
-			if (message.remoteImage && !message.remoteImages?.some(img => img.url === message.remoteImage?.url)) {
-				// Avoid duplication if they provided both
+			if (message.remoteImage && !imagesToSave.some((img) => img.url === message.remoteImage?.url)) {
+				imagesToSave.unshift(message.remoteImage);
 			}
 
 			for (const img of imagesToSave) {
@@ -96,14 +96,20 @@ export class StyleAnalysisDB {
 	}
 
 	async addMessage(params: AddMessageParams): Promise<string> {
-		const { sessionId, role, content, remoteImage } = params;
+		const { sessionId, role, content, remoteImage, remoteImages } = params;
 
-		if (!content && !remoteImage) {
-			throw new Error('Either content or remoteImage is required');
+		const hasImage =
+			(remoteImage && (remoteImage.url || remoteImage.key)) ||
+			(remoteImages && remoteImages.length > 0);
+
+		if (!content && !hasImage) {
+			throw new Error('Either content, remoteImage, or remoteImages is required');
 		}
 
 		const messageId = crypto.randomUUID();
 		const now = Date.now();
+
+		const primaryImage = remoteImage || remoteImages?.[0];
 
 		await this.db
 			.prepare(
@@ -112,11 +118,15 @@ export class StyleAnalysisDB {
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `
 			)
-			.bind(messageId, sessionId, role, content || null, params.remoteImage?.url || null, params.remoteImage?.key || null, now)
+			.bind(messageId, sessionId, role, content || null, primaryImage?.url || null, primaryImage?.key || null, now)
 			.run();
 
-		// Add multiple images
-		const imagesToSave = params.remoteImages || [];
+		// Persist all images (remoteImages + legacy remoteImage if not already included)
+		const imagesToSave = [...(remoteImages || [])];
+		if (remoteImage && !imagesToSave.some((img) => img.url === remoteImage.url)) {
+			imagesToSave.unshift(remoteImage);
+		}
+
 		for (const img of imagesToSave) {
 			await this.db
 				.prepare(
