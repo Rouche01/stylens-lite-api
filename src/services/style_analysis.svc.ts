@@ -105,8 +105,8 @@ export class StyleAnalysisService {
 		const messageEntries: MessageEntry[] = messagesToSend.map((m) => ({
 			role: m.role as 'user' | 'assistant' | 'system',
 			prompt: m.content || undefined,
-			remoteImage: m.image_url || m.image_key ? { url: m?.image_url || '', key: m.image_key || '' } : undefined,
-			remoteImages: m.images ? m.images.map(img => ({ url: img.url, key: img.key })) : undefined,
+			remoteImage: m.image_url || m.image_key ? { url: m?.image_url || '', key: m.image_key || '', blurHash: m.images?.[0]?.blurHash } : undefined,
+			remoteImages: m.images ? m.images.map(img => ({ url: img.url, key: img.key, ...(img.blurHash ? { blurHash: img.blurHash } : {}) })) : undefined,
 		}));
 
 		// Return in chronological order (oldest first)

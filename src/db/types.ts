@@ -5,6 +5,9 @@ export type StyleAnalysisHistory = {
 	id: string;
 	user_id: string;
 	title: string;
+	image_url?: string | null;
+	image_key?: string | null;
+	image_blur_hash?: string | null;
 	created_at: number;
 	updated_at: number;
 	deleted_at: number | null;

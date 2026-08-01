@@ -1,6 +1,8 @@
 export type RemoteImage = {
 	url: string;
 	key: string;
+	/** Client-generated BlurHash for instant image placeholders */
+	blurHash?: string;
 };
 
 export type MessageEntry = {

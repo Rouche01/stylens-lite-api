@@ -1,5 +1,18 @@
 import { PaginationParams } from 'types';
 import type { StyleAnalysisHistory, StyleAnalysisEntry, CreateSessionParams, CreateSessionResult, AddMessageParams, SessionMemoryItem } from './types';
+import type { RemoteImage } from '../utils/types';
+
+function resolveBlurHash(img: RemoteImage & { blur_hash?: string }): string | null {
+	return img.blurHash || img.blur_hash || null;
+}
+
+function toRemoteImage(img: { url: string; key: string; blur_hash?: string | null }): RemoteImage {
+	const remote: RemoteImage = { url: img.url, key: img.key };
+	if (img.blur_hash) {
+		remote.blurHash = img.blur_hash;
+	}
+	return remote;
+}
 
 export class StyleAnalysisDB {
 	constructor(private db: D1Database) { }
@@ -28,21 +41,22 @@ export class StyleAnalysisDB {
 		const now = Date.now();
 		const sessionTitle = title || 'New Style Analysis';
 
-		// Extract first image_url and image_key from messages for the session thumbnail
+		// Extract first image fields from messages for the session thumbnail
 		const firstMessageWithImage = messages.find((m) => m.remoteImage || (m.remoteImages && m.remoteImages.length > 0));
 		const firstMsgImage = firstMessageWithImage?.remoteImage || firstMessageWithImage?.remoteImages?.[0];
 		const firstMsgImageUrl = firstMsgImage?.url || null;
 		const firstMsgImageKey = firstMsgImage?.key || null;
+		const firstMsgBlurHash = firstMsgImage ? resolveBlurHash(firstMsgImage) : null;
 
 		// Create session
 		await this.db
 			.prepare(
 				`
-							INSERT INTO style_analysis_histories (id, user_id, title, image_url, image_key, created_at, updated_at)
-							VALUES (?, ?, ?, ?, ?, ?, ?)
+							INSERT INTO style_analysis_histories (id, user_id, title, image_url, image_key, image_blur_hash, created_at, updated_at)
+							VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `
 			)
-			.bind(sessionId, userId, sessionTitle, firstMsgImageUrl, firstMsgImageKey, now, now)
+			.bind(sessionId, userId, sessionTitle, firstMsgImageUrl, firstMsgImageKey, firstMsgBlurHash, now, now)
 			.run();
 
 		// Add all messages
@@ -77,11 +91,11 @@ export class StyleAnalysisDB {
 				await this.db
 					.prepare(
 						`
-						INSERT INTO style_analysis_entry_images (id, style_analysis_entry_id, url, key, created_at)
-						VALUES (?, ?, ?, ?, ?)
+						INSERT INTO style_analysis_entry_images (id, style_analysis_entry_id, url, key, blur_hash, created_at)
+						VALUES (?, ?, ?, ?, ?, ?)
 						`
 					)
-					.bind(crypto.randomUUID(), messageId, img.url, img.key, now)
+					.bind(crypto.randomUUID(), messageId, img.url, img.key, resolveBlurHash(img), now)
 					.run();
 			}
 
@@ -131,11 +145,11 @@ export class StyleAnalysisDB {
 			await this.db
 				.prepare(
 					`
-					INSERT INTO style_analysis_entry_images (id, style_analysis_entry_id, url, key, created_at)
-					VALUES (?, ?, ?, ?, ?)
+					INSERT INTO style_analysis_entry_images (id, style_analysis_entry_id, url, key, blur_hash, created_at)
+					VALUES (?, ?, ?, ?, ?, ?)
 					`
 				)
-				.bind(crypto.randomUUID(), messageId, img.url, img.key, now)
+				.bind(crypto.randomUUID(), messageId, img.url, img.key, resolveBlurHash(img), now)
 				.run();
 		}
 
@@ -214,15 +228,15 @@ export class StyleAnalysisDB {
 					`
 				)
 				.bind(...messageIds)
-				.all<{ style_analysis_entry_id: string; url: string; key: string }>();
+				.all<{ style_analysis_entry_id: string; url: string; key: string; blur_hash?: string | null }>();
 
 			const imagesByMessageId = (imagesResult.results || []).reduce((acc, img) => {
 				if (!acc[img.style_analysis_entry_id]) {
 					acc[img.style_analysis_entry_id] = [];
 				}
-				acc[img.style_analysis_entry_id].push({ url: img.url, key: img.key });
+				acc[img.style_analysis_entry_id].push(toRemoteImage(img));
 				return acc;
-			}, {} as Record<string, { url: string; key: string }[]>);
+			}, {} as Record<string, RemoteImage[]>);
 
 			messages.forEach(m => {
 				m.images = imagesByMessageId[m.id] || [];

@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS style_analysis_histories (
   title TEXT,
   image_url TEXT,       -- nullable: single image reference (URL to R2, etc.)
   image_key TEXT,       -- nullable: storage key for the image
+  image_blur_hash TEXT, -- nullable: BlurHash for session cover placeholder
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER,
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS style_analysis_entry_images (
   style_analysis_entry_id TEXT NOT NULL,
   url TEXT NOT NULL,
   key TEXT NOT NULL,
+  blur_hash TEXT,       -- nullable: BlurHash placeholder for progressive loading
   created_at INTEGER NOT NULL,
   FOREIGN KEY (style_analysis_entry_id) REFERENCES style_analysis_entries(id) ON DELETE CASCADE
 );
