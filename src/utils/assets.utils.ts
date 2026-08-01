@@ -9,6 +9,21 @@ const client = new AwsClient({
 const bucketName = env.OUTFIT_PHOTOS_BUCKET_NAME;
 const accountId = env.R2_ACCOUNT_ID;
 
+/** Presigned GET lifetime in seconds (matches upload/download-url handlers). */
+export const PRESIGNED_GET_EXPIRES_SECONDS = 3600;
+
+/** Sign a fresh download URL for an R2 object key. */
+export async function signDownloadUrlForKey(key: string): Promise<string> {
+	const downloadUrl = new URL(`https://${bucketName}.${accountId}.r2.cloudflarestorage.com`);
+	downloadUrl.pathname = `/${key}`;
+	downloadUrl.searchParams.set('X-Amz-Expires', String(PRESIGNED_GET_EXPIRES_SECONDS));
+
+	const presigned = await client.sign(new Request(downloadUrl, { method: 'GET' }), {
+		aws: { signQuery: true },
+	});
+	return presigned.url;
+}
+
 export const regenerateSignedUrl = async (imageUrl: string): Promise<string> => {
 	// Check if it's an R2 URL that needs re-signing
 	if (!imageUrl.includes('r2.cloudflarestorage.com')) {
@@ -20,14 +35,7 @@ export const regenerateSignedUrl = async (imageUrl: string): Promise<string> => 
 		const url = new URL(imageUrl);
 		const filename = url.pathname.slice(1); // Remove leading '/'
 
-		// Generate fresh download URL
-		const downloadUrl = new URL(`https://${bucketName}.${accountId}.r2.cloudflarestorage.com`);
-		downloadUrl.pathname = `/${filename}`;
-		downloadUrl.searchParams.set('X-Amz-Expires', '3600');
-
-		const presignedDownload = await client.sign(new Request(downloadUrl, { method: 'GET' }), { aws: { signQuery: true } });
-
-		return presignedDownload.url; // Return the signed URL
+		return await signDownloadUrlForKey(filename);
 	} catch (error) {
 		console.error('Error regenerating signed URL:', error);
 		return imageUrl; // Fallback to original URL

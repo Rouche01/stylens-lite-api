@@ -3,6 +3,7 @@ import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { getPaginationMetadata } from '../utils';
 import { ProvisionedAuthRequest } from 'types';
+import { resignSessionCovers } from '../../../utils/resign_image_urls';
 
 const listSessionsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
@@ -25,13 +26,23 @@ const listSessionsHandler: RequestHandler<ProvisionedAuthRequest> = async (reque
 
 		const styleAnalysisDB = createStyleAnalysisDB(env.GOSTYLENS_DB);
 
-		// Get all sessions for the user, potentially filtered by favourites
-		const { sessions, total } = await styleAnalysisDB.getUserSessions(request.user.dbId, { page, pageSize, isFavourite });
+		const { sessions, total } = await styleAnalysisDB.getUserSessions(request.user.dbId, {
+			page,
+			pageSize,
+			isFavourite,
+		});
+		const sessionsWithFreshUrls = await resignSessionCovers(sessions);
 		const paginationMetadata = getPaginationMetadata(total, page, pageSize);
 
-		return new Response(JSON.stringify({ sessions, pagination: paginationMetadata }), {
-			headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store, must-revalidate' },
-		});
+		return new Response(
+			JSON.stringify({ sessions: sessionsWithFreshUrls, pagination: paginationMetadata }),
+			{
+				headers: {
+					'Content-Type': 'application/json',
+					'Cache-Control': 'no-cache, no-store, must-revalidate',
+				},
+			}
+		);
 	} catch (err) {
 		if (err instanceof Error) {
 			return error(400, err.message);
