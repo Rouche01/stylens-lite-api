@@ -3,7 +3,7 @@ import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { getPaginationMetadata } from '../utils';
 import { ProvisionedAuthRequest } from 'types';
-import { resignSessionCovers } from '../../../utils/resign_image_urls';
+import { rewriteSessionCoversToProxy } from '../../../utils/asset_proxy_urls';
 
 const listSessionsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
@@ -31,11 +31,11 @@ const listSessionsHandler: RequestHandler<ProvisionedAuthRequest> = async (reque
 			pageSize,
 			isFavourite,
 		});
-		const sessionsWithFreshUrls = await resignSessionCovers(sessions);
+		const sessionsWithProxyUrls = rewriteSessionCoversToProxy(sessions, url.origin);
 		const paginationMetadata = getPaginationMetadata(total, page, pageSize);
 
 		return new Response(
-			JSON.stringify({ sessions: sessionsWithFreshUrls, pagination: paginationMetadata }),
+			JSON.stringify({ sessions: sessionsWithProxyUrls, pagination: paginationMetadata }),
 			{
 				headers: {
 					'Content-Type': 'application/json',
