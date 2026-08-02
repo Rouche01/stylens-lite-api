@@ -2,17 +2,19 @@ import { LLMService, createLLMService } from './llm.svc';
 import { StyleAnalysisDB } from '../db/style_analysis';
 import { SubscriptionsDB } from '../db/subscriptions';
 import { UserLimitsDB } from '../db/user_limits';
+import { UsersDB } from '../db/users';
 import { ClassificationService, createClassificationService } from './classification.svc';
 import { SessionTitleService, createSessionTitleService } from './session_title.svc';
 import { STYLE_ANALYSIS_SYSTEM_PROMPT } from '../llm/prompts/style_analysis';
 import { MessageEntry } from '../utils/types';
 import { ModelProvider, ModelUseCase } from './model_config.svc';
 import { SubscriptionTier } from '../types';
-import { createStyleAnalysisDB, createSubscriptionsDB, createUserLimitsDB } from '../db';
+import { createStyleAnalysisDB, createSubscriptionsDB, createUserLimitsDB, createUsersDB } from '../db';
 import { env } from 'cloudflare:workers';
 import { RealtimeService, createRealtimeService } from './realtime.svc';
 import { createVoltMemService, type VoltMemService } from './voltmem.svc';
 import { createLogger } from '../utils/logger.utils';
+import { readFreeTierEnvDefaults, resolveEffectiveLimits, type EffectiveLimits } from '../utils/effectiveLimits';
 
 export class StyleAnalysisService {
 	constructor(
@@ -20,6 +22,7 @@ export class StyleAnalysisService {
 		private styleAnalysisDB: StyleAnalysisDB,
 		private subscriptionsDB: SubscriptionsDB,
 		private userLimitsDB: UserLimitsDB,
+		private usersDB: UsersDB,
 		private realtimeService: RealtimeService,
 		private classificationService: ClassificationService,
 		private sessionTitleService: SessionTitleService,
@@ -39,10 +42,10 @@ export class StyleAnalysisService {
 		const { userId, messages, title, ctx } = params;
 		const limits = await this.getEffectiveLimits(userId);
 
-		// Check session count limit
+		// Check session count limit for the current period (trial window or UTC month)
 		if (limits.sessionCountLimit !== -1) {
-			const totalSessionsCount = await this.styleAnalysisDB.countTotalSessions(userId);
-			if (totalSessionsCount >= limits.sessionCountLimit) {
+			const periodSessionsCount = await this.styleAnalysisDB.countSessionsSince(userId, limits.periodStart);
+			if (periodSessionsCount >= limits.sessionCountLimit) {
 				throw new Error('FREE_LIMIT_REACHED: Session limit reached. Upgrade for more sessions.');
 			}
 		}
@@ -335,7 +338,7 @@ export class StyleAnalysisService {
 	}
 
 	/**
-	 * Syncs the global has_reached_limit flag in the subscription table based on current session count.
+	 * Syncs the global has_reached_limit flag in the subscription table based on current period session count.
 	 * This is primarily used for UI consistency in the mobile app (e.g., showing upgrade banners).
 	 */
 	public syncSessionLimitFlagInBackground(params: {
@@ -352,8 +355,8 @@ export class StyleAnalysisService {
 
 				let hasReachedLimit = 0;
 				if (limits.sessionCountLimit !== -1) {
-					const totalSessionsCount = await this.styleAnalysisDB.countTotalSessions(userId);
-					if (totalSessionsCount >= limits.sessionCountLimit) {
+					const periodSessionsCount = await this.styleAnalysisDB.countSessionsSince(userId, limits.periodStart);
+					if (periodSessionsCount >= limits.sessionCountLimit) {
 						hasReachedLimit = 1;
 					}
 				}
@@ -375,27 +378,21 @@ export class StyleAnalysisService {
 	}
 
 	/**
-	 * Resolves effective limits for a user based on overrides, tier, and global defaults.
+	 * Resolves effective limits for a user based on overrides, trial window, tier, and env defaults.
 	 */
-	public async getEffectiveLimits(userId: string) {
+	public async getEffectiveLimits(userId: string): Promise<EffectiveLimits> {
 		const override = await this.userLimitsDB.getUserLimit(userId);
 		const subscription = await this.subscriptionsDB.getSubscriptionByUserId(userId);
+		const user = await this.usersDB.getUserById(userId);
 		const tier = subscription?.tier || SubscriptionTier.Free;
+		const userCreatedAt = user?.created_at ?? Date.now();
 
-		// Session Count Limit
-		let sessionCountLimit = override?.session_count_limit ?? (tier === SubscriptionTier.Core ? -1 : parseInt(this.envVars.FREE_TIER_SESSION_LIMIT || '3', 10));
-
-		// Message Per Session Limit
-		let messagePerSessionLimit = override?.message_per_session_limit ?? (tier === SubscriptionTier.Core ? -1 : 20); // Default 20 for Free
-
-		// Image Per Session Limit
-		let imagePerSessionLimit = override?.image_per_session_limit ?? (tier === SubscriptionTier.Core ? -1 : 10); // Default 10 for Free
-
-		return {
-			sessionCountLimit,
-			messagePerSessionLimit,
-			imagePerSessionLimit
-		};
+		return resolveEffectiveLimits({
+			tier,
+			userCreatedAt,
+			override,
+			envDefaults: readFreeTierEnvDefaults(this.envVars),
+		});
 	}
 }
 
@@ -407,6 +404,7 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 	const styleAnalysisDB = createStyleAnalysisDB(applicationEnv.GOSTYLENS_DB);
 	const subscriptionsDB = createSubscriptionsDB(applicationEnv.GOSTYLENS_DB);
 	const userLimitsDB = createUserLimitsDB(applicationEnv.GOSTYLENS_DB);
+	const usersDB = createUsersDB(applicationEnv.GOSTYLENS_DB);
 	const realtimeService = createRealtimeService();
 	const classificationService = createClassificationService(applicationEnv.GOSTYLENS_DB, applicationEnv);
 	const sessionTitleService = createSessionTitleService();
@@ -417,6 +415,7 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 		styleAnalysisDB,
 		subscriptionsDB,
 		userLimitsDB,
+		usersDB,
 		realtimeService,
 		classificationService,
 		sessionTitleService,

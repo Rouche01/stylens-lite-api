@@ -10,7 +10,11 @@
 	// Shared non-secret vars (dev defaults)
 	"vars": {
 		"ENV_NAME": "dev",
-		"FREE_TIER_SESSION_LIMIT": "3"
+		"FREE_TIER_TRIAL_DAYS": "7",
+		"FREE_TIER_TRIAL_SESSION_LIMIT": "-1",
+		"FREE_TIER_MONTHLY_SESSION_LIMIT": "5",
+		"FREE_TIER_MESSAGE_PER_SESSION_LIMIT": "20",
+		"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10"
 	},
 	// Dev bindings (default) - this makes tools like d1studio work seamlessly locally
 	"d1_databases": [
@@ -36,7 +40,11 @@
 			"name": "stylens-lite-api-staging",
 			"vars": {
 				"ENV_NAME": "staging",
-				"FREE_TIER_SESSION_LIMIT": "3"
+				"FREE_TIER_TRIAL_DAYS": "7",
+				"FREE_TIER_TRIAL_SESSION_LIMIT": "-1",
+				"FREE_TIER_MONTHLY_SESSION_LIMIT": "5",
+				"FREE_TIER_MESSAGE_PER_SESSION_LIMIT": "20",
+				"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10"
 			},
 			"d1_databases": [
 				{
@@ -61,7 +69,11 @@
 			"name": "stylens-lite-api-prod",
 			"vars": {
 				"ENV_NAME": "production",
-				"FREE_TIER_SESSION_LIMIT": "3"
+				"FREE_TIER_TRIAL_DAYS": "7",
+				"FREE_TIER_TRIAL_SESSION_LIMIT": "-1",
+				"FREE_TIER_MONTHLY_SESSION_LIMIT": "5",
+				"FREE_TIER_MESSAGE_PER_SESSION_LIMIT": "20",
+				"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10"
 			},
 			"d1_databases": [
 				{

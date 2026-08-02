@@ -97,6 +97,18 @@ export type CreateUserParams = {
 	name: string;
 	gender?: Gender;
 	email?: string;
+	/** Pre-resolved invite code to apply as user_limits overrides at creation */
+	inviteLimits?: {
+		trial_days?: number | null;
+		trial_session_limit?: number | null;
+		monthly_session_limit?: number | null;
+		message_per_session_limit?: number | null;
+		image_per_session_limit?: number | null;
+	};
+	/** When redeeming an invite, include statements to bump redemption_count */
+	inviteRedemption?: {
+		inviteId: string;
+	};
 };
 
 export type UserLimit = {
@@ -105,6 +117,25 @@ export type UserLimit = {
 	session_count_limit: number | null;
 	message_per_session_limit: number | null;
 	image_per_session_limit: number | null;
+	trial_days: number | null;
+	trial_session_limit: number | null;
+	monthly_session_limit: number | null;
+	created_at: number;
+	updated_at: number;
+};
+
+export type InviteCode = {
+	id: string;
+	code: string;
+	trial_days: number | null;
+	trial_session_limit: number | null;
+	monthly_session_limit: number | null;
+	message_per_session_limit: number | null;
+	image_per_session_limit: number | null;
+	max_redemptions: number | null;
+	redemption_count: number;
+	expires_at: number | null;
+	is_active: 0 | 1;
 	created_at: number;
 	updated_at: number;
 };

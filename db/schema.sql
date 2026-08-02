@@ -145,9 +145,12 @@ ON style_analysis_entry_tags(tag, style_analysis_entry_id);
 CREATE TABLE IF NOT EXISTS user_limits (
     id TEXT PRIMARY KEY,
     user_id TEXT UNIQUE NOT NULL,
-    session_count_limit INTEGER, -- NULL: default, -1: unlimited, >0: specific limit
+    session_count_limit INTEGER, -- NULL: default, -1: unlimited, >0: specific limit (legacy; treated as monthly when monthly_session_limit is null)
     message_per_session_limit INTEGER, -- NULL: default, -1: unlimited, >0: specific limit
     image_per_session_limit INTEGER, -- NULL: default, -1: unlimited, >0: specific limit
+    trial_days INTEGER, -- NULL: env default
+    trial_session_limit INTEGER, -- NULL: env default, -1: unlimited, >0: specific limit
+    monthly_session_limit INTEGER, -- NULL: env default, -1: unlimited, >0: specific limit
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -155,6 +158,25 @@ CREATE TABLE IF NOT EXISTS user_limits (
 
 -- Index for quickly fetching limits for a user
 CREATE INDEX IF NOT EXISTS idx_user_limits_user_id ON user_limits(user_id);
+
+-- Invite codes that seed user_limits overrides at signup
+CREATE TABLE IF NOT EXISTS invite_codes (
+    id TEXT PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    trial_days INTEGER,
+    trial_session_limit INTEGER,
+    monthly_session_limit INTEGER,
+    message_per_session_limit INTEGER,
+    image_per_session_limit INTEGER,
+    max_redemptions INTEGER,
+    redemption_count INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_invite_codes_code ON invite_codes(code);
 
 
 -- Create outfits table

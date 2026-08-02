@@ -444,12 +444,32 @@ export class StyleAnalysisDB {
 		return result?.count ?? 0;
 	}
 
+	/**
+	 * Lifetime session count for quota. Includes soft-deleted rows so users cannot
+	 * reclaim allowance by deleting history.
+	 */
 	async countTotalSessions(userId: string): Promise<number> {
 		const result = await this.db
 			.prepare(
 				`SELECT COUNT(*) as count FROM style_analysis_histories WHERE user_id = ?`
 			)
 			.bind(userId)
+			.first<{ count: number }>();
+
+		return result?.count ?? 0;
+	}
+
+	/**
+	 * Period session count for quota (trial window or UTC month). Includes soft-deleted
+	 * rows so soft-delete cannot bypass free-tier limits.
+	 */
+	async countSessionsSince(userId: string, sinceMs: number): Promise<number> {
+		const result = await this.db
+			.prepare(
+				`SELECT COUNT(*) as count FROM style_analysis_histories
+				 WHERE user_id = ? AND created_at >= ?`
+			)
+			.bind(userId, sinceMs)
 			.first<{ count: number }>();
 
 		return result?.count ?? 0;
