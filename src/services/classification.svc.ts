@@ -209,11 +209,11 @@ export class ClassificationService {
 /**
  * Factory function to create the ClassificationService.
  */
-import { ModelUseCase } from './model_config.svc';
+import { ModelProvider, ModelUseCase } from './model_config.svc';
 
 export const createClassificationService = (database: D1Database, env?: Env) => {
 	// Use the dedicated classification model configuration (usually a fast/cheap 'Mini' model)
-	const llmService = createLLMService({ useCase: ModelUseCase.CLASSIFICATION });
+	const llmService = createLLMService({ useCase: ModelUseCase.CLASSIFICATION, provider: ModelProvider.CLAUDE });
 	const styleAnalysisDB = new StyleAnalysisDB(database);
 	const voltmem = env ? createVoltMemService(env) : null;
 	return new ClassificationService(llmService, styleAnalysisDB, voltmem);

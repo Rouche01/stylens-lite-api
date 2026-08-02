@@ -3,10 +3,10 @@ import { StyleAnalysisDB } from '../db/style_analysis';
 import { SubscriptionsDB } from '../db/subscriptions';
 import { UserLimitsDB } from '../db/user_limits';
 import { ClassificationService, createClassificationService } from './classification.svc';
+import { SessionTitleService, createSessionTitleService } from './session_title.svc';
 import { STYLE_ANALYSIS_SYSTEM_PROMPT } from '../llm/prompts/style_analysis';
 import { MessageEntry } from '../utils/types';
 import { ModelProvider, ModelUseCase } from './model_config.svc';
-import { generateTitle } from '../utils/style_analysis_session.utils';
 import { SubscriptionTier } from '../types';
 import { createStyleAnalysisDB, createSubscriptionsDB, createUserLimitsDB } from '../db';
 import { env } from 'cloudflare:workers';
@@ -22,6 +22,7 @@ export class StyleAnalysisService {
 		private userLimitsDB: UserLimitsDB,
 		private realtimeService: RealtimeService,
 		private classificationService: ClassificationService,
+		private sessionTitleService: SessionTitleService,
 		private envVars: any,
 		private voltmem: VoltMemService | null = null
 	) { }
@@ -294,7 +295,7 @@ export class StyleAnalysisService {
 
 		const promise = (async () => {
 			try {
-				const generated = await generateTitle(messages, { timeoutMs: 30000 });
+				const generated = await this.sessionTitleService.generateTitle(messages, { timeoutMs: 30000 });
 				if (generated) {
 					await this.styleAnalysisDB.updateSessionTitle(sessionId, generated);
 				}
@@ -408,6 +409,7 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 	const userLimitsDB = createUserLimitsDB(applicationEnv.GOSTYLENS_DB);
 	const realtimeService = createRealtimeService();
 	const classificationService = createClassificationService(applicationEnv.GOSTYLENS_DB, applicationEnv);
+	const sessionTitleService = createSessionTitleService();
 	const voltmem = createVoltMemService(applicationEnv);
 
 	return new StyleAnalysisService(
@@ -417,6 +419,7 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 		userLimitsDB,
 		realtimeService,
 		classificationService,
+		sessionTitleService,
 		applicationEnv,
 		voltmem
 	);
