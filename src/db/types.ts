@@ -117,3 +117,30 @@ export type PushToken = {
 	created_at: number;
 	updated_at: number;
 };
+
+
+export type StylistOpenerTag = 'with_image' | 'without_image';
+
+export type StylistOpenerMessageRow = {
+	id: string;
+	text: string;
+	tags_json: string;
+	created_at: number;
+};
+
+export type StylistOpenerMetaRow = {
+	id: number;
+	version: number;
+	updated_at: number;
+};
+
+export type StylistOpenerMessage = {
+	id: string;
+	text: string;
+	tags: StylistOpenerTag[];
+};
+
+export type StylistOpenersPayload = {
+	version: number;
+	messages: StylistOpenerMessage[];
+};

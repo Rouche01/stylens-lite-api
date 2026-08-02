@@ -8,6 +8,7 @@ import favouritesRouter from './routes/favourites';
 import subscriptionsRouter from './routes/subscriptions';
 import webhooksRouter from './routes/webhooks';
 import closetRouter from './routes/closet';
+import configRouter from './routes/config';
 
 const router = Router();
 
@@ -22,6 +23,7 @@ router.all('/closet/*', closetRouter.fetch);
 router.all('/favourites/*', favouritesRouter.fetch);
 router.all('/subscriptions/*', subscriptionsRouter.fetch);
 router.all('/webhooks/*', webhooksRouter.fetch);
+router.all('/config/*', configRouter.fetch);
 
 router.get('/', () => new Response('Style Analysis API is running'));
 
