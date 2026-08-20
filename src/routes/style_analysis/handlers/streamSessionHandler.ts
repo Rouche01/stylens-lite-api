@@ -5,7 +5,7 @@ import { createStyleAnalysisService } from 'services/style_analysis.svc';
 import { createPushService } from 'services/push.svc';
 import { ProvisionedAuthRequest } from 'types';
 import { ImageUploadTimeoutError } from 'utils/r2.utils';
-import { apiError } from 'utils/error';
+import { apiError, logRouteError } from 'utils/error';
 
 const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
@@ -56,6 +56,7 @@ const streamSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 			},
 		});
 	} catch (err) {
+		logRouteError(request.log, 'stream_session_failed', err, { session_id: request.params.sessionId });
 		if (err instanceof ImageUploadTimeoutError) {
 			return apiError(408, err.message, 'IMAGE_UPLOAD_TIMEOUT');
 		}

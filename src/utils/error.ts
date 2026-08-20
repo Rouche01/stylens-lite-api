@@ -1,4 +1,28 @@
 import { error } from 'itty-router';
+import type { LogContext, Logger } from 'utils/logger.utils';
+
+const EXPECTED_CLIENT_ERROR_MARKERS = ['FREE_LIMIT_REACHED', 'NOT_FOUND', 'IMAGE_UPLOAD_TIMEOUT'];
+
+export function isExpectedClientError(err: unknown): boolean {
+	if (!(err instanceof Error)) {
+		return false;
+	}
+
+	if (err.name === 'ImageUploadTimeoutError') {
+		return true;
+	}
+
+	return EXPECTED_CLIENT_ERROR_MARKERS.some((marker) => err.message.includes(marker));
+}
+
+export function logRouteError(log: Logger, message: string, err: unknown, context?: LogContext): void {
+	if (isExpectedClientError(err)) {
+		log.warn(message, context, err);
+		return;
+	}
+
+	log.error(message, context, err);
+}
 
 /**
  * Returns a JSON error response with a machine-readable code.

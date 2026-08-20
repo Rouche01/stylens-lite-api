@@ -4,6 +4,7 @@ import { getIsolatedItemUrl } from 'utils/assets.utils';
 import { createClosetDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
+import { logRouteError } from 'utils/error';
 
 type ExtractOutfitBody = {
 	imageUrl: string;
@@ -28,6 +29,7 @@ const extractOutfitHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 		});
 
 		if (!extractedOutfitResult) {
+			request.log.warn('outfit_extraction_empty_result');
 			return error(400, 'Failed to extract outfit items');
 		}
 
@@ -114,7 +116,7 @@ const extractOutfitHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 			status: 200,
 		});
 	} catch (err) {
-		console.error('Failed to extract outfit items:', err);
+		logRouteError(request.log, 'extract_outfit_failed', err);
 		if (err instanceof Error) {
 			return error(400, err.message);
 		}

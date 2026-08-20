@@ -1,12 +1,13 @@
 import { env } from 'cloudflare:workers';
 import { error, RequestHandler } from 'itty-router';
+import { ApiRequest } from 'types';
 
 /**
  * Request handler to securely isolate a clothing item from an outfit image.
  * Uses the private R2 bucket binding and Cloudflare's programmatic Images binding
  * to crop and strip the background entirely in-memory, locked behind worker authorization.
  */
-const getIsolatedItemHandler: RequestHandler = async (request) => {
+const getIsolatedItemHandler: RequestHandler<ApiRequest> = async (request) => {
 	try {
 		const { query } = request;
 
@@ -101,7 +102,7 @@ const getIsolatedItemHandler: RequestHandler = async (request) => {
 		return response;
 
 	} catch (err) {
-		console.error('Failed to isolate outfit item:', err);
+		request.log.error('isolate_outfit_item_failed', {}, err);
 		return error(500, 'Internal Server Error');
 	}
 };

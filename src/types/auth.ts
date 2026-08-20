@@ -3,6 +3,7 @@ import { Logger } from "utils/logger.utils";
 
 export type ApiRequest = IRequest & {
 	log: Logger;
+	isAdmin?: boolean;
 };
 
 export const AppRoles = {

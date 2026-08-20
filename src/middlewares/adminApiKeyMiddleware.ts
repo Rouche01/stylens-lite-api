@@ -1,8 +1,9 @@
 import { error, RequestHandler } from 'itty-router';
 import { env } from 'cloudflare:workers';
 import { verifyTimingSafe } from 'utils/crypto';
+import { ApiRequest } from 'types';
 
-export const adminApiKeyMiddleware: RequestHandler = async (request) => {
+export const adminApiKeyMiddleware: RequestHandler<ApiRequest> = async (request) => {
     const apiKey = request.headers.get('x-admin-api-key');
 
     if (!apiKey) {
@@ -12,7 +13,7 @@ export const adminApiKeyMiddleware: RequestHandler = async (request) => {
     const expectedKey = env.ADMIN_API_KEY;
 
     if (!expectedKey) {
-        console.error('ADMIN_API_KEY environment variable is not configured');
+        request.log.error('admin_api_key_missing');
         return error(500, 'Internal server error');
     }
 

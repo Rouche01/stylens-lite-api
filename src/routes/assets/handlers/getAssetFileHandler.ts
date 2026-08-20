@@ -36,7 +36,7 @@ const getAssetFileHandler: RequestHandler<AuthRequest> = async (request) => {
 
 		return new Response(object.body, { headers });
 	} catch (err) {
-		console.error('asset_file_proxy_failed', key, err);
+		request.log.error('asset_file_proxy_failed', { key }, err);
 		return error(500, 'Failed to fetch asset');
 	}
 };

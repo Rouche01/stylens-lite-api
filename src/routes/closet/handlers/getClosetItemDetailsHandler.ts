@@ -3,6 +3,7 @@ import { createClosetDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
 import { getIsolatedItemUrl } from 'utils/assets.utils';
+import { logRouteError } from 'utils/error';
 
 const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
@@ -61,7 +62,7 @@ const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = asyn
 		});
 
 	} catch (err) {
-		console.error('Failed to retrieve closet item details:', err);
+		logRouteError(request.log, 'get_closet_item_details_failed', err, { item_id: request.params.id });
 		if (err instanceof Error) {
 			return error(400, err.message);
 		}

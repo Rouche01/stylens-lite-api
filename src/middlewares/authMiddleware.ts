@@ -26,10 +26,11 @@ export const authMiddleware: RequestHandler<AuthRequest> = async (request) => {
         // Attach user info to request
         request.user = authUser;
         request.log = request.log.child({
-            user_id: authUser.dbId ?? authUser.authId,
+            auth_id: authUser.authId,
+            db_user_id: authUser.dbId,
         });
     } catch (err) {
-        request.log.error('jwt_verification_failed', {}, err);
+        request.log.warn('jwt_verification_failed', {}, err);
         return error(401, 'Unauthorized: Invalid or expired token');
     }
 };

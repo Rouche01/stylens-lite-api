@@ -4,6 +4,7 @@ import { env } from 'cloudflare:workers';
 import { getPaginationMetadata } from '../utils';
 import { ProvisionedAuthRequest } from 'types';
 import { rewriteSessionCoversToProxy } from '../../../utils/asset_proxy_urls';
+import { logRouteError } from 'utils/error';
 
 const listSessionsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
@@ -44,6 +45,7 @@ const listSessionsHandler: RequestHandler<ProvisionedAuthRequest> = async (reque
 			}
 		);
 	} catch (err) {
+		logRouteError(request.log, 'list_sessions_failed', err);
 		if (err instanceof Error) {
 			return error(400, err.message);
 		}

@@ -2,6 +2,7 @@ import { error, RequestHandler } from 'itty-router';
 import { createClosetDB } from '../../../db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
+import { logRouteError } from 'utils/error';
 
 const deleteClosetItemHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
@@ -24,7 +25,7 @@ const deleteClosetItemHandler: RequestHandler<ProvisionedAuthRequest> = async (r
 		});
 
 	} catch (err) {
-		console.error('Failed to delete closet item:', err);
+		logRouteError(request.log, 'delete_closet_item_failed', err, { item_id: request.params.id });
 		if (err instanceof Error) {
 			return error(400, err.message);
 		}

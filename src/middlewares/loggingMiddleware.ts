@@ -4,6 +4,10 @@ import { createLogger } from 'utils/logger.utils';
 import { ApiRequest } from 'types';
 
 export const loggingMiddleware: RequestHandler<ApiRequest> = async (request) => {
+	if (request.log) {
+		return;
+	}
+
 	const url = new URL(request.url);
 	const requestId = request.headers.get('cf-ray') ?? crypto.randomUUID();
 

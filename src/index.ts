@@ -9,6 +9,10 @@ import subscriptionsRouter from './routes/subscriptions';
 import webhooksRouter from './routes/webhooks';
 import closetRouter from './routes/closet';
 import configRouter from './routes/config';
+import { createLogger } from './utils/logger.utils';
+import { apiError } from './utils/error';
+import { createPostHogSink } from './services/posthog.svc';
+import type { ApiRequest } from './types';
 
 const router = Router();
 
@@ -31,9 +35,46 @@ router.get('/', () => new Response('Style Analysis API is running'));
 router.all('*', () => error(404));
 
 export default {
-	async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
-		// Attach ctx to request for access in routes
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		(request as any).ctx = ctx;
-		return router.fetch(request, env, ctx);
+
+		const url = new URL(request.url);
+		const requestId = request.headers.get('cf-ray') ?? crypto.randomUUID();
+		const sessionId = request.headers.get('X-PostHog-Session-Id') ?? undefined;
+		const sink = createPostHogSink(env);
+		const log = createLogger({
+			env: env.ENV_NAME,
+			sink,
+			context: {
+				request_id: requestId,
+				method: request.method,
+				path: url.pathname,
+				...(sessionId ? { sessionId } : {}),
+			},
+		});
+
+		const apiRequest = request as ApiRequest;
+		apiRequest.log = log;
+
+		const started = Date.now();
+		let response: Response;
+
+		try {
+			response = await router.fetch(request, env, ctx);
+		} catch (err) {
+			log.error('unhandled_request_error', { status: 500 }, err);
+			response = apiError(500, 'Internal Server Error');
+		}
+
+		const isHealthCheck = request.method === 'GET' && url.pathname === '/';
+		if (!isHealthCheck) {
+			log.info('request_completed', {
+				status: response.status,
+				duration_ms: Date.now() - started,
+			});
+		}
+
+		sink?.flush(ctx);
+		return response;
 	},
 };

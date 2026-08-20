@@ -44,3 +44,8 @@ FCM_SERVICE_ACCOUNT_JSON=dummy
 VOLTMEM_URL=http://127.0.0.1:8080
 VOLTMEM_API_KEY=dev-secret
 
+# PostHog (same project as Stylens). Use the Project API Key (phc_...), not a personal phx_ key.
+# Local: paste the real key. Staging/prod: wrangler secret put POSTHOG_PROJECT_TOKEN
+POSTHOG_PROJECT_TOKEN=dummy
+POSTHOG_HOST=https://us.i.posthog.com
+

@@ -4,6 +4,7 @@ import { isValidMessageEntry } from '../utils';
 import { ProvisionedAuthRequest } from 'types';
 import { createStyleAnalysisService } from 'services/style_analysis.svc';
 import { env } from 'cloudflare:workers';
+import { logRouteError } from 'utils/error';
 
 type CreateSessionBody = {
 	title?: string;
@@ -42,6 +43,7 @@ const createSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 			}
 		);
 	} catch (err) {
+		logRouteError(request.log, 'create_session_failed', err);
 		if (err instanceof Error) {
 			const statusCode = err.message.includes('FREE_LIMIT_REACHED') ? 403 : 400;
 			return error(statusCode, err.message);
