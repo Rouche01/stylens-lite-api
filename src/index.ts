@@ -56,7 +56,6 @@ export default {
 		const apiRequest = request as ApiRequest;
 		apiRequest.log = log;
 
-		const started = Date.now();
 		let response: Response;
 
 		try {
@@ -64,14 +63,6 @@ export default {
 		} catch (err) {
 			log.error('unhandled_request_error', { status: 500 }, err);
 			response = apiError(500, 'Internal Server Error');
-		}
-
-		const isHealthCheck = request.method === 'GET' && url.pathname === '/';
-		if (!isHealthCheck) {
-			log.info('request_completed', {
-				status: response.status,
-				duration_ms: Date.now() - started,
-			});
 		}
 
 		sink?.flush(ctx);

@@ -47,8 +47,22 @@ export function distinctIdFromLogContext(context: LogContext): string {
 	return typeof id === 'string' && id.length > 0 ? id : 'anonymous';
 }
 
-function shouldExportToPostHog(level: LogLevel, message: string): boolean {
-	return level === 'warn' || level === 'error' || (level === 'info' && message === 'request_completed');
+/** INFO messages forwarded to PostHog Logs. Add new names here deliberately — not every info line. */
+export const POSTHOG_INFO_LOG_MESSAGES = new Set([
+	'fcm_send_complete',
+	'fcm_stale_token_deleted',
+	'voltmem_add_ok',
+	'voltmem_prompt_injection',
+]);
+
+export function shouldExportLogToPostHog(level: LogLevel, message: string): boolean {
+	if (level === 'warn' || level === 'error') {
+		return true;
+	}
+	if (level === 'info') {
+		return POSTHOG_INFO_LOG_MESSAGES.has(message);
+	}
+	return false;
 }
 
 function emit(
@@ -87,7 +101,7 @@ function emit(
 			console.log(payload);
 	}
 
-	if (!sink || !shouldExportToPostHog(level, message)) {
+	if (!sink || !shouldExportLogToPostHog(level, message)) {
 		return;
 	}
 

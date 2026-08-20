@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { isExpectedClientError, logRouteError } from '../src/utils/error';
-import { createLogger, distinctIdFromLogContext } from '../src/utils/logger.utils';
+import { createLogger, distinctIdFromLogContext, shouldExportLogToPostHog } from '../src/utils/logger.utils';
 
 describe('isExpectedClientError', () => {
 	it('treats known business errors as expected', () => {
@@ -28,6 +28,42 @@ describe('distinctIdFromLogContext', () => {
 
 	it('falls back to anonymous', () => {
 		expect(distinctIdFromLogContext({})).toBe('anonymous');
+	});
+});
+
+describe('shouldExportLogToPostHog', () => {
+	it('exports warn and error always', () => {
+		expect(shouldExportLogToPostHog('warn', 'anything')).toBe(true);
+		expect(shouldExportLogToPostHog('error', 'anything')).toBe(true);
+	});
+
+	it('exports allowlisted info messages only', () => {
+		expect(shouldExportLogToPostHog('info', 'fcm_send_complete')).toBe(true);
+		expect(shouldExportLogToPostHog('info', 'request_completed')).toBe(false);
+		expect(shouldExportLogToPostHog('info', 'random_debug_line')).toBe(false);
+	});
+
+	it('does not export debug', () => {
+		expect(shouldExportLogToPostHog('debug', 'fcm_send_complete')).toBe(false);
+	});
+});
+
+describe('PostHog logger sink', () => {
+	it('forwards allowlisted info to the sink but not other info lines', () => {
+		const emitLog = vi.fn();
+		const sink = {
+			emitLog,
+			captureException: vi.fn(),
+			flush: vi.fn(),
+		};
+		const log = createLogger({ env: 'dev', sink });
+
+		log.info('fcm_send_complete', { tokens_sent: 1 });
+		log.info('request_completed', { status: 200 });
+
+		expect(emitLog).toHaveBeenCalledOnce();
+		expect(emitLog.mock.calls[0]?.[0]).toBe('info');
+		expect(emitLog.mock.calls[0]?.[1]).toBe('fcm_send_complete');
 	});
 });
 
