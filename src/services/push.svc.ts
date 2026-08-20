@@ -40,18 +40,71 @@ export type PushSendResult = {
 
 type TokenSendOutcome = 'sent' | 'failed' | 'stale_removed';
 
-function logFcmErrorDetails(log: Logger, errBody: FcmErrorBody): void {
+const STALE_FCM_ERROR_CODES = new Set(['UNREGISTERED']);
+
+export function isStaleFcmToken(errBody: FcmErrorBody | null): boolean {
+	if (!errBody?.error) {
+		return false;
+	}
+
+	const { status, code, message, details } = errBody.error;
+	const normalizedMessage = message?.toLowerCase() ?? '';
+
+	if (status === 'NOT_FOUND' || code === 404) {
+		return true;
+	}
+
+	if (
+		normalizedMessage.includes('not found') ||
+		normalizedMessage.includes('unregistered') ||
+		normalizedMessage.includes('not registered')
+	) {
+		return true;
+	}
+
+	for (const detail of details ?? []) {
+		if (detail.reason === 'REGISTRATION_TOKEN_NOT_REGISTERED') {
+			return true;
+		}
+		if (detail.errorCode && STALE_FCM_ERROR_CODES.has(detail.errorCode)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+function staleFcmErrorCode(errBody: FcmErrorBody | null): string | undefined {
+	for (const detail of errBody?.error?.details ?? []) {
+		if (detail.errorCode && STALE_FCM_ERROR_CODES.has(detail.errorCode)) {
+			return detail.errorCode;
+		}
+	}
+	return undefined;
+}
+
+function logFcmErrorDetails(log: Logger, errBody: FcmErrorBody, expectedStale: boolean): void {
 	const details = errBody.error?.details ?? [];
 	for (const detail of details) {
 		const type = detail['@type'] ?? '';
 		if (type.includes('FcmError') && detail.errorCode) {
-			log.error('fcm_error_code', { fcm_error_code: detail.errorCode });
+			const context = { fcm_error_code: detail.errorCode };
+			if (expectedStale) {
+				log.warn('fcm_error_code', context);
+			} else {
+				log.error('fcm_error_code', context);
+			}
 		}
 		if (type.includes('ApnsError')) {
-			log.error('apns_error', {
+			const context = {
 				apns_status_code: detail.statusCode,
 				apns_reason: detail.reason ?? 'unknown',
-			});
+			};
+			if (expectedStale) {
+				log.warn('apns_error', context);
+			} else {
+				log.error('apns_error', context);
+			}
 		}
 	}
 }
@@ -192,6 +245,19 @@ export class PushService {
 
 			if (!res.ok) {
 				const errBody = (await res.json().catch(() => null)) as FcmErrorBody | null;
+				const staleToken = isStaleFcmToken(errBody);
+
+				if (staleToken) {
+					log.info('fcm_stale_token_deleted', {
+						platform: pushTokenObj.platform,
+						fcm_error_code: staleFcmErrorCode(errBody),
+						http_status: res.status,
+						fcm_status: errBody?.error?.status,
+					});
+					await this.pushTokensDB.deleteToken(token, userId);
+					return 'stale_removed';
+				}
+
 				log.error('fcm_send_failed', {
 					platform: pushTokenObj.platform,
 					http_status: res.status,
@@ -199,27 +265,7 @@ export class PushService {
 					fcm_code: errBody?.error?.code,
 				});
 				if (errBody) {
-					logFcmErrorDetails(log, errBody);
-				}
-
-				const status = errBody?.error?.status;
-				const code = errBody?.error?.code;
-				const message = errBody?.error?.message?.toLowerCase() || '';
-
-				const isUnregistered =
-					status === 'NOT_FOUND' ||
-					code === 404 ||
-					message.includes('not found') ||
-					message.includes('unregistered') ||
-					message.includes('not registered') ||
-					errBody?.error?.details?.some((d) => d.reason === 'REGISTRATION_TOKEN_NOT_REGISTERED');
-
-				if (isUnregistered) {
-					log.info('fcm_stale_token_deleted', {
-						platform: pushTokenObj.platform,
-					});
-					await this.pushTokensDB.deleteToken(token, userId);
-					return 'stale_removed';
+					logFcmErrorDetails(log, errBody, false);
 				}
 
 				return 'failed';
