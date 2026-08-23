@@ -8,6 +8,7 @@
 		// head_sampling_rate defaults to 1 (100% of requests). Lower per-env in production if log volume grows.
 	},
 	// Shared non-secret vars (dev defaults)
+	// FREE_TIER_*: trial window then monthly session quota (-1 = unlimited). See docs/subscription-limits.md
 	"vars": {
 		"ENV_NAME": "dev",
 		"FREE_TIER_TRIAL_DAYS": "7",

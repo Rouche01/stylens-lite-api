@@ -1,3 +1,12 @@
+/**
+ * Free-tier limit resolution.
+ *
+ * Trial (first N days after signup): session cap from trial_session_limit (-1 = unlimited).
+ * Post-trial: monthly session cap counted from UTC month start; resets each calendar month.
+ * Message and image caps apply per session in both phases.
+ *
+ * Full behavior, examples, and API surface: docs/subscription-limits.md
+ */
 import { SubscriptionTier } from '../types';
 import type { UserLimit } from '../db/types';
 

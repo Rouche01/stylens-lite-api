@@ -32,6 +32,8 @@ export class StyleAnalysisService {
 
 	/**
 	 * Creates a new session with initial messages and triggers background processes.
+	 * Enforces Free-tier session quota for the current period (trial or UTC month).
+	 * See docs/subscription-limits.md.
 	 */
 	async createSession(params: {
 		userId: string;
@@ -119,6 +121,7 @@ export class StyleAnalysisService {
 
 	/**
 	 * Adds a single message to an existing session and triggers background classification.
+	 * Enforces per-session message and image limits. See docs/subscription-limits.md.
 	 */
 	async addMessageToSession(params: {
 		sessionId: string;
@@ -379,6 +382,7 @@ export class StyleAnalysisService {
 
 	/**
 	 * Resolves effective limits for a user based on overrides, trial window, tier, and env defaults.
+	 * Source of truth for limit resolution: src/utils/effectiveLimits.ts · docs/subscription-limits.md
 	 */
 	public async getEffectiveLimits(userId: string): Promise<EffectiveLimits> {
 		const override = await this.userLimitsDB.getUserLimit(userId);

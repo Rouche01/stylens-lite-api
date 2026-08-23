@@ -30,6 +30,9 @@ ADMIN_API_KEY=dummy
 REVENUECAT_WEBHOOK_SECRET=dummy
 
 # Limits (Free tier: trial then monthly session quota)
+# Trial: unlimited sessions by default for FREE_TIER_TRIAL_DAYS after signup.
+# Post-trial: FREE_TIER_MONTHLY_SESSION_LIMIT sessions per UTC calendar month.
+# -1 = unlimited. Full behavior: docs/subscription-limits.md
 FREE_TIER_TRIAL_DAYS=7
 FREE_TIER_TRIAL_SESSION_LIMIT=-1
 FREE_TIER_MONTHLY_SESSION_LIMIT=5

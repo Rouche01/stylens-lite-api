@@ -160,3 +160,86 @@ describe('resolveEffectiveLimits', () => {
 		expect(result.sessionCountLimit).toBe(2);
 	});
 });
+
+/**
+ * Executable scenarios from docs/subscription-limits.md.
+ * These document product behavior; countSessionsSince() applies periodStart when enforcing.
+ */
+describe('documented free-tier scenarios', () => {
+	const signupJan5 = Date.UTC(2026, 0, 5, 0, 0, 0);
+
+	it('during trial: unlimited sessions by default, counted from signup', () => {
+		const duringTrial = Date.UTC(2026, 0, 8);
+		const result = resolveEffectiveLimits({
+			tier: SubscriptionTier.Free,
+			userCreatedAt: signupJan5,
+			override: null,
+			envDefaults: defaultEnv,
+			now: duringTrial,
+		});
+		expect(result.inTrial).toBe(true);
+		expect(result.sessionCountLimit).toBe(-1);
+		expect(result.periodStart).toBe(signupJan5);
+	});
+
+	it('after trial mid-month: monthly cap with periodStart at UTC month start (trial sessions in same month count toward cap)', () => {
+		const afterTrial = Date.UTC(2026, 0, 12);
+		const result = resolveEffectiveLimits({
+			tier: SubscriptionTier.Free,
+			userCreatedAt: signupJan5,
+			override: null,
+			envDefaults: defaultEnv,
+			now: afterTrial,
+		});
+		expect(result.inTrial).toBe(false);
+		expect(result.sessionCountLimit).toBe(5);
+		expect(result.periodStart).toBe(Date.UTC(2026, 0, 1));
+	});
+
+	it('month rollover: new UTC month resets the counting window', () => {
+		const feb1 = Date.UTC(2026, 1, 1);
+		const result = resolveEffectiveLimits({
+			tier: SubscriptionTier.Free,
+			userCreatedAt: signupJan5,
+			override: null,
+			envDefaults: defaultEnv,
+			now: feb1,
+		});
+		expect(result.inTrial).toBe(false);
+		expect(result.sessionCountLimit).toBe(5);
+		expect(result.periodStart).toBe(Date.UTC(2026, 1, 1));
+	});
+
+	it('invite-code override: custom trial and monthly caps replace env defaults', () => {
+		const inviteOverride = makeOverride({
+			trial_days: 14,
+			trial_session_limit: 3,
+			monthly_session_limit: 10,
+			message_per_session_limit: 50,
+			image_per_session_limit: 5,
+		});
+
+		const duringTrial = resolveEffectiveLimits({
+			tier: SubscriptionTier.Free,
+			userCreatedAt: signupJan5,
+			override: inviteOverride,
+			envDefaults: defaultEnv,
+			now: signupJan5 + MS_PER_DAY,
+		});
+		expect(duringTrial.inTrial).toBe(true);
+		expect(duringTrial.sessionCountLimit).toBe(3);
+		expect(duringTrial.messagePerSessionLimit).toBe(50);
+		expect(duringTrial.imagePerSessionLimit).toBe(5);
+
+		const postTrial = resolveEffectiveLimits({
+			tier: SubscriptionTier.Free,
+			userCreatedAt: signupJan5,
+			override: inviteOverride,
+			envDefaults: defaultEnv,
+			now: signupJan5 + 15 * MS_PER_DAY,
+		});
+		expect(postTrial.inTrial).toBe(false);
+		expect(postTrial.sessionCountLimit).toBe(10);
+		expect(postTrial.messagePerSessionLimit).toBe(50);
+	});
+});
