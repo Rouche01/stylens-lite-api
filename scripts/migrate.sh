@@ -27,10 +27,10 @@ apply_migration() {
 
   if [ "$env" = "local" ]; then
     echo "🔄 Applying migration locally: $(basename "$migration_file")"
-    wrangler d1 execute gostylens_db --local --file="$migration_file"
+    wrangler d1 execute GOSTYLENS_DB --local --file="$migration_file"
   elif [ "$env" = "remote" ]; then
     echo "🔄 Applying migration remotely: $(basename "$migration_file")"
-    wrangler d1 execute gostylens_db --remote --file="$migration_file"
+    wrangler d1 execute GOSTYLENS_DB --remote --file="$migration_file"
   else
     echo "❌ Error: Invalid environment. Use 'local' or 'remote'"
     exit 1

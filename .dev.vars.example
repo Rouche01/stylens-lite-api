@@ -29,5 +29,45 @@ ADMIN_API_KEY=dummy
 # Webhooks
 REVENUECAT_WEBHOOK_SECRET=dummy
 
-# Limits
-FREE_TIER_SESSION_LIMIT=3
+# Limits (Free tier: trial then monthly session quota)
+# Trial: unlimited sessions by default for FREE_TIER_TRIAL_DAYS after signup.
+# Post-trial: FREE_TIER_MONTHLY_SESSION_LIMIT sessions per UTC calendar month.
+# -1 = unlimited. Full behavior: docs/subscription-limits.md
+FREE_TIER_TRIAL_DAYS=7
+FREE_TIER_TRIAL_SESSION_LIMIT=-1
+FREE_TIER_MONTHLY_SESSION_LIMIT=5
+FREE_TIER_MESSAGE_PER_SESSION_LIMIT=20
+FREE_TIER_IMAGE_PER_SESSION_LIMIT=10
+
+# Firebase Cloud Messaging
+FCM_SERVICE_ACCOUNT_JSON=dummy
+
+# VoltMem sidecar (local wrangler dev — not --remote)
+# Same API key as voltmem/.env VOLTMEM_API_KEY
+VOLTMEM_URL=http://127.0.0.1:8080
+VOLTMEM_API_KEY=dev-secret
+
+# PostHog (same project as Stylens). Use the Project API Key (phc_...), not a personal phx_ key.
+# Local: paste the real key. Staging/prod: wrangler secret put POSTHOG_PROJECT_TOKEN
+POSTHOG_PROJECT_TOKEN=dummy
+POSTHOG_HOST=https://us.i.posthog.com
+
+# Marketing email (Resend). Auth OTP stays on MailerSend/Supabase — do not mix.
+# Sending-access API key only. Staging/prod: wrangler secret put RESEND_API_KEY
+EMAIL_PROVIDER=resend
+EMAIL_FROM=GoStylens <hello@mail.gostylens.com>
+RESEND_API_KEY=dummy
+# Signing secret from Resend webhook endpoint (whsec_...) — POST /webhooks/email
+RESEND_WEBHOOK_SECRET=dummy
+# HMAC secret for signed unsubscribe links (not the Resend key)
+EMAIL_UNSUBSCRIBE_SECRET=dummy
+
+# Lifecycle email cron
+# Public API origin used in unsubscribe links (no trailing slash required)
+EMAIL_API_BASE_URL=http://127.0.0.1:8787
+# Comma-separated; required in local/dev or cron sends nothing. Optional filter in staging/prod.
+EMAIL_SEND_ALLOWLIST=
+# Optional CTA deep link / universal link
+EMAIL_APP_DEEP_LINK=https://gostylens.app
+# Segment cron (activation_d0). true/1/yes to enable; off by default
+EMAIL_LIFECYCLE_CRON_ENABLED=false

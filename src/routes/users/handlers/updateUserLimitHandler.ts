@@ -6,9 +6,13 @@ import { env } from 'cloudflare:workers';
 
 type UpdateUserLimitBody = {
 	userId: string;
+	/** @deprecated Prefer monthlySessionLimit; treated as monthly when monthlySessionLimit is omitted */
 	sessionCountLimit?: number | null;
 	messagePerSessionLimit?: number | null;
 	imagePerSessionLimit?: number | null;
+	trialDays?: number | null;
+	trialSessionLimit?: number | null;
+	monthlySessionLimit?: number | null;
 };
 
 const updateUserLimitHandler: RequestHandler<AuthRequest> = async (request) => {
@@ -25,6 +29,9 @@ const updateUserLimitHandler: RequestHandler<AuthRequest> = async (request) => {
 			session_count_limit: body.sessionCountLimit,
 			message_per_session_limit: body.messagePerSessionLimit,
 			image_per_session_limit: body.imagePerSessionLimit,
+			trial_days: body.trialDays,
+			trial_session_limit: body.trialSessionLimit,
+			monthly_session_limit: body.monthlySessionLimit,
 		});
 
 		// Sync the has_reached_limit flag in the background so the mobile app UI reflects the change

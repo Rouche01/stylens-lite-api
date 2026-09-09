@@ -1,7 +1,19 @@
 import { UserLimit } from './types';
 
+export type UserLimitFields = Partial<
+	Pick<
+		UserLimit,
+		| 'session_count_limit'
+		| 'message_per_session_limit'
+		| 'image_per_session_limit'
+		| 'trial_days'
+		| 'trial_session_limit'
+		| 'monthly_session_limit'
+	>
+>;
+
 export class UserLimitsDB {
-	constructor(private db: D1Database) { }
+	constructor(private db: D1Database) {}
 
 	async getUserLimit(userId: string): Promise<UserLimit | null> {
 		const result = await this.db
@@ -11,7 +23,30 @@ export class UserLimitsDB {
 		return result || null;
 	}
 
-	async updateUserLimit(userId: string, limits: Partial<Pick<UserLimit, 'session_count_limit' | 'message_per_session_limit' | 'image_per_session_limit'>>): Promise<UserLimit> {
+	insertUserLimitStatement(userId: string, limits: UserLimitFields, now: number = Date.now()): D1PreparedStatement {
+		const id = crypto.randomUUID();
+		return this.db
+			.prepare(
+				`INSERT INTO user_limits (
+					id, user_id, session_count_limit, message_per_session_limit, image_per_session_limit,
+					trial_days, trial_session_limit, monthly_session_limit, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			)
+			.bind(
+				id,
+				userId,
+				limits.session_count_limit ?? null,
+				limits.message_per_session_limit ?? null,
+				limits.image_per_session_limit ?? null,
+				limits.trial_days ?? null,
+				limits.trial_session_limit ?? null,
+				limits.monthly_session_limit ?? null,
+				now,
+				now
+			);
+	}
+
+	async updateUserLimit(userId: string, limits: UserLimitFields): Promise<UserLimit> {
 		const now = Date.now();
 		const existing = await this.getUserLimit(userId);
 
@@ -31,6 +66,18 @@ export class UserLimitsDB {
 				fields.push('image_per_session_limit = ?');
 				values.push(limits.image_per_session_limit);
 			}
+			if (limits.trial_days !== undefined) {
+				fields.push('trial_days = ?');
+				values.push(limits.trial_days);
+			}
+			if (limits.trial_session_limit !== undefined) {
+				fields.push('trial_session_limit = ?');
+				values.push(limits.trial_session_limit);
+			}
+			if (limits.monthly_session_limit !== undefined) {
+				fields.push('monthly_session_limit = ?');
+				values.push(limits.monthly_session_limit);
+			}
 
 			if (fields.length > 0) {
 				fields.push('updated_at = ?');
@@ -43,22 +90,7 @@ export class UserLimitsDB {
 					.run();
 			}
 		} else {
-			const id = crypto.randomUUID();
-			await this.db
-				.prepare(
-					`INSERT INTO user_limits (id, user_id, session_count_limit, message_per_session_limit, image_per_session_limit, created_at, updated_at)
-					 VALUES (?, ?, ?, ?, ?, ?, ?)`
-				)
-				.bind(
-					id,
-					userId,
-					limits.session_count_limit ?? null,
-					limits.message_per_session_limit ?? null,
-					limits.image_per_session_limit ?? null,
-					now,
-					now
-				)
-				.run();
+			await this.insertUserLimitStatement(userId, limits, now).run();
 		}
 
 		return (await this.getUserLimit(userId))!;

@@ -3,12 +3,13 @@ import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { getPaginationMetadata } from '../utils';
 import { ProvisionedAuthRequest } from 'types';
+import { rewriteMessageImagesToProxy } from '../../../utils/asset_proxy_urls';
+import { logRouteError } from 'utils/error';
 
 const getSessionMessagesHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
 		const { sessionId } = request.params as { sessionId: string };
 
-		// Extract query parameters
 		const url = new URL(request.url);
 		const page = parseInt(url.searchParams.get('page') || '1', 10);
 		const pageSize = parseInt(url.searchParams.get('pageSize') || '10', 10);
@@ -19,14 +20,16 @@ const getSessionMessagesHandler: RequestHandler<ProvisionedAuthRequest> = async 
 
 		const styleAnalysisDB = createStyleAnalysisDB(env.GOSTYLENS_DB);
 
-		// First, verify session exists and belongs to user
 		const session = await styleAnalysisDB.getSession(sessionId, request.user.dbId);
 		if (!session) {
 			return error(404, 'Session not found or access denied');
 		}
 
-		// Now get messages for the session
-		const { messages, total } = await styleAnalysisDB.getSessionMessages(sessionId, { page, pageSize });
+		const { messages, total } = await styleAnalysisDB.getSessionMessages(sessionId, {
+			page,
+			pageSize,
+		});
+		const messagesWithProxyUrls = rewriteMessageImagesToProxy(messages, url.origin);
 		const paginationMetadata = getPaginationMetadata(total, page, pageSize);
 
 		return new Response(
@@ -34,14 +37,18 @@ const getSessionMessagesHandler: RequestHandler<ProvisionedAuthRequest> = async 
 				sessionId,
 				sessionTitle: session.title,
 				userId: session.user_id,
-				messages,
+				messages: messagesWithProxyUrls,
 				pagination: paginationMetadata,
 			}),
 			{
-				headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+				headers: {
+					'Content-Type': 'application/json',
+					'Cache-Control': 'no-cache, no-store, must-revalidate',
+				},
 			}
 		);
 	} catch (err) {
+		logRouteError(request.log, 'get_session_messages_failed', err, { session_id: request.params.sessionId });
 		if (err instanceof Error) {
 			return error(400, err.message);
 		}

@@ -16,3 +16,4 @@ export enum SubscriptionTier {
 }
 
 export * from './auth';
+export * from './outfit_extraction';

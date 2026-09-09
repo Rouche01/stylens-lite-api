@@ -6,25 +6,31 @@
 		"deploy:prod": "wrangler deploy",
 		"deploy:staging": "wrangler deploy --env staging",
 		"dev": "wrangler dev",
+		"dev:scheduled": "wrangler dev --test-scheduled",
 		"dev:remote": "wrangler dev --remote",
 		"start": "wrangler dev",
 		"test": "vitest",
 		"cf-typegen": "wrangler types",
 		"db:migrate": "bash scripts/migrate.sh",
+		"backfill:blurhash": "node scripts/backfill-blurhash.mjs",
 		"db:init:local": "wrangler d1 execute GOSTYLENS_DB --local --file=./db/schema.sql",
-		"db:init:prod": "wrangler d1 execute GOSTYLENS_DB --remote --file=./db/schema.sql",
+		"db:init:prod": "wrangler d1 execute GOSTYLENS_DB --remote --file=./db/schema.sql --env production",
 		"db:init:staging": "wrangler d1 execute GOSTYLENS_DB --remote --file=./db/schema.sql --env staging",
-		"check:size": "npx wrangler deploy --dry-run --outdir=dist > /dev/null && SIZE=$(gzip -c dist/_worker.js | wc -c) && echo \"🗜️  Gzipped size: $((SIZE/1024)) KB\" && if [ $SIZE -gt 1048576 ]; then echo '❌ Exceeds 1 MB Cloudflare limit!' && exit 1; else echo '✅ Within limit'; fi"
+		"check:size": "wrangler deploy --dry-run --outdir=dist > /dev/null && SIZE=$(gzip -c dist/_worker.js | wc -c) && echo \"🗜️  Gzipped size: $((SIZE/1024)) KB\" && if [ $SIZE -gt 1048576 ]; then echo '❌ Exceeds 1 MB Cloudflare limit!' && exit 1; else echo '✅ Within limit'; fi"
 	},
 	"devDependencies": {
-		"@cloudflare/vitest-pool-workers": "^0.8.19",
-		"typescript": "^5.5.2",
-		"vitest": "~3.2.0",
-		"wrangler": "^4.80.0"
+		"@cloudflare/vitest-pool-workers": "0.8.71",
+		"blurhash": "^2.0.5",
+		"sharp": "^0.35.3",
+		"typescript": "5.9.3",
+		"vitest": "3.2.4",
+		"wrangler": "4.80.0"
 	},
 	"dependencies": {
-		"aws4fetch": "^1.0.20",
-		"itty-router": "^5.0.22",
-		"jose": "^6.1.3"
+		"@voltmem/client": "^0.1.0",
+		"aws4fetch": "1.0.20",
+		"itty-router": "5.0.22",
+		"jose": "6.1.3",
+		"posthog-node": "^5.49.1"
 	}
 }

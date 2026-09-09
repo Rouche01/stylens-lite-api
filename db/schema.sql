@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS style_analysis_histories (
   title TEXT,
   image_url TEXT,       -- nullable: single image reference (URL to R2, etc.)
   image_key TEXT,       -- nullable: storage key for the image
+  image_blur_hash TEXT, -- nullable: BlurHash for session cover placeholder
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER,
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS style_analysis_entry_images (
   style_analysis_entry_id TEXT NOT NULL,
   url TEXT NOT NULL,
   key TEXT NOT NULL,
+  blur_hash TEXT,       -- nullable: BlurHash placeholder for progressive loading
   created_at INTEGER NOT NULL,
   FOREIGN KEY (style_analysis_entry_id) REFERENCES style_analysis_entries(id) ON DELETE CASCADE
 );
@@ -58,6 +60,44 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_auth_id ON users(auth_id);
+
+-- 1:1 marketing prefs (no row = opted out / default off)
+CREATE TABLE IF NOT EXISTS user_email_prefs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL UNIQUE,
+  marketing_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (marketing_opt_in IN (0, 1)),
+  marketing_opt_in_at INTEGER,
+  marketing_unsubscribed_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_email_prefs_opt_in
+  ON user_email_prefs (marketing_opt_in);
+
+CREATE TABLE IF NOT EXISTS email_sends (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  template_key TEXT NOT NULL,
+  campaign_key TEXT,
+  provider TEXT NOT NULL DEFAULT 'resend',
+  provider_message_id TEXT,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'sent', 'failed', 'bounced', 'complained')),
+  sent_at INTEGER,
+  opened_at INTEGER,
+  clicked_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_sends_user_template
+  ON email_sends (user_id, template_key, campaign_key);
+
+CREATE INDEX IF NOT EXISTS idx_email_sends_provider_message
+  ON email_sends (provider_message_id);
 
 CREATE INDEX IF NOT EXISTS idx_style_analysis_histories_user
   ON style_analysis_histories (user_id, is_deleted, updated_at DESC);
@@ -143,9 +183,12 @@ ON style_analysis_entry_tags(tag, style_analysis_entry_id);
 CREATE TABLE IF NOT EXISTS user_limits (
     id TEXT PRIMARY KEY,
     user_id TEXT UNIQUE NOT NULL,
-    session_count_limit INTEGER, -- NULL: default, -1: unlimited, >0: specific limit
+    session_count_limit INTEGER, -- NULL: default, -1: unlimited, >0: specific limit (legacy; treated as monthly when monthly_session_limit is null)
     message_per_session_limit INTEGER, -- NULL: default, -1: unlimited, >0: specific limit
     image_per_session_limit INTEGER, -- NULL: default, -1: unlimited, >0: specific limit
+    trial_days INTEGER, -- NULL: env default
+    trial_session_limit INTEGER, -- NULL: env default, -1: unlimited, >0: specific limit
+    monthly_session_limit INTEGER, -- NULL: env default, -1: unlimited, >0: specific limit
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -153,3 +196,124 @@ CREATE TABLE IF NOT EXISTS user_limits (
 
 -- Index for quickly fetching limits for a user
 CREATE INDEX IF NOT EXISTS idx_user_limits_user_id ON user_limits(user_id);
+
+-- Invite codes that seed user_limits overrides at signup
+CREATE TABLE IF NOT EXISTS invite_codes (
+    id TEXT PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    trial_days INTEGER,
+    trial_session_limit INTEGER,
+    monthly_session_limit INTEGER,
+    message_per_session_limit INTEGER,
+    image_per_session_limit INTEGER,
+    max_redemptions INTEGER,
+    redemption_count INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_invite_codes_code ON invite_codes(code);
+
+
+-- Create outfits table
+CREATE TABLE IF NOT EXISTS outfits (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    original_image_url TEXT NOT NULL,
+    image_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_outfits_user_id ON outfits(user_id);
+
+-- Create closet_items table (unique clothes)
+CREATE TABLE IF NOT EXISTS closet_items (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    category TEXT NOT NULL,
+    subcategory TEXT NOT NULL,
+    color TEXT NOT NULL,
+    pattern TEXT NOT NULL,
+    style_tags TEXT, -- JSON array of strings
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_closet_items_user_id ON closet_items(user_id);
+
+-- Create outfit_clothing_items join table
+CREATE TABLE IF NOT EXISTS outfit_clothing_items (
+    id TEXT PRIMARY KEY,
+    outfit_id TEXT NOT NULL,
+    closet_item_id TEXT NOT NULL,
+    bounding_box TEXT NOT NULL, -- JSON coordinates: {"x", "y", "width", "height"}
+    confidence TEXT CHECK(confidence IN ('high', 'medium', 'low')) DEFAULT 'medium',
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (outfit_id) REFERENCES outfits(id) ON DELETE CASCADE,
+    FOREIGN KEY (closet_item_id) REFERENCES closet_items(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_outfit_clothing_items_outfit ON outfit_clothing_items(outfit_id);
+CREATE INDEX IF NOT EXISTS idx_outfit_clothing_items_closet ON outfit_clothing_items(closet_item_id);
+
+
+-- Create push_tokens table for sending push notifications to users' devices
+CREATE TABLE IF NOT EXISTS push_tokens (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token       TEXT UNIQUE NOT NULL,
+  platform    TEXT CHECK(platform IN ('ios', 'android')) NOT NULL,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+-- Index for fast token lookups/retrievals by user
+CREATE INDEX IF NOT EXISTS idx_push_tokens_user_id ON push_tokens(user_id);
+
+
+-- Stylist opener message pool (admin-editable, versioned for client cache)
+CREATE TABLE IF NOT EXISTS stylist_opener_meta (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  version INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS stylist_opener_messages (
+  id TEXT PRIMARY KEY,
+  text TEXT NOT NULL,
+  tags_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_stylist_opener_messages_created
+  ON stylist_opener_messages (created_at ASC);
+
+
+-- Seed default stylist openers (matches Flutter UxMessages fallbacks)
+INSERT OR IGNORE INTO stylist_opener_meta (id, version, updated_at)
+VALUES (1, 1, strftime('%s','now') * 1000);
+
+INSERT OR IGNORE INTO stylist_opener_messages (id, text, tags_json, created_at) VALUES
+  (
+    'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    'Looking great! 🔥 What''s the occasion for this outfit?',
+    '["with_image"]',
+    strftime('%s','now') * 1000
+  ),
+  (
+    'b2c3d4e5-f6a7-8901-bcde-f12345678901',
+    'Hey! I''m your stylist. Let''s get started on your vibe for today.',
+    '["without_image"]',
+    strftime('%s','now') * 1000
+  ),
+  (
+    'c3d4e5f6-a7b8-9012-cdef-123456789012',
+    'Whenever you''re ready, share your outfit and I''ll jump right in with some tips!',
+    '["without_image"]',
+    strftime('%s','now') * 1000
+  );

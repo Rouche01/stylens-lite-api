@@ -2,15 +2,19 @@ import { LLMService, createLLMService } from './llm.svc';
 import { StyleAnalysisDB } from '../db/style_analysis';
 import { SubscriptionsDB } from '../db/subscriptions';
 import { UserLimitsDB } from '../db/user_limits';
+import { UsersDB } from '../db/users';
 import { ClassificationService, createClassificationService } from './classification.svc';
+import { SessionTitleService, createSessionTitleService } from './session_title.svc';
 import { STYLE_ANALYSIS_SYSTEM_PROMPT } from '../llm/prompts/style_analysis';
 import { MessageEntry } from '../utils/types';
 import { ModelProvider, ModelUseCase } from './model_config.svc';
-import { generateTitle } from '../utils/style_analysis_session.utils';
 import { SubscriptionTier } from '../types';
-import { createStyleAnalysisDB, createSubscriptionsDB, createUserLimitsDB } from '../db';
+import { createStyleAnalysisDB, createSubscriptionsDB, createUserLimitsDB, createUsersDB } from '../db';
 import { env } from 'cloudflare:workers';
 import { RealtimeService, createRealtimeService } from './realtime.svc';
+import { createVoltMemService, type VoltMemService } from './voltmem.svc';
+import { createLogger } from '../utils/logger.utils';
+import { readFreeTierEnvDefaults, resolveEffectiveLimits, type EffectiveLimits } from '../utils/effectiveLimits';
 
 export class StyleAnalysisService {
 	constructor(
@@ -18,13 +22,18 @@ export class StyleAnalysisService {
 		private styleAnalysisDB: StyleAnalysisDB,
 		private subscriptionsDB: SubscriptionsDB,
 		private userLimitsDB: UserLimitsDB,
+		private usersDB: UsersDB,
 		private realtimeService: RealtimeService,
 		private classificationService: ClassificationService,
-		private envVars: any
+		private sessionTitleService: SessionTitleService,
+		private envVars: any,
+		private voltmem: VoltMemService | null = null
 	) { }
 
 	/**
 	 * Creates a new session with initial messages and triggers background processes.
+	 * Enforces Free-tier session quota for the current period (trial or UTC month).
+	 * See docs/subscription-limits.md.
 	 */
 	async createSession(params: {
 		userId: string;
@@ -35,10 +44,10 @@ export class StyleAnalysisService {
 		const { userId, messages, title, ctx } = params;
 		const limits = await this.getEffectiveLimits(userId);
 
-		// Check session count limit
+		// Check session count limit for the current period (trial window or UTC month)
 		if (limits.sessionCountLimit !== -1) {
-			const totalSessionsCount = await this.styleAnalysisDB.countTotalSessions(userId);
-			if (totalSessionsCount >= limits.sessionCountLimit) {
+			const periodSessionsCount = await this.styleAnalysisDB.countSessionsSince(userId, limits.periodStart);
+			if (periodSessionsCount >= limits.sessionCountLimit) {
 				throw new Error('FREE_LIMIT_REACHED: Session limit reached. Upgrade for more sessions.');
 			}
 		}
@@ -102,8 +111,8 @@ export class StyleAnalysisService {
 		const messageEntries: MessageEntry[] = messagesToSend.map((m) => ({
 			role: m.role as 'user' | 'assistant' | 'system',
 			prompt: m.content || undefined,
-			remoteImage: m.image_url || m.image_key ? { url: m?.image_url || '', key: m.image_key || '' } : undefined,
-			remoteImages: m.images ? m.images.map(img => ({ url: img.url, key: img.key })) : undefined,
+			remoteImage: m.image_url || m.image_key ? { url: m?.image_url || '', key: m.image_key || '', blurHash: m.images?.[0]?.blurHash } : undefined,
+			remoteImages: m.images ? m.images.map(img => ({ url: img.url, key: img.key, ...(img.blurHash ? { blurHash: img.blurHash } : {}) })) : undefined,
 		}));
 
 		// Return in chronological order (oldest first)
@@ -112,6 +121,7 @@ export class StyleAnalysisService {
 
 	/**
 	 * Adds a single message to an existing session and triggers background classification.
+	 * Enforces per-session message and image limits. See docs/subscription-limits.md.
 	 */
 	async addMessageToSession(params: {
 		sessionId: string;
@@ -157,22 +167,30 @@ export class StyleAnalysisService {
 			remoteImages: message.remoteImages,
 		});
 		// Trigger classification in the background (previous message resolved internally)
-		this.classificationService.tagEntryInBackground(messageEntryId, message, ctx as ExecutionContext, sessionId);
+		this.classificationService.tagEntryInBackground(
+			messageEntryId,
+			message,
+			ctx as ExecutionContext,
+			sessionId,
+			undefined,
+			userId
+		);
 
 		return { sessionId, messageId: messageEntryId };
 	}
 
 	/**
 	 * Generates a streaming response for the style analysis session,
-	 * injecting the persona and dynamically fetching session memory.
+	 * injecting the persona and dynamically fetching session + cross-session memory.
 	 */
 	async generateStyleAdviceStream(params: {
 		sessionId: string;
+		userId: string;
 		messages: MessageEntry[];
 		onComplete?: (completeStreamText: string) => Promise<void> | void;
 		signal?: AbortSignal;
 	}): Promise<ReadableStream> {
-		const { sessionId, messages, onComplete, signal } = params;
+		const { sessionId, userId, messages, onComplete, signal } = params;
 		// 1. Fetch chronologically ordered session memory
 		const memoryItems = await this.styleAnalysisDB.getSessionMemory(sessionId);
 
@@ -202,14 +220,44 @@ export class StyleAnalysisService {
 			}
 		}
 
+		// 2b. Cross-session USER MEMORY from VoltMem (fail-open; session memory stays first)
+		let userMemoryContext = '';
+		if (this.voltmem) {
+			const hits = await this.voltmem.searchPrefs(
+				userId,
+				'style preferences constraints occasion',
+				5
+			);
+			if (hits.length > 0) {
+				const lines = hits.map((h) => `- ${h.memory} (domain=${h.domain})`);
+				userMemoryContext = `\n\n[USER MEMORY]\n${lines.join('\n')}`;
+			}
+
+			if (this.envVars.ENV_NAME !== 'production') {
+				const log = createLogger({ env: this.envVars.ENV_NAME }).child({ service: 'voltmem' });
+				const stats = await this.voltmem.domainStats(userId);
+				const auditSummary = stats
+					? Object.entries(stats)
+							.map(([domain, s]) => `${domain}:${s.audit_rate ?? 0}`)
+							.join(',')
+					: '';
+				log.info('voltmem_prompt_injection', {
+					user_id: userId,
+					session_id: sessionId,
+					hit_count: hits.length,
+					domain_audit_rates: auditSummary || undefined,
+				});
+			}
+		}
+
 		// 3. Create the developer payload encapsulating the persona and current memory state
 		const systemMessage: MessageEntry = {
 			role: 'system',
-			prompt: STYLE_ANALYSIS_SYSTEM_PROMPT + memoryContext
+			prompt: STYLE_ANALYSIS_SYSTEM_PROMPT + memoryContext + userMemoryContext
 		};
 
 		// 4. Assemble the full message sequence:
-		//    [system] → [session images in chronological order] → [conversation history]
+		//    [system + SESSION MEMORY + USER MEMORY] → [session images] → [conversation history]
 		const messagesChronological = [systemMessage, ...contextImages, ...messages];
 
 		// 5. Structure LLM Inputs and execute stream
@@ -235,7 +283,7 @@ export class StyleAnalysisService {
 			this.generateTitleInBackground({ sessionId, messages, ctx });
 		}
 
-		this.classifyMessagesInBackground({ sessionId, messageIds, messages, ctx });
+		this.classifyMessagesInBackground({ sessionId, messageIds, messages, userId, ctx });
 
 		// Sync the has_reached_limit flag in the background for UI consistency
 		this.syncSessionLimitFlagInBackground({ userId, ctx });
@@ -253,7 +301,7 @@ export class StyleAnalysisService {
 
 		const promise = (async () => {
 			try {
-				const generated = await generateTitle(messages, { timeoutMs: 30000 });
+				const generated = await this.sessionTitleService.generateTitle(messages, { timeoutMs: 30000 });
 				if (generated) {
 					await this.styleAnalysisDB.updateSessionTitle(sessionId, generated);
 				}
@@ -274,18 +322,26 @@ export class StyleAnalysisService {
 		sessionId: string;
 		messageIds: string[];
 		messages: MessageEntry[];
+		userId: string;
 		ctx?: ExecutionContext;
 	}) {
-		const { sessionId, messageIds, messages, ctx } = params;
+		const { sessionId, messageIds, messages, userId, ctx } = params;
 
 		for (let i = 0; i < messages.length; i++) {
 			const previousMessage = i > 0 ? messages[i - 1] : null;
-			this.classificationService.tagEntryInBackground(messageIds[i], messages[i], ctx as ExecutionContext, sessionId, previousMessage);
+			this.classificationService.tagEntryInBackground(
+				messageIds[i],
+				messages[i],
+				ctx as ExecutionContext,
+				sessionId,
+				previousMessage,
+				userId
+			);
 		}
 	}
 
 	/**
-	 * Syncs the global has_reached_limit flag in the subscription table based on current session count.
+	 * Syncs the global has_reached_limit flag in the subscription table based on current period session count.
 	 * This is primarily used for UI consistency in the mobile app (e.g., showing upgrade banners).
 	 */
 	public syncSessionLimitFlagInBackground(params: {
@@ -302,8 +358,8 @@ export class StyleAnalysisService {
 
 				let hasReachedLimit = 0;
 				if (limits.sessionCountLimit !== -1) {
-					const totalSessionsCount = await this.styleAnalysisDB.countTotalSessions(userId);
-					if (totalSessionsCount >= limits.sessionCountLimit) {
+					const periodSessionsCount = await this.styleAnalysisDB.countSessionsSince(userId, limits.periodStart);
+					if (periodSessionsCount >= limits.sessionCountLimit) {
 						hasReachedLimit = 1;
 					}
 				}
@@ -325,27 +381,22 @@ export class StyleAnalysisService {
 	}
 
 	/**
-	 * Resolves effective limits for a user based on overrides, tier, and global defaults.
+	 * Resolves effective limits for a user based on overrides, trial window, tier, and env defaults.
+	 * Source of truth for limit resolution: src/utils/effectiveLimits.ts · docs/subscription-limits.md
 	 */
-	public async getEffectiveLimits(userId: string) {
+	public async getEffectiveLimits(userId: string): Promise<EffectiveLimits> {
 		const override = await this.userLimitsDB.getUserLimit(userId);
 		const subscription = await this.subscriptionsDB.getSubscriptionByUserId(userId);
+		const user = await this.usersDB.getUserById(userId);
 		const tier = subscription?.tier || SubscriptionTier.Free;
+		const userCreatedAt = user?.created_at ?? Date.now();
 
-		// Session Count Limit
-		let sessionCountLimit = override?.session_count_limit ?? (tier === SubscriptionTier.Core ? -1 : parseInt(this.envVars.FREE_TIER_SESSION_LIMIT || '3', 10));
-
-		// Message Per Session Limit
-		let messagePerSessionLimit = override?.message_per_session_limit ?? (tier === SubscriptionTier.Core ? -1 : 20); // Default 20 for Free
-
-		// Image Per Session Limit
-		let imagePerSessionLimit = override?.image_per_session_limit ?? (tier === SubscriptionTier.Core ? -1 : 10); // Default 10 for Free
-
-		return {
-			sessionCountLimit,
-			messagePerSessionLimit,
-			imagePerSessionLimit
-		};
+		return resolveEffectiveLimits({
+			tier,
+			userCreatedAt,
+			override,
+			envDefaults: readFreeTierEnvDefaults(this.envVars),
+		});
 	}
 }
 
@@ -357,16 +408,22 @@ export const createStyleAnalysisService = (providedEnv?: any) => {
 	const styleAnalysisDB = createStyleAnalysisDB(applicationEnv.GOSTYLENS_DB);
 	const subscriptionsDB = createSubscriptionsDB(applicationEnv.GOSTYLENS_DB);
 	const userLimitsDB = createUserLimitsDB(applicationEnv.GOSTYLENS_DB);
+	const usersDB = createUsersDB(applicationEnv.GOSTYLENS_DB);
 	const realtimeService = createRealtimeService();
-	const classificationService = createClassificationService(applicationEnv.GOSTYLENS_DB);
+	const classificationService = createClassificationService(applicationEnv.GOSTYLENS_DB, applicationEnv);
+	const sessionTitleService = createSessionTitleService();
+	const voltmem = createVoltMemService(applicationEnv);
 
 	return new StyleAnalysisService(
 		llmService,
 		styleAnalysisDB,
 		subscriptionsDB,
 		userLimitsDB,
+		usersDB,
 		realtimeService,
 		classificationService,
-		applicationEnv
+		sessionTitleService,
+		applicationEnv,
+		voltmem
 	);
 };

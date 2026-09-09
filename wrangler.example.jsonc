@@ -5,13 +5,29 @@
 	"compatibility_date": "2025-10-11",
 	"observability": {
 		"enabled": true
+		// head_sampling_rate defaults to 1 (100% of requests). Lower per-env in production if log volume grows.
 	},
-	// Shared non-secret vars (production defaults)
+	// Shared non-secret vars (dev defaults)
+	// FREE_TIER_*: trial window then monthly session quota (-1 = unlimited). See docs/subscription-limits.md
 	"vars": {
-		"ENV_NAME": "production",
-		"FREE_TIER_SESSION_LIMIT": "3"
+		"ENV_NAME": "dev",
+		"FREE_TIER_TRIAL_DAYS": "7",
+		"FREE_TIER_TRIAL_SESSION_LIMIT": "-1",
+		"FREE_TIER_MONTHLY_SESSION_LIMIT": "5",
+		"FREE_TIER_MESSAGE_PER_SESSION_LIMIT": "20",
+		"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10",
+		"POSTHOG_HOST": "https://us.i.posthog.com",
+		"EMAIL_PROVIDER": "resend",
+		"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
+		"EMAIL_API_BASE_URL": "http://127.0.0.1:8787",
+		"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
+		"EMAIL_LIFECYCLE_CRON_ENABLED": "false"
 	},
-	// Production bindings (default), to be changed for prod - these should be for staging
+	// Lifecycle marketing email — hourly activation_d0 segment
+	"triggers": {
+		"crons": ["0 * * * *"]
+	},
+	// Dev bindings (default) - this makes tools like d1studio work seamlessly locally
 	"d1_databases": [
 		{
 			"binding": "GOSTYLENS_DB",
@@ -26,13 +42,29 @@
 			"remote": true
 		}
 	],
-	// ── Staging environment ──────────────────────────────
+	"images": {
+		"binding": "IMAGES"
+	},
 	"env": {
+		// ── Staging environment ──────────────────────────────
 		"staging": {
 			"name": "stylens-lite-api-staging",
 			"vars": {
 				"ENV_NAME": "staging",
-				"FREE_TIER_SESSION_LIMIT": "3"
+				"FREE_TIER_TRIAL_DAYS": "7",
+				"FREE_TIER_TRIAL_SESSION_LIMIT": "-1",
+				"FREE_TIER_MONTHLY_SESSION_LIMIT": "5",
+				"FREE_TIER_MESSAGE_PER_SESSION_LIMIT": "20",
+				"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10",
+				"POSTHOG_HOST": "https://us.i.posthog.com",
+				"EMAIL_PROVIDER": "resend",
+				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
+				"EMAIL_API_BASE_URL": "https://api-staging.gostylens.app",
+				"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
+			"EMAIL_LIFECYCLE_CRON_ENABLED": "false"
+			},
+			"triggers": {
+				"crons": ["0 * * * *"]
 			},
 			"d1_databases": [
 				{
@@ -48,6 +80,47 @@
 					"remote": true
 				}
 			],
+			"images": {
+				"binding": "IMAGES"
+			}
+		},
+		// ── Production environment ──────────────────────────────
+		"production": {
+			"name": "stylens-lite-api-prod",
+			"vars": {
+				"ENV_NAME": "production",
+				"FREE_TIER_TRIAL_DAYS": "7",
+				"FREE_TIER_TRIAL_SESSION_LIMIT": "-1",
+				"FREE_TIER_MONTHLY_SESSION_LIMIT": "5",
+				"FREE_TIER_MESSAGE_PER_SESSION_LIMIT": "20",
+				"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10",
+				"POSTHOG_HOST": "https://us.i.posthog.com",
+				"EMAIL_PROVIDER": "resend",
+				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
+				"EMAIL_API_BASE_URL": "https://api.gostylens.app",
+				"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
+			"EMAIL_LIFECYCLE_CRON_ENABLED": "false"
+			},
+			"triggers": {
+				"crons": ["0 * * * *"]
+			},
+			"d1_databases": [
+				{
+					"binding": "GOSTYLENS_DB",
+					"database_name": "__DB_NAME__",
+					"database_id": "__DB_ID__"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "OUTFIT_PHOTOS_BUCKET",
+					"bucket_name": "__R2_BUCKET__",
+					"remote": true
+				}
+			],
+			"images": {
+				"binding": "IMAGES"
+			}
 		}
 	}
 }

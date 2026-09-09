@@ -4,11 +4,13 @@ import { CLASSIFICATION_RESPONSE_FORMAT } from '../llm/schemas/classification.sc
 import { MessageEntry, RemoteImage } from '../utils/types';
 import { StyleAnalysisDB } from '../db/style_analysis';
 import { StyleEntryTag } from '../db/types';
+import { createVoltMemService, isVoltMemWriteTag, type VoltMemService } from './voltmem.svc';
 
 export class ClassificationService {
 	constructor(
 		private llmService: LLMService,
-		private styleAnalysisDB: StyleAnalysisDB
+		private styleAnalysisDB: StyleAnalysisDB,
+		private voltmem: VoltMemService | null = null
 	) { }
 
 	/**
@@ -153,8 +155,16 @@ export class ClassificationService {
 	 * Runs classification in the background using ctx.waitUntil to avoid blocking the main response.
 	 * @param previousMessage - Pass the previous message for context. Pass `null` to explicitly indicate
 	 *   no previous message exists. Pass `undefined` (or omit) to resolve from DB automatically.
+	 * @param userId - D1 users.id used as VoltMem namespace for cross-session write-through.
 	 */
-	async tagEntryInBackground(entryId: string, message: MessageEntry, ctx: ExecutionContext, sessionId?: string, previousMessage?: MessageEntry | null) {
+	async tagEntryInBackground(
+		entryId: string,
+		message: MessageEntry,
+		ctx: ExecutionContext,
+		sessionId?: string,
+		previousMessage?: MessageEntry | null,
+		userId?: string
+	) {
 		ctx.waitUntil((async () => {
 			try {
 				// null = caller knows there's no previous message, undefined = resolve from DB
@@ -173,22 +183,38 @@ export class ClassificationService {
 				const tags = await this.classifyMessage(message, sessionId, prevMsg);
 				if (tags.length > 0) {
 					await this.styleAnalysisDB.addEntryTags(entryId, tags);
+					await this.writeThroughVoltMem(userId, tags);
 				}
 			} catch (e) {
 				console.trace('Background classification failed:', e);
 			}
 		})());
 	}
+
+	/**
+	 * Persist text prefs/constraints/occasions to VoltMem (fail-open, no outfit images).
+	 */
+	private async writeThroughVoltMem(userId: string | undefined, tags: StyleEntryTag[]) {
+		if (!userId || !this.voltmem) return;
+
+		for (const tag of tags) {
+			if (!isVoltMemWriteTag(tag.tag)) continue;
+			const summary = typeof tag.payload?.summary === 'string' ? tag.payload.summary : '';
+			if (!summary.trim()) continue;
+			await this.voltmem.rememberFromTag(userId, tag.tag, summary);
+		}
+	}
 }
 
 /**
  * Factory function to create the ClassificationService.
  */
-import { ModelUseCase } from './model_config.svc';
+import { ModelProvider, ModelUseCase } from './model_config.svc';
 
-export const createClassificationService = (database: D1Database) => {
+export const createClassificationService = (database: D1Database, env?: Env) => {
 	// Use the dedicated classification model configuration (usually a fast/cheap 'Mini' model)
-	const llmService = createLLMService({ useCase: ModelUseCase.CLASSIFICATION });
+	const llmService = createLLMService({ useCase: ModelUseCase.CLASSIFICATION, provider: ModelProvider.CLAUDE });
 	const styleAnalysisDB = new StyleAnalysisDB(database);
-	return new ClassificationService(llmService, styleAnalysisDB);
+	const voltmem = env ? createVoltMemService(env) : null;
+	return new ClassificationService(llmService, styleAnalysisDB, voltmem);
 };

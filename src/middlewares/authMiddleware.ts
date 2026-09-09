@@ -1,8 +1,8 @@
 import { error, RequestHandler } from 'itty-router';
 import { createAuthService } from '../services/auth.svc';
-import { AuthUser } from 'types';
+import { AuthRequest, AuthUser } from 'types';
 
-export const authMiddleware: RequestHandler = async (request) => {
+export const authMiddleware: RequestHandler<AuthRequest> = async (request) => {
     const authHeader = request.headers.get('Authorization');
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -10,6 +10,7 @@ export const authMiddleware: RequestHandler = async (request) => {
     }
 
     const token = authHeader.split(' ')[1];
+    // console.log("token: ", token);
 
     try {
         const authService = createAuthService();
@@ -24,8 +25,12 @@ export const authMiddleware: RequestHandler = async (request) => {
 
         // Attach user info to request
         request.user = authUser;
+        request.log = request.log.child({
+            auth_id: authUser.authId,
+            db_user_id: authUser.dbId,
+        });
     } catch (err) {
-        console.error('JWT verification failed:', err);
+        request.log.warn('jwt_verification_failed', {}, err);
         return error(401, 'Unauthorized: Invalid or expired token');
     }
 };
