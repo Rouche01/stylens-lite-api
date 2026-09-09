@@ -5,6 +5,7 @@ import { UsersDB } from './users';
 import { UserLimitsDB } from './user_limits';
 import { UserEmailPrefsDB } from './user_email_prefs';
 import { EmailSendsDB } from './email_sends';
+import { EmailSegmentsDB, createEmailSegmentsDB } from './email_segments';
 import { InviteCodesDB } from './invite_codes';
 import { ClosetDB } from './closet';
 import { PushTokensDB } from './push_tokens';
@@ -38,6 +39,8 @@ export const createEmailSendsDB = (db: D1Database) => {
 	return new EmailSendsDB(db);
 };
 
+export { createEmailSegmentsDB };
+
 export const createInviteCodesDB = (db: D1Database) => {
 	return new InviteCodesDB(db);
 };
@@ -64,4 +67,5 @@ export {
 	InviteCodesDB,
 	UserEmailPrefsDB,
 	EmailSendsDB,
+	EmailSegmentsDB,
 };

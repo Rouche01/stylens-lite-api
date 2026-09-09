@@ -18,7 +18,13 @@
 		"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10",
 		"POSTHOG_HOST": "https://us.i.posthog.com",
 		"EMAIL_PROVIDER": "resend",
-		"EMAIL_FROM": "GoStylens <hello@mail.gostylens.app>"
+		"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
+		"EMAIL_API_BASE_URL": "http://127.0.0.1:8787",
+		"EMAIL_APP_DEEP_LINK": "https://gostylens.app"
+	},
+	// Lifecycle marketing email — hourly activation_d0 segment
+	"triggers": {
+		"crons": ["0 * * * *"]
 	},
 	// Dev bindings (default) - this makes tools like d1studio work seamlessly locally
 	"d1_databases": [
@@ -51,7 +57,12 @@
 				"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10",
 				"POSTHOG_HOST": "https://us.i.posthog.com",
 				"EMAIL_PROVIDER": "resend",
-				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.app>"
+				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
+				"EMAIL_API_BASE_URL": "https://api-staging.gostylens.app",
+				"EMAIL_APP_DEEP_LINK": "https://gostylens.app"
+			},
+			"triggers": {
+				"crons": ["0 * * * *"]
 			},
 			"d1_databases": [
 				{
@@ -83,7 +94,12 @@
 				"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10",
 				"POSTHOG_HOST": "https://us.i.posthog.com",
 				"EMAIL_PROVIDER": "resend",
-				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.app>"
+				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
+				"EMAIL_API_BASE_URL": "https://api.gostylens.app",
+				"EMAIL_APP_DEEP_LINK": "https://gostylens.app"
+			},
+			"triggers": {
+				"crons": ["0 * * * *"]
 			},
 			"d1_databases": [
 				{

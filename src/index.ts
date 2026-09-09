@@ -13,6 +13,7 @@ import emailRouter from './routes/email';
 import { createLogger } from './utils/logger.utils';
 import { apiError } from './utils/error';
 import { createPostHogSink } from './services/posthog.svc';
+import { runActivationD0Job } from './jobs/activation_d0';
 import type { ApiRequest } from './types';
 
 const router = Router();
@@ -69,5 +70,31 @@ export default {
 
 		sink?.flush(ctx);
 		return response;
+	},
+
+	async scheduled(
+		controller: ScheduledController,
+		env: Env,
+		ctx: ExecutionContext
+	): Promise<void> {
+		const sink = createPostHogSink(env);
+		const log = createLogger({
+			env: env.ENV_NAME,
+			sink,
+			context: {
+				handler: 'scheduled',
+				cron: controller.cron,
+			},
+		});
+
+		try {
+			// Single lifecycle cron today; local probes may pass a different cron string.
+			await runActivationD0Job(env, ctx, log);
+		} catch (err) {
+			log.error('scheduled_handler_failed', { cron: controller.cron }, err);
+			throw err;
+		} finally {
+			sink?.flush(ctx);
+		}
 	},
 };

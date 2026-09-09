@@ -47,6 +47,9 @@ declare namespace Cloudflare {
 		RESEND_API_KEY: string;
 		RESEND_WEBHOOK_SECRET: string;
 		EMAIL_UNSUBSCRIBE_SECRET: string;
+		EMAIL_API_BASE_URL: string;
+		EMAIL_SEND_ALLOWLIST: string;
+		EMAIL_APP_DEEP_LINK: string;
 	}
 	interface ProductionEnv {
 		OUTFIT_PHOTOS_BUCKET: R2Bucket;
@@ -90,6 +93,9 @@ declare namespace Cloudflare {
 		RESEND_API_KEY: string;
 		RESEND_WEBHOOK_SECRET: string;
 		EMAIL_UNSUBSCRIBE_SECRET: string;
+		EMAIL_API_BASE_URL: string;
+		EMAIL_SEND_ALLOWLIST: string;
+		EMAIL_APP_DEEP_LINK: string;
 	}
 	interface Env {
 		OUTFIT_PHOTOS_BUCKET: R2Bucket;
@@ -133,6 +139,9 @@ declare namespace Cloudflare {
 		RESEND_API_KEY: string;
 		RESEND_WEBHOOK_SECRET: string;
 		EMAIL_UNSUBSCRIBE_SECRET: string;
+		EMAIL_API_BASE_URL: string;
+		EMAIL_SEND_ALLOWLIST: string;
+		EMAIL_APP_DEEP_LINK: string;
 		AI?: Ai;
 	}
 }

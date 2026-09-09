@@ -6,6 +6,7 @@
 		"deploy:prod": "wrangler deploy",
 		"deploy:staging": "wrangler deploy --env staging",
 		"dev": "wrangler dev",
+		"dev:scheduled": "wrangler dev --test-scheduled",
 		"dev:remote": "wrangler dev --remote",
 		"start": "wrangler dev",
 		"test": "vitest",
