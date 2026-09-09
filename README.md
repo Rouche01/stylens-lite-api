@@ -18,6 +18,8 @@ Copy `.dev.vars.example` to `.dev.vars` and configure secrets before running loc
 | Topic | Location |
 |-------|----------|
 | **Subscription limits** (Free trial, monthly quota, enforcement) | [docs/subscription-limits.md](docs/subscription-limits.md) |
+| **Email channel** (lifecycle marketing — ESP, consent UX, segments) | [docs/email-channel.md](docs/email-channel.md) |
+| Session memory | [docs/session-memory.md](docs/session-memory.md) |
 | Blurhash backfill script | [scripts/BACKFILL_BLURHASH.md](scripts/BACKFILL_BLURHASH.md) |
 
 Executable limit scenarios live in `test/effectiveLimits.spec.ts` (`documented free-tier scenarios`).

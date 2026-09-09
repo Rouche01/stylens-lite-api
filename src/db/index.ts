@@ -3,6 +3,7 @@ import { StyleAnalysisDB } from './style_analysis';
 import { SubscriptionsDB } from './subscriptions';
 import { UsersDB } from './users';
 import { UserLimitsDB } from './user_limits';
+import { UserEmailPrefsDB } from './user_email_prefs';
 import { InviteCodesDB } from './invite_codes';
 import { ClosetDB } from './closet';
 import { PushTokensDB } from './push_tokens';
@@ -28,6 +29,10 @@ export const createUserLimitsDB = (db: D1Database) => {
 	return new UserLimitsDB(db);
 };
 
+export const createUserEmailPrefsDB = (db: D1Database) => {
+	return new UserEmailPrefsDB(db);
+};
+
 export const createInviteCodesDB = (db: D1Database) => {
 	return new InviteCodesDB(db);
 };
@@ -45,4 +50,11 @@ export const createStylistOpenersDB = (db: D1Database) => {
 };
 
 export * from './types.js';
-export { StyleAnalysisDB, ClosetDB, PushTokensDB, StylistOpenersDB, InviteCodesDB };
+export {
+	StyleAnalysisDB,
+	ClosetDB,
+	PushTokensDB,
+	StylistOpenersDB,
+	InviteCodesDB,
+	UserEmailPrefsDB,
+};

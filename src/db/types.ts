@@ -78,6 +78,16 @@ export type User = {
 	subscription?: Subscription;
 };
 
+export type UserEmailPrefs = {
+	id: string;
+	user_id: string;
+	marketing_opt_in: 0 | 1;
+	marketing_opt_in_at: number | null;
+	marketing_unsubscribed_at: number | null;
+	created_at: number;
+	updated_at: number;
+};
+
 export type Subscription = {
 	id: string;
 	user_id: string;

@@ -61,6 +61,44 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_auth_id ON users(auth_id);
 
+-- 1:1 marketing prefs (no row = opted out / default off)
+CREATE TABLE IF NOT EXISTS user_email_prefs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL UNIQUE,
+  marketing_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (marketing_opt_in IN (0, 1)),
+  marketing_opt_in_at INTEGER,
+  marketing_unsubscribed_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_email_prefs_opt_in
+  ON user_email_prefs (marketing_opt_in);
+
+CREATE TABLE IF NOT EXISTS email_sends (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  template_key TEXT NOT NULL,
+  campaign_key TEXT,
+  provider TEXT NOT NULL DEFAULT 'resend',
+  provider_message_id TEXT,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'sent', 'failed', 'bounced', 'complained')),
+  sent_at INTEGER,
+  opened_at INTEGER,
+  clicked_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_sends_user_template
+  ON email_sends (user_id, template_key, campaign_key);
+
+CREATE INDEX IF NOT EXISTS idx_email_sends_provider_message
+  ON email_sends (provider_message_id);
+
 CREATE INDEX IF NOT EXISTS idx_style_analysis_histories_user
   ON style_analysis_histories (user_id, is_deleted, updated_at DESC);
 

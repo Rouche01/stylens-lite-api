@@ -2,6 +2,8 @@
 
 How session, message, and image limits apply to Free and Core users.
 
+**Free plan:** 7 days of unlimited sessions after signup, then 5 sessions per UTC month (plus 20 messages and 10 images per session).
+
 ## Tiers
 
 | Tier | Default behavior |

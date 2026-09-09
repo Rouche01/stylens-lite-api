@@ -52,3 +52,11 @@ VOLTMEM_API_KEY=dev-secret
 POSTHOG_PROJECT_TOKEN=dummy
 POSTHOG_HOST=https://us.i.posthog.com
 
+# Marketing email (Resend). Auth OTP stays on MailerSend/Supabase — do not mix.
+# Sending-access API key only. Staging/prod: wrangler secret put RESEND_API_KEY
+EMAIL_PROVIDER=resend
+EMAIL_FROM=GoStylens <hello@mail.gostylens.app>
+RESEND_API_KEY=dummy
+# Set after webhook route exists
+RESEND_WEBHOOK_SECRET=dummy
+
