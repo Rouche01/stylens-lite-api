@@ -118,6 +118,64 @@ export class EmailSendsDB {
 		);
 	}
 
+	async getByProviderMessageId(providerMessageId: string): Promise<EmailSend | null> {
+		return (
+			(await this.db
+				.prepare(`SELECT * FROM email_sends WHERE provider_message_id = ?`)
+				.bind(providerMessageId)
+				.first<EmailSend>()) ?? null
+		);
+	}
+
+	/**
+	 * Apply ESP webhook. Terminal statuses (bounced/complained/failed) win over sent.
+	 * Opens/clicks set timestamps without demoting terminal statuses.
+	 */
+	async applyWebhookEvent(event: {
+		providerMessageId: string;
+		status: EmailSendStatus;
+		openedAt?: number;
+		clickedAt?: number;
+	}): Promise<EmailSend | null> {
+		const existing = await this.getByProviderMessageId(event.providerMessageId);
+		if (!existing) return null;
+
+		const terminal: EmailSendStatus[] = ['bounced', 'complained', 'failed'];
+		const isTerminal = terminal.includes(existing.status);
+
+		let nextStatus = existing.status;
+		if (event.openedAt !== undefined || event.clickedAt !== undefined) {
+			// engagement: keep existing status unless still queued
+			if (existing.status === 'queued') nextStatus = 'sent';
+		} else if (!isTerminal || terminal.includes(event.status)) {
+			nextStatus = event.status;
+		}
+
+		const openedAt =
+			event.openedAt !== undefined
+				? existing.opened_at ?? event.openedAt
+				: existing.opened_at;
+		const clickedAt =
+			event.clickedAt !== undefined
+				? existing.clicked_at ?? event.clickedAt
+				: existing.clicked_at;
+
+		const now = Date.now();
+		await this.db
+			.prepare(
+				`UPDATE email_sends
+				 SET status = ?,
+				     opened_at = ?,
+				     clicked_at = ?,
+				     updated_at = ?
+				 WHERE provider_message_id = ?`
+			)
+			.bind(nextStatus, openedAt, clickedAt, now, event.providerMessageId)
+			.run();
+
+		return this.getByProviderMessageId(event.providerMessageId);
+	}
+
 	async updateByProviderMessageId(
 		providerMessageId: string,
 		updates: Partial<Pick<EmailSend, 'status' | 'opened_at' | 'clicked_at'>>

@@ -50,6 +50,7 @@ declare namespace Cloudflare {
 		EMAIL_API_BASE_URL: string;
 		EMAIL_SEND_ALLOWLIST: string;
 		EMAIL_APP_DEEP_LINK: string;
+		EMAIL_LIFECYCLE_CRON_ENABLED: string;
 	}
 	interface ProductionEnv {
 		OUTFIT_PHOTOS_BUCKET: R2Bucket;
@@ -96,6 +97,7 @@ declare namespace Cloudflare {
 		EMAIL_API_BASE_URL: string;
 		EMAIL_SEND_ALLOWLIST: string;
 		EMAIL_APP_DEEP_LINK: string;
+		EMAIL_LIFECYCLE_CRON_ENABLED: string;
 	}
 	interface Env {
 		OUTFIT_PHOTOS_BUCKET: R2Bucket;
@@ -142,6 +144,7 @@ declare namespace Cloudflare {
 		EMAIL_API_BASE_URL: string;
 		EMAIL_SEND_ALLOWLIST: string;
 		EMAIL_APP_DEEP_LINK: string;
+		EMAIL_LIFECYCLE_CRON_ENABLED: string;
 		AI?: Ai;
 	}
 }

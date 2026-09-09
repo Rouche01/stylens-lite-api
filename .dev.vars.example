@@ -57,7 +57,7 @@ POSTHOG_HOST=https://us.i.posthog.com
 EMAIL_PROVIDER=resend
 EMAIL_FROM=GoStylens <hello@mail.gostylens.com>
 RESEND_API_KEY=dummy
-# Set after webhook route exists
+# Signing secret from Resend webhook endpoint (whsec_...) — POST /webhooks/email
 RESEND_WEBHOOK_SECRET=dummy
 # HMAC secret for signed unsubscribe links (not the Resend key)
 EMAIL_UNSUBSCRIBE_SECRET=dummy
@@ -69,3 +69,5 @@ EMAIL_API_BASE_URL=http://127.0.0.1:8787
 EMAIL_SEND_ALLOWLIST=
 # Optional CTA deep link / universal link
 EMAIL_APP_DEEP_LINK=https://gostylens.app
+# Segment cron (activation_d0). true/1/yes to enable; off by default
+EMAIL_LIFECYCLE_CRON_ENABLED=false

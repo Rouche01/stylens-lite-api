@@ -4,6 +4,11 @@ import {
 	SendEmailParams,
 	SendEmailResult,
 } from '../types';
+import { verifySvixSignature } from 'utils/svix_webhook.utils';
+import {
+	normalizeResendWebhookEvent,
+	ResendWebhookPayload,
+} from './resend_webhook';
 
 const RESEND_API_BASE = 'https://api.resend.com';
 
@@ -22,7 +27,8 @@ export class ResendProvider implements EmailProvider {
 
 	constructor(
 		private apiKey: string,
-		private from: string
+		private from: string,
+		private webhookSecret?: string
 	) {}
 
 	async send(params: SendEmailParams): Promise<SendEmailResult> {
@@ -71,15 +77,24 @@ export class ResendProvider implements EmailProvider {
 	 * without changing EmailService callers.
 	 */
 	async suppress(_email: string): Promise<void> {
-		// no-op for Phase 0/1
+		// no-op for Phase 1 — D1 prefs are source of truth
 	}
 
 	async unsuppress(_email: string): Promise<void> {
-		// no-op for Phase 0/1
+		// no-op for Phase 1
 	}
 
-	async parseWebhook(_request: Request): Promise<NormalizedWebhookEvent | null> {
-		// Wired in esp-webhooks todo
-		return null;
+	async parseWebhook(request: Request): Promise<NormalizedWebhookEvent | null> {
+		const payload = await request.text();
+		await verifySvixSignature({
+			payload,
+			svixId: request.headers.get('svix-id') ?? '',
+			svixTimestamp: request.headers.get('svix-timestamp') ?? '',
+			svixSignature: request.headers.get('svix-signature') ?? '',
+			secret: this.webhookSecret ?? '',
+		});
+
+		const body = JSON.parse(payload) as ResendWebhookPayload;
+		return normalizeResendWebhookEvent(body);
 	}
 }

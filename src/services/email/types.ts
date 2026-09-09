@@ -27,6 +27,7 @@ export type NormalizedWebhookEvent = {
 	openedAt?: number;
 	clickedAt?: number;
 	occurredAt?: number;
+	recipientEmails?: string[];
 };
 
 export type EmailTemplateKey = 'activation_d0';

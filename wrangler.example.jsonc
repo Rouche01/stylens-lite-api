@@ -20,7 +20,8 @@
 		"EMAIL_PROVIDER": "resend",
 		"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
 		"EMAIL_API_BASE_URL": "http://127.0.0.1:8787",
-		"EMAIL_APP_DEEP_LINK": "https://gostylens.app"
+		"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
+		"EMAIL_LIFECYCLE_CRON_ENABLED": "false"
 	},
 	// Lifecycle marketing email — hourly activation_d0 segment
 	"triggers": {
@@ -59,7 +60,8 @@
 				"EMAIL_PROVIDER": "resend",
 				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
 				"EMAIL_API_BASE_URL": "https://api-staging.gostylens.app",
-				"EMAIL_APP_DEEP_LINK": "https://gostylens.app"
+				"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
+			"EMAIL_LIFECYCLE_CRON_ENABLED": "false"
 			},
 			"triggers": {
 				"crons": ["0 * * * *"]
@@ -96,7 +98,8 @@
 				"EMAIL_PROVIDER": "resend",
 				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
 				"EMAIL_API_BASE_URL": "https://api.gostylens.app",
-				"EMAIL_APP_DEEP_LINK": "https://gostylens.app"
+				"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
+			"EMAIL_LIFECYCLE_CRON_ENABLED": "false"
 			},
 			"triggers": {
 				"crons": ["0 * * * *"]

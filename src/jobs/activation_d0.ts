@@ -1,6 +1,7 @@
 import { createEmailSegmentsDB } from '../db/email_segments';
 import { createEmailService } from '../services/email.svc';
 import { buildUnsubscribeUrl } from '../utils/email_unsubscribe.utils';
+import { isEnvFlagEnabled } from '../utils/env_flag.utils';
 import { createLogger, Logger } from '../utils/logger.utils';
 import { createPostHogSink } from '../services/posthog.svc';
 import {
@@ -19,6 +20,7 @@ export type ActivationD0JobResult = {
 
 /**
  * Hourly (or on-demand) job: find activation_d0 segment → send via EmailService.
+ * Gated by EMAIL_LIFECYCLE_CRON_ENABLED.
  */
 export async function runActivationD0Job(
 	env: Env,
@@ -34,6 +36,12 @@ export async function runActivationD0Job(
 			context: { job: 'activation_d0' },
 		})
 	).child({ job: 'activation_d0' });
+
+	if (!isEnvFlagEnabled(env.EMAIL_LIFECYCLE_CRON_ENABLED)) {
+		logger.info('activation_d0_skipped', { reason: 'cron_disabled' });
+		sink?.flush(ctx);
+		return { candidates: 0, eligible: 0, sent: 0, skipped: 0, failed: 0 };
+	}
 
 	const apiBase = env.EMAIL_API_BASE_URL?.trim();
 	if (!apiBase) {
