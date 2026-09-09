@@ -13,6 +13,8 @@ import { dbIdMiddleware } from 'middlewares/dbIdMiddleware';
 import upsertPushTokenHandler from './handlers/upsertPushTokenHandler';
 import deletePushTokenHandler from './handlers/deletePushTokenHandler';
 import sendPushNotificationHandler from './handlers/sendPushNotificationHandler';
+import getEmailPrefsHandler from './handlers/getEmailPrefsHandler';
+import updateEmailPrefsHandler from './handlers/updateEmailPrefsHandler';
 
 const router = Router({ base: '/users' });
 
@@ -25,6 +27,8 @@ router.post('/push-notification', adminApiKeyMiddleware, sendPushNotificationHan
 // We don't need dbIdMiddleware, as long as user is in authSvc
 // we can allow them access this route
 router.get('/auth/:authId', authMiddleware, getUserByAuthIdHandler);
+router.get('/me/email-prefs', authMiddleware, dbIdMiddleware, getEmailPrefsHandler);
+router.patch('/me/email-prefs', authMiddleware, dbIdMiddleware, updateEmailPrefsHandler);
 router.delete('/:userId', authMiddleware, dbIdMiddleware, deleteUserHandler);
 router.patch('/:userId', authMiddleware, dbIdMiddleware, updateUserHandler);
 router.put('/push-token', authMiddleware, dbIdMiddleware, upsertPushTokenHandler);

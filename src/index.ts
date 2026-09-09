@@ -9,6 +9,7 @@ import subscriptionsRouter from './routes/subscriptions';
 import webhooksRouter from './routes/webhooks';
 import closetRouter from './routes/closet';
 import configRouter from './routes/config';
+import emailRouter from './routes/email';
 import { createLogger } from './utils/logger.utils';
 import { apiError } from './utils/error';
 import { createPostHogSink } from './services/posthog.svc';
@@ -28,6 +29,7 @@ router.all('/favourites/*', favouritesRouter.fetch);
 router.all('/subscriptions/*', subscriptionsRouter.fetch);
 router.all('/webhooks/*', webhooksRouter.fetch);
 router.all('/config/*', configRouter.fetch);
+router.all('/email/*', emailRouter.fetch);
 
 router.get('/', () => new Response('Style Analysis API is running'));
 

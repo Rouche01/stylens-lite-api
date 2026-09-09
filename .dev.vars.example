@@ -59,4 +59,6 @@ EMAIL_FROM=GoStylens <hello@mail.gostylens.app>
 RESEND_API_KEY=dummy
 # Set after webhook route exists
 RESEND_WEBHOOK_SECRET=dummy
+# HMAC secret for signed unsubscribe links (not the Resend key)
+EMAIL_UNSUBSCRIBE_SECRET=dummy
 
