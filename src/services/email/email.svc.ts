@@ -4,13 +4,13 @@ import {
 	createUserEmailPrefsDB,
 	UsersDB,
 	UserEmailPrefsDB,
-} from '../db';
-import { EmailSendsDB } from '../db/email_sends';
-import { createLogger, Logger } from '../utils/logger.utils';
-import { EmailProvider } from './email/providers/base.provider';
-import { createEmailProvider } from './email/providers';
-import { renderEmailTemplate } from './email/templates';
-import { EmailTemplateKey } from './email/types';
+} from '../../db';
+import { EmailSendsDB } from '../../db/email_sends';
+import { createLogger, Logger } from '../../utils/logger.utils';
+import { EmailProvider } from './providers/base.provider';
+import { createEmailProvider } from './providers';
+import { renderEmailTemplate } from './templates';
+import { EmailTemplateKey } from './types';
 
 export type SendLifecycleEmailParams = {
 	userId: string;

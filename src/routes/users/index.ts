@@ -15,6 +15,7 @@ import deletePushTokenHandler from './handlers/deletePushTokenHandler';
 import sendPushNotificationHandler from './handlers/sendPushNotificationHandler';
 import getEmailPrefsHandler from './handlers/getEmailPrefsHandler';
 import updateEmailPrefsHandler from './handlers/updateEmailPrefsHandler';
+import generateAvatarHandler from './handlers/generateAvatarHandler';
 
 const router = Router({ base: '/users' });
 
@@ -24,6 +25,7 @@ router.post('/limits', adminApiKeyMiddleware, updateUserLimitHandler);
 router.post('/invite-codes', adminApiKeyMiddleware, createInviteCodeHandler);
 router.get('/invite-codes', adminApiKeyMiddleware, listInviteCodesHandler);
 router.post('/push-notification', adminApiKeyMiddleware, sendPushNotificationHandler);
+router.post('/avatars/generate', adminApiKeyMiddleware, generateAvatarHandler);
 // We don't need dbIdMiddleware, as long as user is in authSvc
 // we can allow them access this route
 router.get('/auth/:authId', authMiddleware, getUserByAuthIdHandler);

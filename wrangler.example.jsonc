@@ -21,11 +21,28 @@
 		"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
 		"EMAIL_API_BASE_URL": "http://127.0.0.1:8787",
 		"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
-		"EMAIL_LIFECYCLE_CRON_ENABLED": "false"
+		"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
+		"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
+		"AVATAR_IMAGE_PROVIDER": "openai"
 	},
 	// Lifecycle marketing email — hourly activation_d0 segment
 	"triggers": {
 		"crons": ["0 * * * *"]
+	},
+	"queues": {
+		"producers": [
+			{
+				"binding": "AVATAR_GENERATION_QUEUE",
+				"queue": "avatar-generation"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "avatar-generation",
+				"max_batch_size": 1,
+				"max_retries": 2
+			}
+		]
 	},
 	// Dev bindings (default) - this makes tools like d1studio work seamlessly locally
 	"d1_databases": [
@@ -61,10 +78,27 @@
 				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
 				"EMAIL_API_BASE_URL": "https://api-staging.gostylens.app",
 				"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
-			"EMAIL_LIFECYCLE_CRON_ENABLED": "false"
+			"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
+			"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
+			"AVATAR_IMAGE_PROVIDER": "openai"
 			},
 			"triggers": {
 				"crons": ["0 * * * *"]
+			},
+			"queues": {
+				"producers": [
+					{
+						"binding": "AVATAR_GENERATION_QUEUE",
+						"queue": "avatar-generation-staging"
+					}
+				],
+				"consumers": [
+					{
+						"queue": "avatar-generation-staging",
+						"max_batch_size": 1,
+						"max_retries": 2
+					}
+				]
 			},
 			"d1_databases": [
 				{
@@ -99,10 +133,27 @@
 				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
 				"EMAIL_API_BASE_URL": "https://api.gostylens.app",
 				"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
-			"EMAIL_LIFECYCLE_CRON_ENABLED": "false"
+			"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
+			"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
+			"AVATAR_IMAGE_PROVIDER": "openai"
 			},
 			"triggers": {
 				"crons": ["0 * * * *"]
+			},
+			"queues": {
+				"producers": [
+					{
+						"binding": "AVATAR_GENERATION_QUEUE",
+						"queue": "avatar-generation"
+					}
+				],
+				"consumers": [
+					{
+						"queue": "avatar-generation",
+						"max_batch_size": 1,
+						"max_retries": 2
+					}
+				]
 			},
 			"d1_databases": [
 				{

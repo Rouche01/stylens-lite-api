@@ -78,6 +78,30 @@ export type User = {
 	subscription?: Subscription;
 };
 
+export type UserAvatarStatus = 'pending' | 'ready' | 'failed' | 'rejected_framing';
+
+export type UserAvatar = {
+	id: string;
+	user_id: string;
+	source_image_key: string;
+	source_image_url: string | null;
+	avatar_image_key: string | null;
+	status: UserAvatarStatus;
+	framing_confidence: string | null;
+	model: string | null;
+	error: string | null;
+	is_active: 0 | 1;
+	created_at: number;
+	updated_at: number;
+};
+
+/** Profile payload for GET /users/auth/:authId */
+export type UserAvatarPublic = {
+	status: 'pending' | 'ready' | 'failed';
+	image_url: string | null;
+	image_key: string | null;
+};
+
 export type UserEmailPrefs = {
 	id: string;
 	user_id: string;

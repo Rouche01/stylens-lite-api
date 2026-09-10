@@ -10,6 +10,7 @@ import { InviteCodesDB } from './invite_codes';
 import { ClosetDB } from './closet';
 import { PushTokensDB } from './push_tokens';
 import { StylistOpenersDB } from './stylist_openers';
+import { AvatarsDB } from './avatars';
 
 export const createStyleAnalysisDB = (db: D1Database): StyleAnalysisDB => {
 	return new StyleAnalysisDB(db);
@@ -57,6 +58,10 @@ export const createStylistOpenersDB = (db: D1Database) => {
 	return new StylistOpenersDB(db);
 };
 
+export const createAvatarsDB = (db: D1Database) => {
+	return new AvatarsDB(db);
+};
+
 export * from './types.js';
 export {
 	StyleAnalysisDB,
@@ -68,4 +73,5 @@ export {
 	UserEmailPrefsDB,
 	EmailSendsDB,
 	EmailSegmentsDB,
+	AvatarsDB,
 };

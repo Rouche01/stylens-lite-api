@@ -4,6 +4,9 @@ OPENAI_MODEL_API_KEY=dummy
 OPENAI_STYLE_ANALYSIS_MODEL_VERSION=dummy
 OPENAI_OUTFIT_EXTRACTION_MODEL_VERSION=dummy
 OPENAI_FAST_TASK_MODEL_VERSION=dummy
+OPENAI_IMAGE_MODEL_VERSION=gpt-image-1
+# openai today; add a providers/*.provider.ts and a factory case to swap
+AVATAR_IMAGE_PROVIDER=openai
 
 CLAUDE_ENDPOINT_URL=https://api.anthropic.com/v1
 CLAUDE_API_KEY=dummy

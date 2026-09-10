@@ -5,12 +5,15 @@ import { MessageEntry, RemoteImage } from '../utils/types';
 import { StyleAnalysisDB } from '../db/style_analysis';
 import { StyleEntryTag } from '../db/types';
 import { createVoltMemService, isVoltMemWriteTag, type VoltMemService } from './voltmem.svc';
+import { createAvatarService, type AvatarService } from './avatar';
+import { ModelProvider, ModelUseCase } from './model_config.svc';
 
 export class ClassificationService {
 	constructor(
 		private llmService: LLMService,
 		private styleAnalysisDB: StyleAnalysisDB,
-		private voltmem: VoltMemService | null = null
+		private voltmem: VoltMemService | null = null,
+		private avatarService: AvatarService | null = null
 	) { }
 
 	/**
@@ -184,6 +187,7 @@ export class ClassificationService {
 				if (tags.length > 0) {
 					await this.styleAnalysisDB.addEntryTags(entryId, tags);
 					await this.writeThroughVoltMem(userId, tags);
+					await this.maybeEnqueueAvatar(userId, message, tags);
 				}
 			} catch (e) {
 				console.trace('Background classification failed:', e);
@@ -204,17 +208,79 @@ export class ClassificationService {
 			await this.voltmem.rememberFromTag(userId, tag.tag, summary);
 		}
 	}
+
+	/**
+	 * First outfit-tagged tip photo may seed a user twin. Fail-open; never blocks classification.
+	 */
+	private async maybeEnqueueAvatar(
+		userId: string | undefined,
+		message: MessageEntry,
+		tags: StyleEntryTag[]
+	) {
+		if (!userId || !this.avatarService) return;
+
+		const hasOutfitImage = tags.some(
+			(tag) =>
+				tag.tag === 'session_state:primary_outfit_image' ||
+				tag.tag === 'session_state:alt_outfit_image'
+		);
+		if (!hasOutfitImage) return;
+
+		const image = this.resolveOutfitImage(message, tags);
+		if (!image) return;
+
+		try {
+			await this.avatarService.maybeEnqueueFromOutfitImage({
+				userId,
+				imageKey: image.key,
+				imageUrl: image.url,
+			});
+		} catch (e) {
+			console.trace('Background avatar enqueue failed:', e);
+		}
+	}
+
+	private resolveOutfitImage(message: MessageEntry, tags: StyleEntryTag[]): RemoteImage | null {
+		for (const tag of tags) {
+			if (
+				tag.tag !== 'session_state:primary_outfit_image' &&
+				tag.tag !== 'session_state:alt_outfit_image'
+			) {
+				continue;
+			}
+			const payloadImages = tag.payload?.images as RemoteImage[] | undefined;
+			const fromPayload = this.withResolvedKey(payloadImages?.[0]);
+			if (fromPayload) return fromPayload;
+		}
+
+		return this.withResolvedKey(this.extractImages(message)[0]);
+	}
+
+	private withResolvedKey(image: RemoteImage | undefined): RemoteImage | null {
+		if (!image?.url && !image?.key) return null;
+
+		let key = image.key;
+		if (!key && image.url) {
+			try {
+				key = image.url.startsWith('http') ? new URL(image.url).pathname.slice(1) : image.url;
+			} catch {
+				key = image.url;
+			}
+		}
+
+		if (!key) return null;
+		return { url: image.url ?? '', key, blurHash: image.blurHash };
+	}
 }
 
 /**
  * Factory function to create the ClassificationService.
  */
-import { ModelProvider, ModelUseCase } from './model_config.svc';
-
 export const createClassificationService = (database: D1Database, env?: Env) => {
 	// Use the dedicated classification model configuration (usually a fast/cheap 'Mini' model)
 	const llmService = createLLMService({ useCase: ModelUseCase.CLASSIFICATION, provider: ModelProvider.CLAUDE });
 	const styleAnalysisDB = new StyleAnalysisDB(database);
 	const voltmem = env ? createVoltMemService(env) : null;
-	return new ClassificationService(llmService, styleAnalysisDB, voltmem);
+	const avatarService = env ? createAvatarService(env) : null;
+	return new ClassificationService(llmService, styleAnalysisDB, voltmem, avatarService);
 };

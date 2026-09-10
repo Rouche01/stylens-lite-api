@@ -1,5 +1,5 @@
 import { createEmailSegmentsDB } from '../db/email_segments';
-import { createEmailService } from '../services/email.svc';
+import { createEmailService } from '../services/email';
 import { buildUnsubscribeUrl } from '../utils/email_unsubscribe.utils';
 import { isEnvFlagEnabled } from '../utils/env_flag.utils';
 import { createLogger, Logger } from '../utils/logger.utils';

@@ -1,9 +1,10 @@
 import { env } from 'cloudflare:workers';
-import { createUsersDB } from 'db';
+import { createAvatarsDB, createUsersDB } from 'db';
 import { RequestHandler } from 'itty-router';
 import { AuthRequest, SubscriptionTier } from 'types';
-import type { Subscription } from 'db/types';
+import type { Subscription, UserAvatarPublic } from 'db/types';
 import { apiError } from 'utils/error';
+import { signDownloadUrlForKey } from 'utils/assets.utils';
 
 const getUserByAuthIdHandler: RequestHandler<AuthRequest> = async (request) => {
     try {
@@ -42,7 +43,19 @@ const getUserByAuthIdHandler: RequestHandler<AuthRequest> = async (request) => {
             user.subscription = defaultSubscription;
         }
 
-        return new Response(JSON.stringify(user), {
+        const avatarsDB = createAvatarsDB(env.GOSTYLENS_DB);
+        const active = await avatarsDB.getActiveAvatar(user.id);
+        let avatar: UserAvatarPublic | null = null;
+        if (active) {
+            const imageKey = active.avatar_image_key;
+            avatar = {
+                status: active.status === 'ready' ? 'ready' : 'pending',
+                image_key: imageKey,
+                image_url: imageKey ? await signDownloadUrlForKey(imageKey) : null,
+            };
+        }
+
+        return new Response(JSON.stringify({ ...user, avatar }), {
             headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache, no-store, must-revalidate' },
             status: 200,
         });
@@ -55,3 +68,4 @@ const getUserByAuthIdHandler: RequestHandler<AuthRequest> = async (request) => {
 };
 
 export default getUserByAuthIdHandler;
+
