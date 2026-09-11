@@ -33,8 +33,10 @@ Classification Rules for Category & Subcategory:
 
 Extraction Rules:
 - Only include items that are clearly part of the outfit being worn.
-- Bounding boxes MUST fully and comfortably contain the entire item including all edges (sleeves, collar, hems, cuffs) with a small margin of breathing room. Never cut off the outer borders of a garment.
-- Do not include items in the background or held objects unless they are accessories being worn.
+- Bounding boxes MUST tightly wrap only that garment's visible pixels (sleeves, collar, hems, cuffs).
+- Do NOT include walls, floors, elevator panels, mirrors, phones, or empty space. The person may be off-center; measure percents against the full image, not the person crop.
+- One item per box. Overlapping layers (open shirt over a tee) get separate boxes; each box should cover that layer only, even if another garment shows through.
+- Do not include items in the background or held objects unless they are accessories being worn (skip phones).
 - "confidence": "high" if clearly visible, "medium" if partially visible/obstructed, "low" if heavily obscured or uncertain.
 - If no outfit is visible, return { "items": [] }.
 - Return JSON only. No explanation, no markdown, no code fences.

@@ -23,7 +23,8 @@
 		"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
 		"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
 		"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
-		"AVATAR_IMAGE_PROVIDER": "openai"
+		"AVATAR_IMAGE_PROVIDER": "openai",
+		"SAM_SEGMENT_PROVIDER": "fal"
 	},
 	// Lifecycle marketing email — hourly activation_d0 segment
 	"triggers": {
@@ -80,7 +81,8 @@
 				"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
 			"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
 			"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
-			"AVATAR_IMAGE_PROVIDER": "openai"
+			"AVATAR_IMAGE_PROVIDER": "openai",
+			"SAM_SEGMENT_PROVIDER": "fal"
 			},
 			"triggers": {
 				"crons": ["0 * * * *"]
@@ -135,7 +137,8 @@
 				"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
 			"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
 			"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
-			"AVATAR_IMAGE_PROVIDER": "openai"
+			"AVATAR_IMAGE_PROVIDER": "openai",
+			"SAM_SEGMENT_PROVIDER": "fal"
 			},
 			"triggers": {
 				"crons": ["0 * * * *"]

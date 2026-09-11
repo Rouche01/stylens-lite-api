@@ -74,3 +74,7 @@ EMAIL_SEND_ALLOWLIST=
 EMAIL_APP_DEEP_LINK=https://gostylens.app
 # Segment cron (activation_d0). true/1/yes to enable; off by default
 EMAIL_LIFECYCLE_CRON_ENABLED=false
+
+# SAM 2 cutouts (Fal). Staging/prod: wrangler secret put FAL_KEY
+SAM_SEGMENT_PROVIDER=fal
+FAL_KEY=

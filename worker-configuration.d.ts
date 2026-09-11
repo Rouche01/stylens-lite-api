@@ -17,6 +17,8 @@ declare namespace Cloudflare {
 		OPENAI_FAST_TASK_MODEL_VERSION: string;
 		OPENAI_IMAGE_MODEL_VERSION: string;
 		AVATAR_IMAGE_PROVIDER: string;
+		SAM_SEGMENT_PROVIDER: string;
+		FAL_KEY: string;
 		CLAUDE_ENDPOINT_URL: string;
 		CLAUDE_API_KEY: string;
 		CLAUDE_STYLE_ANALYSIS_MODEL_VERSION: string;
@@ -67,6 +69,8 @@ declare namespace Cloudflare {
 		OPENAI_FAST_TASK_MODEL_VERSION: string;
 		OPENAI_IMAGE_MODEL_VERSION: string;
 		AVATAR_IMAGE_PROVIDER: string;
+		SAM_SEGMENT_PROVIDER: string;
+		FAL_KEY: string;
 		CLAUDE_ENDPOINT_URL: string;
 		CLAUDE_API_KEY: string;
 		CLAUDE_STYLE_ANALYSIS_MODEL_VERSION: string;
@@ -117,6 +121,8 @@ declare namespace Cloudflare {
 		OPENAI_FAST_TASK_MODEL_VERSION: string;
 		OPENAI_IMAGE_MODEL_VERSION: string;
 		AVATAR_IMAGE_PROVIDER: string;
+		SAM_SEGMENT_PROVIDER: string;
+		FAL_KEY: string;
 		CLAUDE_ENDPOINT_URL: string;
 		CLAUDE_API_KEY: string;
 		CLAUDE_STYLE_ANALYSIS_MODEL_VERSION: string;
