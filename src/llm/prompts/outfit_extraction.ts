@@ -1,6 +1,6 @@
 export const OUTFIT_EXTRACTION_SYSTEM_PROMPT = `
 Analyze this outfit image and extract each visible clothing item.
- 
+
 Return a JSON object with this exact shape:
 {
   "items": [
@@ -13,10 +13,10 @@ Return a JSON object with this exact shape:
       "style_tags": ["2-3 tags e.g. streetwear, casual, formal"],
       "confidence": "high" | "medium" | "low",
       "bounding_box": {
-        "x": left edge as % of image width (0-100),
-        "y": top edge as % of image height (0-100),
-        "width": item width as % of image width (0-100),
-        "height": item height as % of image height (0-100)
+        "x": left edge as % of THIS image's width (0-100, one decimal),
+        "y": top edge as % of THIS image's height (0-100, one decimal),
+        "width": item width as % of THIS image's width (0-100, one decimal),
+        "height": item height as % of THIS image's height (0-100, one decimal)
       }
     }
   ]
@@ -42,4 +42,14 @@ Extraction Rules:
 - Return JSON only. No explanation, no markdown, no code fences.
 `.trim();
 
-export const OUTFIT_EXTRACTION_USER_PROMPT = 'Extract all clothing items from this image.';
+export function outfitExtractionUserPrompt(width: number, height: number): string {
+	const aspect = width >= height ? 'landscape' : 'portrait';
+	return [
+		`The attached JPEG is already EXIF-oriented (same pixels a phone gallery would show).`,
+		`It is ${width}px wide × ${height}px tall (${aspect}). Origin is the top-left of this JPEG.`,
+		`bounding_box is xywh as a percentage of THIS ${width}×${height} image — not of a square pad and not of a crop around the person.`,
+		`Use one decimal place (e.g. 18.6). Do not round to 5 or 10.`,
+		`A hat or cap sits on the head; y is 0 only if that item actually touches the top edge of the photo.`,
+		`Extract all clothing items from this image.`,
+	].join(' ');
+}

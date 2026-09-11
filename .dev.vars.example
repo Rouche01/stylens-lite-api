@@ -78,3 +78,7 @@ EMAIL_LIFECYCLE_CRON_ENABLED=false
 # SAM 2 cutouts (Fal). Staging/prod: wrangler secret put FAL_KEY
 SAM_SEGMENT_PROVIDER=fal
 FAL_KEY=
+
+# Catalog stand-in photos (SerpAPI Google Lens / Shopping). Staging/prod: wrangler secret put SERPAPI_API_KEY
+CATALOG_SEARCH_PROVIDER=serpapi
+SERPAPI_API_KEY=

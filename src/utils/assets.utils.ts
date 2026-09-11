@@ -24,6 +24,13 @@ export async function signDownloadUrlForKey(key: string): Promise<string> {
 	return presigned.url;
 }
 
+/** Fresh GET for a closet/outfit photo. Prefer the stored R2 key over a URL signed at extract time. */
+export async function signClosetOriginalUrl(imageKey?: string, fallbackUrl?: string): Promise<string | undefined> {
+	if (imageKey) return signDownloadUrlForKey(imageKey);
+	if (fallbackUrl) return regenerateSignedUrl(fallbackUrl);
+	return undefined;
+}
+
 export const regenerateSignedUrl = async (imageUrl: string): Promise<string> => {
 	// Check if it's an R2 URL that needs re-signing
 	if (!imageUrl.includes('r2.cloudflarestorage.com')) {
@@ -100,18 +107,19 @@ export const fetchImageAsBase64 = async (imageUrl: string): Promise<{ base64: st
 export const getIsolatedItemUrl = (params: {
 	domain: string;
 	imageUrl: string;
+	imageKey?: string;
 	boundingBox: { x: number; y: number; width: number; height: number };
 	dimensions: { width: number; height: number };
 	enhance?: boolean;
 	color?: string;
 	subcategory?: string;
 }): string => {
-	const { domain, imageUrl, boundingBox, dimensions, enhance, color, subcategory } = params;
+	const { domain, imageUrl, imageKey, boundingBox, dimensions, enhance, color, subcategory } = params;
 
-	// Extract the clean R2 storage object key from the imageUrl
-	let objectKey = imageUrl;
+	// Prefer the stored R2 key so Isolate does not depend on a live signed URL.
+	let objectKey = imageKey || imageUrl;
 	try {
-		if (imageUrl.startsWith('http')) {
+		if (!imageKey && imageUrl.startsWith('http')) {
 			const url = new URL(imageUrl);
 			// R2 storage paths are stored in the URL pathname (minus the leading slash)
 			objectKey = url.pathname.slice(1);

@@ -37,6 +37,16 @@ export interface ClosetItemDetails extends ClosetItem {
 	}>;
 }
 
+export type OutfitLinkedItem = {
+	closet_item_id: string;
+	label: string;
+	color: string;
+	category: string;
+	subcategory: string;
+	bounding_box: { x: number; y: number; width: number; height: number };
+	confidence: string;
+};
+
 export class ClosetDB {
 	constructor(private db: D1Database) { }
 
@@ -216,13 +226,12 @@ export class ClosetDB {
 	}
 
 	/**
-	 * Retrieves detailed history and statistics for a specific closet item.
+	 * Admin lookup: closet item by id, any user.
 	 */
-	async getClosetItemDetails(userId: string, itemId: string): Promise<ClosetItemDetails | null> {
-		// 1. Fetch core closet item
+	async getClosetItemDetailsById(itemId: string): Promise<ClosetItemDetails | null> {
 		const itemRow = await this.db
-			.prepare(`SELECT * FROM closet_items WHERE id = ? AND user_id = ?`)
-			.bind(itemId, userId)
+			.prepare(`SELECT * FROM closet_items WHERE id = ?`)
+			.bind(itemId)
 			.first<any>();
 
 		if (!itemRow) return null;
@@ -277,6 +286,50 @@ export class ClosetDB {
 			wear_count: wearCount,
 			wear_history: wearHistory
 		};
+	}
+
+	/**
+	 * Retrieves detailed history and statistics for a specific closet item.
+	 */
+	async getClosetItemDetails(userId: string, itemId: string): Promise<ClosetItemDetails | null> {
+		const details = await this.getClosetItemDetailsById(itemId);
+		if (!details || details.user_id !== userId) return null;
+		return details;
+	}
+
+	/**
+	 * All extracted pieces on one outfit photo (for bbox overlay).
+	 */
+	async getOutfitLinkedItems(outfitId: string): Promise<OutfitLinkedItem[]> {
+		const result = await this.db
+			.prepare(
+				`
+				SELECT
+					ci.id as closet_item_id,
+					ci.label,
+					ci.color,
+					ci.category,
+					ci.subcategory,
+					oci.bounding_box,
+					oci.confidence
+				FROM outfit_clothing_items oci
+				JOIN closet_items ci ON ci.id = oci.closet_item_id
+				WHERE oci.outfit_id = ?
+				ORDER BY oci.created_at ASC
+				`
+			)
+			.bind(outfitId)
+			.all<any>();
+
+		return (result.results || []).map((row: any) => ({
+			closet_item_id: row.closet_item_id,
+			label: row.label,
+			color: row.color,
+			category: row.category,
+			subcategory: row.subcategory,
+			bounding_box: JSON.parse(row.bounding_box),
+			confidence: row.confidence
+		}));
 	}
 
 	/**

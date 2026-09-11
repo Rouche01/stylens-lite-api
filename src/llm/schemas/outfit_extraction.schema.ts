@@ -87,19 +87,19 @@ const OUTFIT_EXTRACTION_SCHEMA_V2 = {
 						properties: {
 							x: {
 								type: "number",
-								description: "Left edge as percentage of image width (0-100)",
+								description: "Left edge as % of the oriented image width (0-100, one decimal). Tight to the garment, not a 10% guess.",
 							},
 							y: {
 								type: "number",
-								description: "Top edge as percentage of image height (0-100)",
+								description: "Top edge as % of the oriented image height (0-100, one decimal).",
 							},
 							width: {
 								type: "number",
-								description: "Item width as percentage of image width (0-100)",
+								description: "Garment width as % of oriented image width (0-100, one decimal). Not the right edge.",
 							},
 							height: {
 								type: "number",
-								description: "Item height as percentage of image height (0-100)",
+								description: "Garment height as % of oriented image height (0-100, one decimal). Not the bottom edge.",
 							},
 						},
 						required: ["x", "y", "width", "height"],

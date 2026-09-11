@@ -2,7 +2,7 @@ import { error, RequestHandler } from 'itty-router';
 import { createClosetDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
-import { getIsolatedItemUrl } from 'utils/assets.utils';
+import { getIsolatedItemUrl, signClosetOriginalUrl } from 'utils/assets.utils';
 import { logRouteError } from 'utils/error';
 
 const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
@@ -12,29 +12,33 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 
 		const items = await closetDB.getClosetItems(userId);
 
-		// Get current worker host domain dynamically from the request URL
 		const requestUrl = new URL(request.url);
 		const domain = requestUrl.host;
 		const enhance = requestUrl.searchParams.get('enhance') === 'true';
 
-		// Enrich each closet item with its secure transparent isolated crop URL
-		const enrichedItems = items.map(item => {
-			if (item.original_image_url && item.bounding_box) {
+		const enrichedItems = await Promise.all(
+			items.map(async (item) => {
+				const originalImageUrl = await signClosetOriginalUrl(item.image_key, item.original_image_url);
+				if (!originalImageUrl || !item.bounding_box) {
+					return { ...item, original_image_url: originalImageUrl };
+				}
+
 				return {
 					...item,
+					original_image_url: originalImageUrl,
 					isolated_image_url: getIsolatedItemUrl({
 						domain,
-						imageUrl: item.original_image_url,
+						imageUrl: originalImageUrl,
+						imageKey: item.image_key,
 						boundingBox: item.bounding_box,
-						dimensions: { width: 1000, height: 1000 }, // Or default bounds since coordinates are percentage-based
+						dimensions: { width: 1000, height: 1000 },
 						enhance,
 						color: item.color,
 						subcategory: item.subcategory
 					})
 				};
-			}
-			return item;
-		});
+			})
+		);
 
 		return new Response(JSON.stringify({ items: enrichedItems }), {
 			headers: { 'Content-Type': 'application/json' },

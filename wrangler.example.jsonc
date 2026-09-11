@@ -24,7 +24,8 @@
 		"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
 		"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
 		"AVATAR_IMAGE_PROVIDER": "openai",
-		"SAM_SEGMENT_PROVIDER": "fal"
+		"SAM_SEGMENT_PROVIDER": "fal",
+		"CATALOG_SEARCH_PROVIDER": "serpapi"
 	},
 	// Lifecycle marketing email — hourly activation_d0 segment
 	"triggers": {
@@ -82,7 +83,8 @@
 			"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
 			"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
 			"AVATAR_IMAGE_PROVIDER": "openai",
-			"SAM_SEGMENT_PROVIDER": "fal"
+			"SAM_SEGMENT_PROVIDER": "fal",
+			"CATALOG_SEARCH_PROVIDER": "serpapi"
 			},
 			"triggers": {
 				"crons": ["0 * * * *"]
@@ -138,7 +140,8 @@
 			"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
 			"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
 			"AVATAR_IMAGE_PROVIDER": "openai",
-			"SAM_SEGMENT_PROVIDER": "fal"
+			"SAM_SEGMENT_PROVIDER": "fal",
+			"CATALOG_SEARCH_PROVIDER": "serpapi"
 			},
 			"triggers": {
 				"crons": ["0 * * * *"]

@@ -2,7 +2,7 @@ import { error, RequestHandler } from 'itty-router';
 import { createClosetDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
-import { getIsolatedItemUrl } from 'utils/assets.utils';
+import { getIsolatedItemUrl, signClosetOriginalUrl } from 'utils/assets.utils';
 import { logRouteError } from 'utils/error';
 
 const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
@@ -20,17 +20,18 @@ const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = asyn
 			return error(404, 'Closet item not found');
 		}
 
-		// Get current worker host domain dynamically from the request URL
 		const requestUrl = new URL(request.url);
 		const domain = requestUrl.host;
 		const enhance = requestUrl.searchParams.get('enhance') === 'true';
 
-		// Enrich primary item crop
+		const originalImageUrl = await signClosetOriginalUrl(details.image_key, details.original_image_url);
+
 		let isolatedImageUrl: string | undefined;
-		if (details.original_image_url && details.bounding_box) {
+		if (originalImageUrl && details.bounding_box) {
 			isolatedImageUrl = getIsolatedItemUrl({
 				domain,
-				imageUrl: details.original_image_url,
+				imageUrl: originalImageUrl,
+				imageKey: details.image_key,
 				boundingBox: details.bounding_box,
 				dimensions: { width: 1000, height: 1000 },
 				enhance,
@@ -39,19 +40,26 @@ const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = asyn
 			});
 		}
 
-		// Enrich each wearing event in its history list
-		const enrichedHistory = details.wear_history.map(event => ({
-			...event,
-			isolated_image_url: getIsolatedItemUrl({
-				domain,
-				imageUrl: event.original_image_url,
-				boundingBox: event.bounding_box,
-				dimensions: { width: 1000, height: 1000 }
+		const enrichedHistory = await Promise.all(
+			details.wear_history.map(async (event) => {
+				const eventOriginalUrl = await signClosetOriginalUrl(event.image_key, event.original_image_url);
+				return {
+					...event,
+					original_image_url: eventOriginalUrl || event.original_image_url,
+					isolated_image_url: getIsolatedItemUrl({
+						domain,
+						imageUrl: eventOriginalUrl || event.original_image_url,
+						imageKey: event.image_key,
+						boundingBox: event.bounding_box,
+						dimensions: { width: 1000, height: 1000 }
+					})
+				};
 			})
-		}));
+		);
 
 		const enrichedDetails = {
 			...details,
+			original_image_url: originalImageUrl,
 			isolated_image_url: isolatedImageUrl,
 			wear_history: enrichedHistory
 		};

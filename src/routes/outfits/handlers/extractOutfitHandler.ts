@@ -1,30 +1,53 @@
 import { error, RequestHandler } from 'itty-router';
 import { createOutfitExtractionService } from 'services/outfit_extraction.svc';
-import { getIsolatedItemUrl } from 'utils/assets.utils';
-import { createClosetDB } from 'db';
+import { getIsolatedItemUrl, signDownloadUrlForKey } from 'utils/assets.utils';
+import { createClosetDB, createUsersDB } from 'db';
 import { env } from 'cloudflare:workers';
-import { ProvisionedAuthRequest } from 'types';
+import { ApiRequest, AuthRequest } from 'types';
 import { logRouteError } from 'utils/error';
 
 type ExtractOutfitBody = {
-	imageUrl: string;
+	imageUrl?: string;
+	imageKey?: string;
+	userId?: string;
 };
 
-const extractOutfitHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
+const extractOutfitHandler: RequestHandler<ApiRequest> = async (request) => {
 	try {
 		const body = (await request.json()) as ExtractOutfitBody;
+		const imageKeyParam = body.imageKey?.trim();
+		let imageUrl = body.imageUrl?.trim();
 
-		if (!body.imageUrl) {
-			return error(400, 'imageUrl is required to extract from an outfit');
+		if (imageKeyParam && !imageUrl) {
+			imageUrl = await signDownloadUrlForKey(imageKeyParam);
 		}
 
-		const userId = request.user.dbId;
-		const closetDB = createClosetDB(env.GOSTYLENS_DB);
+		if (!imageUrl) {
+			return error(400, 'imageUrl is required to extract from an outfit (or imageKey for admin)');
+		}
 
-		const outfitExtractionService = createOutfitExtractionService();
+		let userId: string | undefined;
+		if (request.isAdmin) {
+			userId = body.userId?.trim();
+			if (!userId) {
+				return error(400, 'userId is required when extracting with an admin API key');
+			}
+			const user = await createUsersDB(env.GOSTYLENS_DB).getUserById(userId);
+			if (!user) {
+				return error(404, 'User not found');
+			}
+		} else {
+			userId = (request as AuthRequest).user?.dbId;
+			if (!userId) {
+				return error(401, 'Unauthorized: User profile not found in database. Please complete onboarding.');
+			}
+		}
+
+		const closetDB = createClosetDB(env.GOSTYLENS_DB);
+		const outfitExtractionService = createOutfitExtractionService(env, request.log);
 
 		const extractedOutfitResult = await outfitExtractionService.extractOutfitItems({
-			imageUrl: body.imageUrl,
+			imageUrl,
 			signal: request.signal
 		});
 
@@ -33,31 +56,26 @@ const extractOutfitHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 			return error(400, 'Failed to extract outfit items');
 		}
 
-		// 1. Extract clean R2 image key from imageUrl
-		let imageKey = body.imageUrl;
+		let imageKey = imageKeyParam || imageUrl;
 		try {
-			if (body.imageUrl.startsWith('http')) {
-				const url = new URL(body.imageUrl);
+			if (!imageKeyParam && imageUrl.startsWith('http')) {
+				const url = new URL(imageUrl);
 				imageKey = url.pathname.slice(1);
 			}
 		} catch (e) {
 			// Fallback to imageUrl
 		}
 
-		// 2. Save the raw Outfit event
-		const outfit = await closetDB.createOutfit(userId, body.imageUrl, imageKey);
+		const outfit = await closetDB.createOutfit(userId, imageUrl, imageKey);
 
-		// Get current worker host domain dynamically from the request URL
 		const requestUrl = new URL(request.url);
 		const domain = requestUrl.host;
 
-		// 3. Process each extracted clothing item: deduplicate, save, link, and enrich URLs
 		const enrichedItems = [];
 		for (const item of extractedOutfitResult.items) {
 			let closetItemId: string;
 			let isNewClosetItem = false;
 
-			// Check for duplicate closet items (by attributes)
 			const matchedItem = await closetDB.findMatchingClosetItem({
 				userId,
 				category: item.category,
@@ -69,7 +87,6 @@ const extractOutfitHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 			if (matchedItem) {
 				closetItemId = matchedItem.id;
 			} else {
-				// Create new persistent closet item
 				const newItem = await closetDB.createClosetItem({
 					userId,
 					label: item.label,
@@ -83,7 +100,6 @@ const extractOutfitHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 				isNewClosetItem = true;
 			}
 
-			// Link the closet item to this outfit with bounding box coordinates
 			await closetDB.linkClosetItemToOutfit({
 				outfitId: outfit.id,
 				closetItemId,
@@ -91,14 +107,14 @@ const extractOutfitHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 				confidence: item.confidence
 			});
 
-			// Enrich item response
 			enrichedItems.push({
 				...item,
 				closet_item_id: closetItemId,
 				is_new_closet_item: isNewClosetItem,
 				isolated_image_url: getIsolatedItemUrl({
 					domain,
-					imageUrl: body.imageUrl,
+					imageUrl,
+					imageKey,
 					boundingBox: item.bounding_box,
 					dimensions: extractedOutfitResult.image_dimensions
 				})
