@@ -12,7 +12,6 @@ import {
 	ClosetMatchResolvedError,
 	OutfitIdentityProcessor,
 	candidateClosetItemId,
-	closetMatchNotification,
 	decideCommitAfterRequery,
 	decideIdentityFromNeighbors,
 	shouldQueryIdentity,
@@ -142,28 +141,6 @@ describe('decideCommitAfterRequery', () => {
 	});
 });
 
-describe('closetMatchNotification', () => {
-	it('sends a question with string FCM data', () => {
-		expect(
-			closetMatchNotification({
-				matchId: 'm1',
-				candidateClosetItemId: 'c1',
-				outfitId: 'o1',
-				label: 'olive shirt',
-			})
-		).toEqual({
-			title: 'Is this the same item?',
-			body: 'Is this the same olive shirt?',
-			data: {
-				type: 'closet_match',
-				match_id: 'm1',
-				candidate_closet_item_id: 'c1',
-				outfit_id: 'o1',
-			},
-		});
-	});
-});
-
 describe('candidateClosetItemId', () => {
 	it('prefers D1 over vector metadata', () => {
 		expect(
@@ -202,6 +179,7 @@ describe('OutfitIdentityProcessor', () => {
 		expect(harness.identity.upserts[0].closetItemId).toBe(result?.items[0].closet_item_id);
 		expect(harness.identity.prepares).toBe(1);
 		expect(harness.identity.deletes).toHaveLength(0);
+		expect(harness.digestSchedules).toEqual([]);
 	});
 
 	it('creates when identity_score is 0.24', async () => {
@@ -243,15 +221,25 @@ describe('OutfitIdentityProcessor', () => {
 		expect(harness.closet.links).toHaveLength(0);
 		expect(harness.closet.matches).toHaveLength(1);
 		expect(harness.identity.upserts).toHaveLength(0);
-		expect(harness.notifications).toEqual([
-			{
-				userId: 'u1',
-				matchId: result?.items[0].match_id,
-				candidateClosetItemId: 'c1',
-				outfitId: result?.outfit_id,
-				label: 'olive shirt',
-			},
-		]);
+		expect(harness.digestSchedules).toEqual(['u1']);
+		expect(harness.closet.askTouches).toEqual(['u1']);
+	});
+
+	it('enqueues one digest when several crops ask in the same process', async () => {
+		const harness = createHarness({
+			items: [clothingItem(), clothingItem({ label: 'navy pants', category: ClothingItemCategory.BOTTOM })],
+			neighbors: [neighbor({ identity_score: 0.77 })],
+			requeryNeighbors: [neighbor({ identity_score: 0.77 })],
+		});
+		const result = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/test.jpg',
+		});
+
+		expect(result?.items.every((item) => item.identity_status === 'ask')).toBe(true);
+		expect(harness.closet.matches).toHaveLength(2);
+		expect(harness.digestSchedules).toEqual(['u1']);
 	});
 
 	it('creates when identity query throws but upsert succeeds', async () => {
@@ -432,6 +420,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		});
 		expect(harness.closet.items.map((item) => item.id)).toEqual(['c2', 'c1']);
 		expect(harness.identity.deletes).toHaveLength(1);
+		expect(harness.digestSchedules).toEqual(['u1']);
 	});
 
 	it('leaves the match pending when create-commit fails', async () => {
@@ -508,6 +497,7 @@ function queryResult(neighbors: QueryClosetCropMatch[]) {
 }
 
 function createHarness(options: {
+	items?: ClothingItem[];
 	neighbors?: QueryClosetCropMatch[];
 	requeryNeighbors?: QueryClosetCropMatch[];
 	queryError?: Error;
@@ -515,9 +505,10 @@ function createHarness(options: {
 	d1Error?: Error;
 	visible?: boolean;
 }) {
+	const items = options.items ?? [clothingItem()];
 	const extraction: OutfitExtractionResponse = {
-		items: [clothingItem()],
-		item_count: 1,
+		items,
+		item_count: items.length,
 		image_url: 'https://img/test.jpg',
 		extracted_at: new Date().toISOString(),
 		image_dimensions: { width: 1000, height: 1500 },
@@ -551,13 +542,7 @@ function createHarness(options: {
 			identity.deletes.push(vectorId);
 		},
 	};
-	const notifications: Array<{
-		userId: string;
-		matchId: string;
-		candidateClosetItemId: string;
-		outfitId: string;
-		label: string;
-	}> = [];
+	const digestSchedules: string[] = [];
 	const processor = new OutfitIdentityProcessor(
 		{ extractOutfitItems: async () => extraction },
 		identity as never,
@@ -565,12 +550,12 @@ function createHarness(options: {
 		silentLogger(),
 		{ timeoutMs: 0, pollMs: 0, now: Date.now, sleep: async () => {} },
 		{
-			notifyPendingMatch: async (params) => {
-				notifications.push(params);
+			schedule: async (userId) => {
+				digestSchedules.push(userId);
 			},
 		}
 	);
-	return { processor, closet, identity, notifications };
+	return { processor, closet, identity, digestSchedules };
 }
 
 class MemoryCloset {
@@ -578,6 +563,7 @@ class MemoryCloset {
 	items: ClosetItem[] = [];
 	links: Array<{ outfitId: string; closetItemId: string }> = [];
 	matches: ClosetItemMatch[] = [];
+	askTouches: string[] = [];
 	lock: { userId: string; jobId: string } | null = null;
 
 	constructor(private options: { d1Error?: Error } = {}) {}
@@ -714,6 +700,10 @@ class MemoryCloset {
 		match.cosine = params.cosine ?? null;
 		match.color_distance = params.colorDistance ?? null;
 		return true;
+	}
+
+	async touchMatchAsk(userId: string): Promise<void> {
+		this.askTouches.push(userId);
 	}
 }
 

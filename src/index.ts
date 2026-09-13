@@ -14,7 +14,7 @@ import { createLogger } from './utils/logger.utils';
 import { apiError } from './utils/error';
 import { createPostHogSink } from './services/posthog.svc';
 import { runActivationD0Job } from './jobs/activation_d0';
-import { createAvatarService, type AvatarGenerationJob } from './services/avatar';
+import { dispatchQueue } from './queues';
 import type { ApiRequest } from './types';
 
 const router = Router();
@@ -99,41 +99,7 @@ export default {
 		}
 	},
 
-	async queue(batch: MessageBatch<AvatarGenerationJob>, env: Env, ctx: ExecutionContext): Promise<void> {
-		const sink = createPostHogSink(env);
-		const log = createLogger({
-			env: env.ENV_NAME,
-			sink,
-			context: {
-				handler: 'queue',
-				queue: 'avatar-generation',
-			},
-		});
-		const avatarService = createAvatarService(env, log);
-
-		for (const message of batch.messages) {
-			try {
-				await avatarService.generate(message.body);
-				message.ack();
-			} catch (err) {
-				log.error(
-					'avatar_generate_failed',
-					{
-						avatar_id: message.body.avatarId,
-						user_id: message.body.userId,
-						attempts: message.attempts,
-					},
-					err
-				);
-				if (!avatarService.isRetryableGenerateError(err) || message.attempts >= 3) {
-					await avatarService.failGeneration(message.body.avatarId, err);
-					message.ack();
-				} else {
-					message.retry();
-				}
-			}
-		}
-
-		sink?.flush(ctx);
+	async queue(batch: MessageBatch, env: Env, ctx: ExecutionContext): Promise<void> {
+		await dispatchQueue(batch, env, ctx);
 	},
 };

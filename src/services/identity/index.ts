@@ -9,7 +9,6 @@ export {
 	IdentityBusyError,
 	ClosetMatchNotFoundError,
 	ClosetMatchResolvedError,
-	closetMatchNotification,
 } from './processOutfitImage';
 export type {
 	ProcessOutfitImageParams,
@@ -19,8 +18,16 @@ export type {
 	CommitDecision,
 	ResolveClosetMatchParams,
 	ResolveClosetMatchResult,
-	ClosetMatchNotifier,
+	ClosetMatchDigestScheduler,
 } from './processOutfitImage';
+export {
+	DIGEST_SETTLE_SECONDS,
+	closetMatchDigestNotification,
+	decideClosetMatchDigest,
+	scheduleClosetMatchDigest,
+	runClosetMatchDigest,
+} from './closetMatchDigest';
+export type { ClosetMatchDigestJob, ClosetMatchDigestDecision } from './closetMatchDigest';
 export type {
 	EmbedClosetCropParams,
 	EmbedClosetCropResult,

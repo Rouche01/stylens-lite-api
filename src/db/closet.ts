@@ -575,6 +575,54 @@ export class ClosetDB {
 		return (result.meta.changes ?? 0) > 0;
 	}
 
+	async countPendingMatches(userId: string): Promise<number> {
+		const row = await this.db
+			.prepare(`SELECT COUNT(*) as total FROM closet_item_matches WHERE user_id = ? AND status = 'pending'`)
+			.bind(userId)
+			.first<{ total: number }>();
+		return row?.total ?? 0;
+	}
+
+	async touchMatchAsk(userId: string, atMs = Date.now()): Promise<void> {
+		await this.db
+			.prepare(
+				`
+				INSERT INTO closet_match_notify (user_id, last_ask_at, last_notified_at)
+				VALUES (?, ?, NULL)
+				ON CONFLICT(user_id) DO UPDATE SET last_ask_at = excluded.last_ask_at
+				`
+			)
+			.bind(userId, atMs)
+			.run();
+	}
+
+	async getMatchNotifyState(
+		userId: string
+	): Promise<{ last_ask_at: number; last_notified_at: number | null } | null> {
+		const row = await this.db
+			.prepare(`SELECT last_ask_at, last_notified_at FROM closet_match_notify WHERE user_id = ?`)
+			.bind(userId)
+			.first<{ last_ask_at: number; last_notified_at: number | null }>();
+		return row ?? null;
+	}
+
+	async markMatchNotified(userId: string, atMs = Date.now()): Promise<void> {
+		const result = await this.db
+			.prepare(`UPDATE closet_match_notify SET last_notified_at = ? WHERE user_id = ?`)
+			.bind(atMs, userId)
+			.run();
+		if ((result.meta.changes ?? 0) > 0) return;
+		await this.db
+			.prepare(
+				`
+				INSERT INTO closet_match_notify (user_id, last_ask_at, last_notified_at)
+				VALUES (?, ?, ?)
+				`
+			)
+			.bind(userId, atMs, atMs)
+			.run();
+	}
+
 	/**
 	 * Deletes a closet item completely from the catalog.
 	 */

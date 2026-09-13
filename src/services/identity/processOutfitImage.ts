@@ -10,7 +10,6 @@ import {
 } from '../../types';
 import { isUsableIdentityBox } from '../../utils/bounding_box';
 import { Logger, createLogger } from '../../utils/logger.utils';
-import { createPushService } from '../push.svc';
 import { createOutfitExtractionService, OutfitExtractionService } from '../outfit_extraction.svc';
 import {
 	createIdentityService,
@@ -22,6 +21,7 @@ import {
 } from './identity.svc';
 import { isIdentityMatch } from './cropColor';
 import { closetItemVectorId } from './vectorize.store';
+import { createClosetMatchDigestScheduler } from './closetMatchDigest';
 
 export type OutfitIdentityExtractor = Pick<OutfitExtractionService, 'extractOutfitItems'>;
 export type OutfitIdentityQueries = Pick<
@@ -45,16 +45,11 @@ export type OutfitIdentityStore = Pick<
 	| 'getMatchWithOutfit'
 	| 'markMatchResolved'
 	| 'updatePendingMatch'
+	| 'touchMatchAsk'
 >;
 
-export type ClosetMatchNotifier = {
-	notifyPendingMatch(params: {
-		userId: string;
-		matchId: string;
-		candidateClosetItemId: string;
-		outfitId: string;
-		label: string;
-	}): Promise<void>;
+export type ClosetMatchDigestScheduler = {
+	schedule(userId: string): Promise<void>;
 };
 
 export class ClosetMatchNotFoundError extends Error {
@@ -270,25 +265,6 @@ export function shouldQueryIdentity(item: ClothingItem): boolean {
 	return isUsableIdentityBox(item.bounding_box);
 }
 
-export function closetMatchNotification(params: {
-	matchId: string;
-	candidateClosetItemId: string;
-	outfitId: string;
-	label: string;
-}): { title: string; body: string; data: Record<string, string> } {
-	const label = params.label.trim() || 'item';
-	return {
-		title: 'Is this the same item?',
-		body: `Is this the same ${label}?`,
-		data: {
-			type: 'closet_match',
-			match_id: params.matchId,
-			candidate_closet_item_id: params.candidateClosetItemId,
-			outfit_id: params.outfitId,
-		},
-	};
-}
-
 export class OutfitIdentityProcessor {
 	constructor(
 		private extract: OutfitIdentityExtractor,
@@ -296,7 +272,7 @@ export class OutfitIdentityProcessor {
 		private closet: OutfitIdentityStore,
 		private log: Logger,
 		private wait: IdentityWait = DEFAULT_WAIT,
-		private notify?: ClosetMatchNotifier
+		private digest?: ClosetMatchDigestScheduler
 	) {}
 
 	async process(params: ProcessOutfitImageParams): Promise<ProcessOutfitImageResult | null> {
@@ -327,6 +303,10 @@ export class OutfitIdentityProcessor {
 						signal: params.signal,
 					})
 				);
+			}
+
+			if (items.some((item) => item.identity_status === 'ask')) {
+				await this.scheduleDigest(params.userId);
 			}
 
 			return {
@@ -697,6 +677,7 @@ export class OutfitIdentityProcessor {
 		}
 
 		if (processed.identity_status === 'ask') {
+			await this.scheduleDigest(match.user_id);
 			return {
 				decision: 'ask',
 				match_id: processed.match_id ?? match.id,
@@ -754,18 +735,17 @@ export class OutfitIdentityProcessor {
 			matchId = match.id;
 		}
 
+		try {
+			await this.closet.touchMatchAsk(params.userId);
+		} catch (err) {
+			this.log.warn('closet_match_touch_ask_failed', { user_id: params.userId, match_id: matchId }, err);
+		}
+
 		this.log.info('outfit_identity_ask', {
 			outfit_id: params.outfitId,
 			match_id: matchId,
 			candidate_closet_item_id: decision.candidateClosetItemId,
 			identity_score: decision.identityScore,
-			label: params.item.label,
-		});
-		await this.notifyAsk({
-			userId: params.userId,
-			matchId,
-			candidateClosetItemId: decision.candidateClosetItemId,
-			outfitId: params.outfitId,
 			label: params.item.label,
 		});
 		return {
@@ -780,18 +760,12 @@ export class OutfitIdentityProcessor {
 		};
 	}
 
-	private async notifyAsk(params: {
-		userId: string;
-		matchId: string;
-		candidateClosetItemId: string;
-		outfitId: string;
-		label: string;
-	}): Promise<void> {
-		if (!this.notify) return;
+	private async scheduleDigest(userId: string): Promise<void> {
+		if (!this.digest) return;
 		try {
-			await this.notify.notifyPendingMatch(params);
+			await this.digest.schedule(userId);
 		} catch (err) {
-			this.log.warn('closet_match_push_failed', { match_id: params.matchId, user_id: params.userId }, err);
+			this.log.warn('closet_match_digest_enqueue_failed', { user_id: userId }, err);
 		}
 	}
 
@@ -810,28 +784,13 @@ export class OutfitIdentityProcessor {
 
 export const createOutfitIdentityProcessor = (envBindings: Env, log?: Logger) => {
 	const logger = (log ?? createLogger({ env: envBindings.ENV_NAME })).child({ service: 'outfit_identity' });
-	const push = createPushService(envBindings, logger);
-	const notify: ClosetMatchNotifier = {
-		async notifyPendingMatch(params) {
-			const message = closetMatchNotification(params);
-			try {
-				await push.sendPushNotification(params.userId, message.title, message.body, message.data);
-			} catch (err) {
-				logger.warn(
-					'closet_match_push_failed',
-					{ match_id: params.matchId, user_id: params.userId },
-					err
-				);
-			}
-		},
-	};
 	return new OutfitIdentityProcessor(
 		createOutfitExtractionService(envBindings, logger),
 		createIdentityService(envBindings, logger),
 		createClosetDB(envBindings.GOSTYLENS_DB),
 		logger,
 		DEFAULT_WAIT,
-		notify
+		createClosetMatchDigestScheduler(envBindings, logger)
 	);
 };
 

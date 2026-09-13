@@ -38,6 +38,10 @@
 			{
 				"binding": "AVATAR_GENERATION_QUEUE",
 				"queue": "avatar-generation"
+			},
+			{
+				"binding": "CLOSET_MATCH_DIGEST_QUEUE",
+				"queue": "closet-match-digest"
 			}
 		],
 		"consumers": [
@@ -45,6 +49,11 @@
 				"queue": "avatar-generation",
 				"max_batch_size": 1,
 				"max_retries": 2
+			},
+			{
+				"queue": "closet-match-digest",
+				"max_batch_size": 1,
+				"max_retries": 5
 			}
 		]
 	},
@@ -106,6 +115,10 @@
 					{
 						"binding": "AVATAR_GENERATION_QUEUE",
 						"queue": "avatar-generation-staging"
+					},
+					{
+						"binding": "CLOSET_MATCH_DIGEST_QUEUE",
+						"queue": "closet-match-digest-staging"
 					}
 				],
 				"consumers": [
@@ -113,6 +126,11 @@
 						"queue": "avatar-generation-staging",
 						"max_batch_size": 1,
 						"max_retries": 2
+					},
+					{
+						"queue": "closet-match-digest-staging",
+						"max_batch_size": 1,
+						"max_retries": 5
 					}
 				]
 			},
@@ -165,6 +183,10 @@
 					{
 						"binding": "AVATAR_GENERATION_QUEUE",
 						"queue": "avatar-generation"
+					},
+					{
+						"binding": "CLOSET_MATCH_DIGEST_QUEUE",
+						"queue": "closet-match-digest"
 					}
 				],
 				"consumers": [
@@ -172,6 +194,11 @@
 						"queue": "avatar-generation",
 						"max_batch_size": 1,
 						"max_retries": 2
+					},
+					{
+						"queue": "closet-match-digest",
+						"max_batch_size": 1,
+						"max_retries": 5
 					}
 				]
 			},
