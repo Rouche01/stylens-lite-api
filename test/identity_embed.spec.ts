@@ -215,6 +215,21 @@ describe('ClosetVectorStore', () => {
 			},
 		});
 	});
+
+	it('gets and deletes vectors by id', async () => {
+		const deleted: string[][] = [];
+		const index = {
+			getByIds: async (ids: string[]) => (ids.includes('item:c1') ? [{ id: 'item:c1', values: [0.1] }] : []),
+			deleteByIds: async (ids: string[]) => {
+				deleted.push(ids);
+				return { ids, count: ids.length };
+			},
+		};
+		const store = new ClosetVectorStore(index as unknown as VectorizeIndex);
+		await expect(store.getByIds(['item:c1'])).resolves.toEqual([{ id: 'item:c1', values: [0.1] }]);
+		await expect(store.deleteByIds(['item:c1'])).resolves.toEqual({ ids: ['item:c1'], count: 1 });
+		expect(deleted).toEqual([['item:c1']]);
+	});
 });
 
 describe('crop color identity', () => {

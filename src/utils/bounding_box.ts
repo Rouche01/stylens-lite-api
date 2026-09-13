@@ -16,6 +16,17 @@ export type ImageTrim = {
 	right: number;
 };
 
+/** Percent-area floor. Tiny Florence false boxes skip Vectorize and create a new tile. */
+export const IDENTITY_BOX_MIN_AREA = 2;
+
+/** True when the crop is large enough to embed as identity. */
+export function isUsableIdentityBox(box: PercentBox): boolean {
+	if (!Number.isFinite(box.width) || !Number.isFinite(box.height)) {
+		return false;
+	}
+	return box.width * box.height >= IDENTITY_BOX_MIN_AREA;
+}
+
 /** Extra percent of the box added on each side before converting to CF Images trim. */
 export type BoxPad = {
 	fraction: number;

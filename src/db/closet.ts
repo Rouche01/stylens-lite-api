@@ -39,6 +39,32 @@ export interface ClosetItemDetails extends ClosetItem {
 	}>;
 }
 
+export type ClosetItemExtractSnapshot = {
+	label: string;
+	category: string;
+	subcategory: string;
+	color: string;
+	pattern: string;
+	styleTags: string[];
+};
+
+export type ClosetItemMatch = {
+	id: string;
+	user_id: string;
+	outfit_id: string;
+	candidate_closet_item_id: string;
+	bounding_box: { x: number; y: number; width: number; height: number };
+	confidence: string;
+	extract_snapshot: ClosetItemExtractSnapshot;
+	score: number;
+	cosine: number | null;
+	color_distance: number | null;
+	band: 'ask';
+	status: 'pending' | 'same' | 'new';
+	created_at: number;
+	resolved_at: number | null;
+};
+
 export type OutfitLinkedItem = {
 	closet_item_id: string;
 	label: string;
@@ -82,6 +108,7 @@ export class ClosetDB {
 	 * Creates a new persistent closet item.
 	 */
 	async createClosetItem(params: {
+		id?: string;
 		userId: string;
 		label: string;
 		category: string;
@@ -90,7 +117,7 @@ export class ClosetDB {
 		pattern: string;
 		styleTags: string[];
 	}): Promise<ClosetItem> {
-		const id = crypto.randomUUID();
+		const id = params.id?.trim() || crypto.randomUUID();
 		const now = Date.now();
 		const styleTagsJson = JSON.stringify(params.styleTags);
 
@@ -310,6 +337,38 @@ export class ClosetDB {
 	}
 
 	/**
+	 * One create-commit writer per user. Stale rows (crashed workers) are stolen.
+	 */
+	async tryAcquireIdentityLock(userId: string, jobId: string, staleMs = 10 * 60 * 1000): Promise<boolean> {
+		const now = Date.now();
+		await this.db
+			.prepare(`DELETE FROM identity_inflight WHERE user_id = ? AND created_at < ?`)
+			.bind(userId, now - staleMs)
+			.run();
+		try {
+			await this.db
+				.prepare(
+					`
+					INSERT INTO identity_inflight (user_id, job_id, created_at)
+					VALUES (?, ?, ?)
+					`
+				)
+				.bind(userId, jobId, now)
+				.run();
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	async releaseIdentityLock(userId: string, jobId: string): Promise<void> {
+		await this.db
+			.prepare(`DELETE FROM identity_inflight WHERE user_id = ? AND job_id = ?`)
+			.bind(userId, jobId)
+			.run();
+	}
+
+	/**
 	 * Closet item on this outfit photo whose stored box overlaps the crop (highest IoU).
 	 */
 	async findClosetItemForPhotoCrop(
@@ -356,6 +415,70 @@ export class ClosetDB {
 			}
 		}
 		return best;
+	}
+
+	/**
+	 * Persist a close-match ask. Does not create a closet tile or wear row.
+	 */
+	async createPendingMatch(params: {
+		userId: string;
+		outfitId: string;
+		candidateClosetItemId: string;
+		boundingBox: { x: number; y: number; width: number; height: number };
+		confidence: 'high' | 'medium' | 'low';
+		extractSnapshot: ClosetItemExtractSnapshot;
+		score: number;
+		cosine?: number | null;
+		colorDistance?: number | null;
+	}): Promise<ClosetItemMatch> {
+		const id = crypto.randomUUID();
+		const now = Date.now();
+		const boundingBoxJson = JSON.stringify(params.boundingBox);
+		const snapshotJson = JSON.stringify(params.extractSnapshot);
+		const cosine = params.cosine ?? null;
+		const colorDistance = params.colorDistance ?? null;
+
+		await this.db
+			.prepare(
+				`
+				INSERT INTO closet_item_matches (
+					id, user_id, outfit_id, candidate_closet_item_id, bounding_box, confidence,
+					extract_snapshot, score, cosine, color_distance, band, status, created_at, resolved_at
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ask', 'pending', ?, NULL)
+				`
+			)
+			.bind(
+				id,
+				params.userId,
+				params.outfitId,
+				params.candidateClosetItemId,
+				boundingBoxJson,
+				params.confidence,
+				snapshotJson,
+				params.score,
+				cosine,
+				colorDistance,
+				now
+			)
+			.run();
+
+		return {
+			id,
+			user_id: params.userId,
+			outfit_id: params.outfitId,
+			candidate_closet_item_id: params.candidateClosetItemId,
+			bounding_box: params.boundingBox,
+			confidence: params.confidence,
+			extract_snapshot: params.extractSnapshot,
+			score: params.score,
+			cosine,
+			color_distance: colorDistance,
+			band: 'ask',
+			status: 'pending',
+			created_at: now,
+			resolved_at: null,
+		};
 	}
 
 	/**

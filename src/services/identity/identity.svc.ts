@@ -87,7 +87,12 @@ export type QueryClosetCropResult = EmbedClosetCropResult & {
 	probe_d1_label: string | null;
 };
 
-type EmbeddedCrop = EmbedClosetCropResult & { vector: number[] };
+export type PreparedClosetCrop = EmbedClosetCropResult & { vector: number[] };
+
+type EmbeddedCrop = PreparedClosetCrop;
+
+export const VECTOR_VISIBLE_TIMEOUT_MS = 20_000;
+export const VECTOR_VISIBLE_POLL_MS = 500;
 
 const VECTOR_PREVIEW_LENGTH = 8;
 
@@ -106,12 +111,29 @@ export class IdentityService {
 		return result;
 	}
 
+	async prepareClosetCrop(params: EmbedClosetCropParams): Promise<PreparedClosetCrop> {
+		return this.embedCrop(params);
+	}
+
 	async upsertClosetCrop(params: UpsertClosetCropParams): Promise<UpsertClosetCropResult> {
 		const embedded = await this.embedCrop(params);
 		const linked = params.closetItemId?.trim()
 			? null
 			: await this.closet.findClosetItemForPhotoCrop(params.userId, params.imageKey, params.boundingBox);
 		const closetItemId = params.closetItemId?.trim() || linked?.id;
+		return this.upsertPreparedCrop(embedded, {
+			id: params.id,
+			userId: params.userId,
+			category: params.category,
+			closetItemId,
+		});
+	}
+
+	async upsertPreparedCrop(
+		embedded: PreparedClosetCrop,
+		params: { id?: string; userId: string; category: string; closetItemId?: string }
+	): Promise<UpsertClosetCropResult> {
+		const closetItemId = params.closetItemId?.trim();
 		const vectorId = resolveClosetVectorId({
 			id: params.id,
 			closetItemId,
@@ -138,6 +160,13 @@ export class IdentityService {
 
 	async queryClosetCrop(params: QueryClosetCropParams): Promise<QueryClosetCropResult> {
 		const embedded = await this.embedCrop(params);
+		return this.queryPreparedCrop(embedded, params);
+	}
+
+	async queryPreparedCrop(
+		embedded: PreparedClosetCrop,
+		params: QueryClosetCropParams
+	): Promise<QueryClosetCropResult> {
 		const probe = params.userId
 			? await this.closet.findClosetItemForPhotoCrop(params.userId, params.imageKey, params.boundingBox)
 			: null;
@@ -175,6 +204,45 @@ export class IdentityService {
 			probe_d1_closet_item_id: probe?.id ?? null,
 			probe_d1_label: probe?.label ?? null,
 		};
+	}
+
+	async waitUntilVectorVisible(
+		vectorId: string,
+		opts: {
+			timeoutMs?: number;
+			pollMs?: number;
+			now?: () => number;
+			sleep?: (ms: number) => Promise<void>;
+		} = {}
+	): Promise<boolean> {
+		const timeoutMs = opts.timeoutMs ?? VECTOR_VISIBLE_TIMEOUT_MS;
+		const pollMs = opts.pollMs ?? VECTOR_VISIBLE_POLL_MS;
+		const now = opts.now ?? Date.now;
+		const sleep = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+		const deadline = now() + timeoutMs;
+		for (;;) {
+			const found = await this.requireVectors().getByIds([vectorId]);
+			if (found.length > 0) {
+				return true;
+			}
+			if (now() >= deadline) {
+				return false;
+			}
+			const wait = Math.min(pollMs, Math.max(0, deadline - now()));
+			if (wait <= 0) {
+				return false;
+			}
+			await sleep(wait);
+		}
+	}
+
+	async deleteVector(vectorId: string): Promise<void> {
+		try {
+			await this.requireVectors().deleteByIds([vectorId]);
+			this.log.info('identity_vector_deleted', { vector_id: vectorId });
+		} catch (err) {
+			this.log.warn('identity_vector_delete_failed', { vector_id: vectorId }, err);
+		}
 	}
 
 	private async hydrateD1Matches(

@@ -191,6 +191,15 @@ export class ClosetVectorStore {
 		return normalizeMutation(result);
 	}
 
+	async getByIds(ids: string[]): Promise<VectorizeVector[]> {
+		return this.index.getByIds(ids);
+	}
+
+	async deleteByIds(ids: string[]): Promise<ClosetVectorUpsertResult> {
+		const result = await this.index.deleteByIds(ids);
+		return normalizeMutation(result);
+	}
+
 	async querySimilar(
 		values: number[],
 		options: { topK?: number; userId?: string; slot?: IdentitySlot; encoder?: string } = {}

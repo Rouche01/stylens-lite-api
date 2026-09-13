@@ -1,4 +1,20 @@
 export { createIdentityService, IdentityService } from './identity.svc';
+export {
+	OutfitIdentityProcessor,
+	createOutfitIdentityProcessor,
+	decideIdentityFromNeighbors,
+	decideCommitAfterRequery,
+	candidateClosetItemId,
+	shouldQueryIdentity,
+	IdentityBusyError,
+} from './processOutfitImage';
+export type {
+	ProcessOutfitImageParams,
+	ProcessOutfitImageResult,
+	ProcessedOutfitItem,
+	IdentityDecision,
+	CommitDecision,
+} from './processOutfitImage';
 export type {
 	EmbedClosetCropParams,
 	EmbedClosetCropResult,
@@ -7,6 +23,11 @@ export type {
 	QueryClosetCropParams,
 	QueryClosetCropResult,
 	QueryClosetCropMatch,
+	PreparedClosetCrop,
+} from './identity.svc';
+export {
+	VECTOR_VISIBLE_TIMEOUT_MS,
+	VECTOR_VISIBLE_POLL_MS,
 } from './identity.svc';
 export {
 	IdentityEmbedError,
@@ -40,6 +61,7 @@ export {
 	cropColorDistance,
 	identityScore,
 	isIdentityMatch,
+	IDENTITY_MATCH_MIN,
 	colorSignatureToMetadata,
 	colorSignatureFromMetadata,
 	decodePngRgba,

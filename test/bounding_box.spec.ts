@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CATALOG_BOX_PAD, normalizeOutfitBoundingBox, percentBoxIou, percentBoxToTrim } from '../src/utils/bounding_box';
+import { CATALOG_BOX_PAD, isUsableIdentityBox, normalizeOutfitBoundingBox, percentBoxIou, percentBoxToTrim } from '../src/utils/bounding_box';
 import { outfitExtractionUserPrompt } from '../src/llm/prompts/outfit_extraction';
 
 describe('normalizeOutfitBoundingBox', () => {
@@ -38,6 +38,13 @@ describe('percentBoxIou', () => {
 		const box = { x: 10, y: 10, width: 40, height: 40 };
 		expect(percentBoxIou(box, box)).toBe(1);
 		expect(percentBoxIou(box, { x: 60, y: 60, width: 10, height: 10 })).toBe(0);
+	});
+});
+
+describe('isUsableIdentityBox', () => {
+	it('rejects tiny false boxes and keeps garment-sized crops', () => {
+		expect(isUsableIdentityBox({ x: 0, y: 0, width: 1, height: 1 })).toBe(false);
+		expect(isUsableIdentityBox({ x: 20, y: 15, width: 40, height: 35 })).toBe(true);
 	});
 });
 
