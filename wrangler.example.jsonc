@@ -25,7 +25,9 @@
 		"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
 		"AVATAR_IMAGE_PROVIDER": "openai",
 		"SAM_SEGMENT_PROVIDER": "fal",
-		"CATALOG_SEARCH_PROVIDER": "serpapi"
+		"CATALOG_SEARCH_PROVIDER": "serpapi",
+		"CLOSET_EMBED_PROVIDER": "dinov3",
+		"CLOSET_EMBED_MODEL": "noah-bjorner/dinov3-vit-large-distilled"
 	},
 	// Lifecycle marketing email — hourly activation_d0 segment
 	"triggers": {
@@ -64,6 +66,14 @@
 	"images": {
 		"binding": "IMAGES"
 	},
+	// Closet item identity spike. DINOv3 CLS is 1024-d cosine. Do not reuse the 768-d CLIP index.
+	"vectorize": [
+		{
+			"binding": "CLOSET_ITEMS",
+			"index_name": "stylens-closet-items-dinov3",
+			"remote": true
+		}
+	],
 	"env": {
 		// ── Staging environment ──────────────────────────────
 		"staging": {
@@ -84,7 +94,9 @@
 			"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
 			"AVATAR_IMAGE_PROVIDER": "openai",
 			"SAM_SEGMENT_PROVIDER": "fal",
-			"CATALOG_SEARCH_PROVIDER": "serpapi"
+			"CATALOG_SEARCH_PROVIDER": "serpapi",
+			"CLOSET_EMBED_PROVIDER": "dinov3",
+			"CLOSET_EMBED_MODEL": "noah-bjorner/dinov3-vit-large-distilled"
 			},
 			"triggers": {
 				"crons": ["0 * * * *"]
@@ -141,7 +153,9 @@
 			"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
 			"AVATAR_IMAGE_PROVIDER": "openai",
 			"SAM_SEGMENT_PROVIDER": "fal",
-			"CATALOG_SEARCH_PROVIDER": "serpapi"
+			"CATALOG_SEARCH_PROVIDER": "serpapi",
+			"CLOSET_EMBED_PROVIDER": "dinov3",
+			"CLOSET_EMBED_MODEL": "noah-bjorner/dinov3-vit-large-distilled"
 			},
 			"triggers": {
 				"crons": ["0 * * * *"]

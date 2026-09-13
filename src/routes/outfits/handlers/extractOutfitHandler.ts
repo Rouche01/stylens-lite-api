@@ -73,44 +73,27 @@ const extractOutfitHandler: RequestHandler<ApiRequest> = async (request) => {
 
 		const enrichedItems = [];
 		for (const item of extractedOutfitResult.items) {
-			let closetItemId: string;
-			let isNewClosetItem = false;
-
-			const matchedItem = await closetDB.findMatchingClosetItem({
+			const closetItem = await closetDB.createClosetItem({
 				userId,
+				label: item.label,
 				category: item.category,
 				subcategory: item.subcategory,
 				color: item.color,
-				pattern: item.pattern
+				pattern: item.pattern,
+				styleTags: item.style_tags || []
 			});
-
-			if (matchedItem) {
-				closetItemId = matchedItem.id;
-			} else {
-				const newItem = await closetDB.createClosetItem({
-					userId,
-					label: item.label,
-					category: item.category,
-					subcategory: item.subcategory,
-					color: item.color,
-					pattern: item.pattern,
-					styleTags: item.style_tags || []
-				});
-				closetItemId = newItem.id;
-				isNewClosetItem = true;
-			}
 
 			await closetDB.linkClosetItemToOutfit({
 				outfitId: outfit.id,
-				closetItemId,
+				closetItemId: closetItem.id,
 				boundingBox: item.bounding_box,
 				confidence: item.confidence
 			});
 
 			enrichedItems.push({
 				...item,
-				closet_item_id: closetItemId,
-				is_new_closet_item: isNewClosetItem,
+				closet_item_id: closetItem.id,
+				is_new_closet_item: true,
 				isolated_image_url: getIsolatedItemUrl({
 					domain,
 					imageUrl,

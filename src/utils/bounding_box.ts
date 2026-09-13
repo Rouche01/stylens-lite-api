@@ -7,6 +7,52 @@ export type RawBoundingBox = {
 	height: number;
 };
 
+export type PercentBox = RawBoundingBox;
+
+export type ImageTrim = {
+	top: number;
+	left: number;
+	bottom: number;
+	right: number;
+};
+
+/** Extra percent of the box added on each side before converting to CF Images trim. */
+export type BoxPad = {
+	fraction: number;
+	min: number;
+	max: number;
+};
+
+/** Catalog Lens crop: ~10% of the box, clamped to 1–5 percent of the frame. */
+export const CATALOG_BOX_PAD: BoxPad = { fraction: 0.1, min: 1, max: 5 };
+
+/**
+ * Convert a percent xywh box to CF Images `trim` (pixels from each edge).
+ * Pass {@link CATALOG_BOX_PAD} to keep Lens search padding; omit pad for a tight identity crop.
+ */
+export function percentBoxToTrim(box: PercentBox, imgW: number, imgH: number, pad?: BoxPad): ImageTrim {
+	let paddedX = box.x;
+	let paddedY = box.y;
+	let paddedW = box.width;
+	let paddedH = box.height;
+
+	if (pad) {
+		const padW = Math.max(pad.min, Math.min(pad.max, box.width * pad.fraction));
+		const padH = Math.max(pad.min, Math.min(pad.max, box.height * pad.fraction));
+		paddedX = Math.max(0, box.x - padW);
+		paddedY = Math.max(0, box.y - padH);
+		paddedW = Math.min(100 - paddedX, box.width + padW * 2);
+		paddedH = Math.min(100 - paddedY, box.height + padH * 2);
+	}
+
+	const top = Math.round((paddedY / 100) * imgH);
+	const left = Math.round((paddedX / 100) * imgW);
+	const bottom = Math.max(0, Math.round(imgH - ((paddedY + paddedH) / 100) * imgH));
+	const right = Math.max(0, Math.round(imgW - ((paddedX + paddedW) / 100) * imgW));
+
+	return { top, left, bottom, right };
+}
+
 function isFiniteNumber(value: unknown): value is number {
 	return typeof value === 'number' && Number.isFinite(value);
 }
@@ -51,4 +97,20 @@ export function normalizeOutfitBoundingBox(
 
 function roundBox(value: number): number {
 	return Math.round(value * 10) / 10;
+}
+
+/** Intersection-over-union for percent xywh boxes. 0 if they do not overlap. */
+export function percentBoxIou(a: PercentBox, b: PercentBox): number {
+	const ax2 = a.x + a.width;
+	const ay2 = a.y + a.height;
+	const bx2 = b.x + b.width;
+	const by2 = b.y + b.height;
+	const overlapW = Math.max(0, Math.min(ax2, bx2) - Math.max(a.x, b.x));
+	const overlapH = Math.max(0, Math.min(ay2, by2) - Math.max(a.y, b.y));
+	const intersection = overlapW * overlapH;
+	const union = a.width * a.height + b.width * b.height - intersection;
+	if (union <= 0) {
+		return 0;
+	}
+	return intersection / union;
 }

@@ -1,4 +1,6 @@
 import { fetchImageAsArrayBuffer, signDownloadUrlForKey } from '../../utils/assets.utils';
+import { CATALOG_BOX_PAD, percentBoxToTrim, type PercentBox } from '../../utils/bounding_box';
+import { cropJpegWithTrim } from '../../utils/cf_images.utils';
 import { getImageDimensions } from '../../utils/image.utils';
 import { Logger, createLogger } from '../../utils/logger.utils';
 import { buildCatalogQuery } from './catalog_query';
@@ -9,12 +11,7 @@ import {
 	createCatalogSearchProvider,
 } from './providers';
 
-export type PercentBox = {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-};
+export type { PercentBox };
 
 export type CatalogSearchFromR2Params = {
 	imageKey: string;
@@ -37,26 +34,6 @@ export type CatalogSearchResult = {
 	source: string;
 	hitImageUrl: string;
 };
-
-function percentBoxToTrim(
-	box: PercentBox,
-	imgW: number,
-	imgH: number
-): { top: number; left: number; bottom: number; right: number } {
-	const padW = Math.max(1, Math.min(5, box.width * 0.1));
-	const padH = Math.max(1, Math.min(5, box.height * 0.1));
-	const paddedX = Math.max(0, box.x - padW);
-	const paddedY = Math.max(0, box.y - padH);
-	const paddedW = Math.min(100 - paddedX, box.width + padW * 2);
-	const paddedH = Math.min(100 - paddedY, box.height + padH * 2);
-
-	const top = Math.round((paddedY / 100) * imgH);
-	const left = Math.round((paddedX / 100) * imgW);
-	const bottom = Math.max(0, Math.round(imgH - ((paddedY + paddedH) / 100) * imgH));
-	const right = Math.max(0, Math.round(imgW - ((paddedX + paddedW) / 100) * imgW));
-
-	return { top, left, bottom, right };
-}
 
 /**
  * Admin / later queue: crop extract bbox, Lens (then Shopping) for a catalog JPEG.
@@ -90,9 +67,15 @@ export class CatalogService {
 
 		const sourceBytes = await object.arrayBuffer();
 		const dims = await getImageDimensions(sourceBytes);
-		const trim = percentBoxToTrim(boundingBox, dims.width, dims.height);
+		const trim = percentBoxToTrim(boundingBox, dims.width, dims.height, CATALOG_BOX_PAD);
 
-		const cropJpeg = await this.cropJpeg(sourceBytes, trim);
+		let cropJpeg: ArrayBuffer;
+		try {
+			cropJpeg = await cropJpegWithTrim(this.images, sourceBytes, trim);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'crop failed';
+			throw new CatalogSearchError(message, 502);
+		}
 		const cropImageKey = `catalog/scratch/crop-${crypto.randomUUID()}.jpg`;
 		await this.bucket.put(cropImageKey, cropJpeg, {
 			httpMetadata: { contentType: 'image/jpeg' },
@@ -136,32 +119,6 @@ export class CatalogService {
 			source: hit.source,
 			hitImageUrl: hit.imageUrl,
 		};
-	}
-
-	private async cropJpeg(
-		bytes: ArrayBuffer,
-		trim: { top: number; left: number; bottom: number; right: number }
-	): Promise<ArrayBuffer> {
-		const oriented = (
-			await this.images.input(new Blob([bytes]).stream()).output({
-				format: 'image/jpeg',
-				quality: 90,
-			})
-		).response();
-		if (!oriented.ok || !oriented.body) {
-			throw new CatalogSearchError(`Failed to orient outfit image (${oriented.status})`, 502);
-		}
-
-		const cropped = (
-			await this.images.input(oriented.body).transform({ trim }).output({
-				format: 'image/jpeg',
-				quality: 85,
-			})
-		).response();
-		if (!cropped.ok) {
-			throw new CatalogSearchError(`Failed to crop outfit image (${cropped.status})`, 502);
-		}
-		return cropped.arrayBuffer();
 	}
 }
 

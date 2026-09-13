@@ -1,5 +1,7 @@
 
 
+import { percentBoxIou } from '../utils/bounding_box';
+
 export interface ClosetItem {
 	id: string;
 	user_id: string;
@@ -73,39 +75,6 @@ export class ClosetDB {
 			original_image_url: imageUrl,
 			image_key: imageKey,
 			created_at: now
-		};
-	}
-
-	/**
-	 * Queries the user's closet for an existing item that matches the given attributes (for deduplication).
-	 */
-	async findMatchingClosetItem(params: {
-		userId: string;
-		category: string;
-		subcategory: string;
-		color: string;
-		pattern: string;
-	}): Promise<ClosetItem | null> {
-		const result = await this.db
-			.prepare(
-				`
-				SELECT * FROM closet_items
-				WHERE user_id = ?
-				  AND LOWER(category) = LOWER(?)
-				  AND LOWER(subcategory) = LOWER(?)
-				  AND LOWER(color) = LOWER(?)
-				  AND LOWER(pattern) = LOWER(?)
-				LIMIT 1
-				`
-			)
-			.bind(params.userId, params.category, params.subcategory, params.color, params.pattern)
-			.first<any>();
-
-		if (!result) return null;
-
-		return {
-			...result,
-			style_tags: result.style_tags ? JSON.parse(result.style_tags) : []
 		};
 	}
 
@@ -330,6 +299,63 @@ export class ClosetDB {
 			bounding_box: JSON.parse(row.bounding_box),
 			confidence: row.confidence
 		}));
+	}
+
+	async getClosetItemSummary(itemId: string): Promise<{ id: string; label: string; category: string } | null> {
+		const row = await this.db
+			.prepare(`SELECT id, label, category FROM closet_items WHERE id = ?`)
+			.bind(itemId)
+			.first<{ id: string; label: string; category: string }>();
+		return row ?? null;
+	}
+
+	/**
+	 * Closet item on this outfit photo whose stored box overlaps the crop (highest IoU).
+	 */
+	async findClosetItemForPhotoCrop(
+		userId: string,
+		imageKey: string,
+		boundingBox: { x: number; y: number; width: number; height: number }
+	): Promise<{ id: string; label: string; category: string; iou: number } | null> {
+		const result = await this.db
+			.prepare(
+				`
+				SELECT ci.id, ci.label, ci.category, oci.bounding_box
+				FROM outfits o
+				INNER JOIN outfit_clothing_items oci ON oci.outfit_id = o.id
+				INNER JOIN closet_items ci ON ci.id = oci.closet_item_id
+				WHERE o.user_id = ? AND o.image_key = ?
+				`
+			)
+			.bind(userId, imageKey)
+			.all<{ id: string; label: string; category: string; bounding_box: string }>();
+
+		const minIou = 0.3;
+		let best: { id: string; label: string; category: string; iou: number } | null = null;
+		for (const row of result.results || []) {
+			let stored: { x: number; y: number; width: number; height: number };
+			try {
+				stored = JSON.parse(row.bounding_box);
+			} catch {
+				continue;
+			}
+			if (
+				typeof stored?.x !== 'number' ||
+				typeof stored?.y !== 'number' ||
+				typeof stored?.width !== 'number' ||
+				typeof stored?.height !== 'number'
+			) {
+				continue;
+			}
+			const iou = percentBoxIou(boundingBox, stored);
+			if (iou < minIou) {
+				continue;
+			}
+			if (!best || iou > best.iou) {
+				best = { id: row.id, label: row.label, category: row.category, iou };
+			}
+		}
+		return best;
 	}
 
 	/**

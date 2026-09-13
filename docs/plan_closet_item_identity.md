@@ -12,7 +12,7 @@ This is closet quality, not shoppable try-on. Plan 1 boxed identity stays the pr
 
 1. **Identity grain is the closet item**, not the whole outfit. An outfit vector answers “have I worn this look?” An item vector answers “is this the same olive shirt?” This plan is the second question.
 2. **Embed the oriented bounding-box crop** (Florence box on the EXIF-baked JPEG), not the full selfie. Background walls must not dominate the vector.
-3. **Attributes are filters and labels**, not the merge key. `category` (and maybe a coarse `subcategory` family) scopes the search. Color/pattern/label can disagree and still be the same piece.
+3. **Attributes are filters and labels**, not the merge key. Coarse **slot** (`upper` | `lower` | `full_body` | `footwear` | `accessory`) scopes the search so jeans never rank against jackets. Map `top` and `outerwear` both to `upper` so Claude’s jacket-vs-top swap still matches. Color/pattern/label can disagree and still be the same piece. Never filter on the exact extract `category` string.
 4. **A duplicate is a new wear, not a new tile.** Always persist the outfit photo. Merge vs create is only about `closet_items`.
 5. **The user is the async decider in the gray zone.** High similarity merges silently. Mid similarity stays off the grid as a second tile and asks. Low similarity creates a new item.
 6. **Canonical cover is scored, not “latest wear.”** Wear history keeps every photo. Grid Isolate + boxed detail use the cover wear.
@@ -36,7 +36,7 @@ This is closet quality, not shoppable try-on. Plan 1 boxed identity stays the pr
 
 ## Match bands
 
-Cosine similarity is **not** extract `confidence` (`high` / `medium` / `low` on the Claude item). Extract confidence is a crop-quality gate (“is this box usable?”). Duplicate confidence is vector similarity against that user’s existing items in the same category.
+Cosine similarity is **not** extract `confidence` (`high` / `medium` / `low` on the Claude item). Extract confidence is a crop-quality gate (“is this box usable?”). Duplicate confidence is **identity_score** (encoder cosine after slot filter, then crop-color agreement). Extract confidence is a crop-quality gate (“is this box usable?”). Cosine alone is not a match: DINOv3 CLS scores ~0.7 for any two clothing crops.
 
 Calibrate thresholds on a labeled set (same garment / different garment / same color different SKU). Do not ship guessed constants. Start **conservative on silent merge** (fewer false joins, more notifications).
 
@@ -44,13 +44,13 @@ Calibrate thresholds on a labeled set (same garment / different garment / same c
 new crop embedding
         │
         ▼
-query Vectorize  filter user_id + category
+query Vectorize  filter user_id + slot + encoder
         │
-        ├── score ≥ high     → merge silently
+        ├── identity_score ≥ high     → merge silently
         │                      promote cover if new wear scores higher
-        ├── high > score ≥ mid → provisional merge (no second tile)
+        ├── high > identity_score ≥ mid → provisional merge (no second tile)
         │                      notify; user can split to a new item
-        └── score < mid      → new closet item
+        └── identity_score < mid      → new closet item
                                upsert vector
 ```
 
@@ -88,24 +88,34 @@ Wear history order stays chronological. Detail “tap a past wear” is unchange
 
 ### Vector store
 
-Cloudflare **Vectorize** (Workers-native, metadata filter on `user_id` + `category`, cosine). One index, ids namespaced.
+Cloudflare **Vectorize** (Workers-native, cosine). One index per encoder generation, ids namespaced.
 
 **v1 vector id:** `item:{closet_item_id}` — the cover crop only. Fast, enough to replace string equality.
 
 **v1.5 (if same-shirt different lighting misses):** also upsert `wear:{outfit_clothing_items.id}` and query those, then map to `closet_item_id`. Skip until recall logs say cover-only is weak.
 
-Metadata (indexed): `user_id`, `category`, `closet_item_id`. Do not put other users in the candidate set.
+**Metadata — indexed (query filters):**
+
+| Field | Why |
+| --- | --- |
+| `user_id` | Tenant isolation. Never search another wardrobe. |
+| `slot` | Body region. `top`+`outerwear` → `upper`. Not Claude’s exact category. |
+| `encoder` | Pin `dinov3-cls-v1` (or the next ReID id). Never mix CLIP/DINO/ReID in one query. |
+| `closet_item_id` | Join back to D1. |
+
+**Metadata — stored, not a merge key:** `category` (display), `color_h` / `color_s` / `color_l` (pixel HSL from the crop, used to compute `identity_score`).
+
+**Do not store as identity:** `label`, `subcategory`, `pattern`, Claude `color` string, `style_tags`. Those belong in D1.
 
 ### Embedding model
 
-Workers AI in this Worker today is strong on **text** embeddings (BGE) and image **classification** (ResNet). That is the wrong signal for “same garment.”
+The vector is **pixels of the Florence crop only**. Do not concatenate text.
 
-Use a **visual** encoder on the CF Images crop of the oriented box:
+Workers AI BGE/ResNet and CLIP/FashionSigLIP match “kind of garment,” not the physical piece. Current spike encoder is **DINOv3 CLS** (`dinov3-cls-v1`, 1024-d). It is a weak identity signal; slot + crop-color are required vetoes. Same JPEG can score ~0.97; a new photo of the same piece and a different jacket both land ~0.75.
 
-- Default candidate: Fal CLIP / SigLIP (already have `FAL_KEY`, Florence already on Fal).
-- Index dimensions must match the model; pin the model id in config so we never mix generations in one index.
+**Next encoder (new Vectorize index, new `encoder` id):** a fashion **instance** model trained on same-item different-photo pairs (DeepFashion in-shop / consumer-to-shop, GR-Lite, MODA-DeepFashion2). Do not reuse this 1024-d index. Host it (Replicate Cog / GPU worker); swap `IDENTITY_ENCODER` and recreate the index.
 
-Do not embed `label + color + subcategory` as the primary vector. Text can be an optional hybrid later; it will reintroduce the olive-jacket collision.
+Optional later: extra `wear:{id}` vectors per photo, query max-sim, still one closet tile.
 
 ### When it runs
 

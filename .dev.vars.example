@@ -79,6 +79,16 @@ EMAIL_LIFECYCLE_CRON_ENABLED=false
 SAM_SEGMENT_PROVIDER=fal
 FAL_KEY=
 
+# Closet identity visual embed. Default is Replicate DINOv3 (instance/appearance, 1024-d).
+# Hugging Face hf-inference does not host DINOv2. CLIP/Jina collapsed different jackets (~0.85).
+# Opt-in caption encoder: CLOSET_EMBED_PROVIDER=jina (do not use for identity).
+# Staging/prod: wrangler secret put REPLICATE_API_TOKEN
+REPLICATE_API_TOKEN=
+
+# Optional CLIP fallback (do not use for identity matching)
+# Staging/prod: wrangler secret put JINA_API_KEY
+JINA_API_KEY=
+
 # Catalog stand-in photos (SerpAPI Google Lens / Shopping). Staging/prod: wrangler secret put SERPAPI_API_KEY
 CATALOG_SEARCH_PROVIDER=serpapi
 SERPAPI_API_KEY=
