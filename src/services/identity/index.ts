@@ -28,6 +28,18 @@ export {
 	runClosetMatchDigest,
 } from './closetMatchDigest';
 export type { ClosetMatchDigestJob, ClosetMatchDigestDecision } from './closetMatchDigest';
+export {
+	IDENTITY_BUSY_RETRY_SECONDS,
+	IDENTITY_ERROR_RETRY_SECONDS,
+	collectOutfitIdentityImages,
+	enqueueClosetIdentityJobs,
+	enqueueClosetIdentityFromClassification,
+	runClosetIdentityJob,
+} from './closetIdentityJob';
+export type {
+	ClosetIdentityQueueJob,
+	ClosetIdentityRunDecision,
+} from './closetIdentityJob';
 export type {
 	EmbedClosetCropParams,
 	EmbedClosetCropResult,

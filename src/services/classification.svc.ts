@@ -2,18 +2,31 @@ import { LLMService, createLLMService } from './llm.svc';
 import { CLASSIFICATION_SYSTEM_PROMPT } from '../llm/prompts/classification';
 import { CLASSIFICATION_RESPONSE_FORMAT } from '../llm/schemas/classification.schema';
 import { MessageEntry, RemoteImage } from '../utils/types';
-import { StyleAnalysisDB } from '../db/style_analysis';
+import { createClosetDB, StyleAnalysisDB } from '../db';
 import { StyleEntryTag } from '../db/types';
 import { createVoltMemService, isVoltMemWriteTag, type VoltMemService } from './voltmem.svc';
 import { createAvatarService, type AvatarService } from './avatar';
 import { ModelProvider, ModelUseCase } from './model_config.svc';
+import { enqueueClosetIdentityFromClassification } from './identity/closetIdentityJob';
+import { createLogger } from '../utils/logger.utils';
+
+export type ClosetIdentityEnqueue = {
+	enqueue(params: {
+		userId: string;
+		message: MessageEntry;
+		tags: StyleEntryTag[];
+		sessionId?: string;
+		entryId: string;
+	}): Promise<unknown>;
+};
 
 export class ClassificationService {
 	constructor(
 		private llmService: LLMService,
 		private styleAnalysisDB: StyleAnalysisDB,
 		private voltmem: VoltMemService | null = null,
-		private avatarService: AvatarService | null = null
+		private avatarService: AvatarService | null = null,
+		private identityEnqueue: ClosetIdentityEnqueue | null = null
 	) { }
 
 	/**
@@ -188,6 +201,7 @@ export class ClassificationService {
 					await this.styleAnalysisDB.addEntryTags(entryId, tags);
 					await this.writeThroughVoltMem(userId, tags);
 					await this.maybeEnqueueAvatar(userId, message, tags);
+					await this.maybeEnqueueIdentity(userId, message, tags, sessionId, entryId);
 				}
 			} catch (e) {
 				console.trace('Background classification failed:', e);
@@ -240,6 +254,31 @@ export class ClassificationService {
 		}
 	}
 
+	/**
+	 * Outfit-tagged photos enqueue extract+identity. Fail-open; never blocks classification.
+	 */
+	private async maybeEnqueueIdentity(
+		userId: string | undefined,
+		message: MessageEntry,
+		tags: StyleEntryTag[],
+		sessionId: string | undefined,
+		entryId: string
+	) {
+		if (!userId || !this.identityEnqueue) return;
+
+		try {
+			await this.identityEnqueue.enqueue({
+				userId,
+				message,
+				tags,
+				sessionId,
+				entryId,
+			});
+		} catch (e) {
+			console.trace('Background identity enqueue failed:', e);
+		}
+	}
+
 	private resolveOutfitImage(message: MessageEntry, tags: StyleEntryTag[]): RemoteImage | null {
 		for (const tag of tags) {
 			if (
@@ -282,5 +321,16 @@ export const createClassificationService = (database: D1Database, env?: Env) => 
 	const styleAnalysisDB = new StyleAnalysisDB(database);
 	const voltmem = env ? createVoltMemService(env) : null;
 	const avatarService = env ? createAvatarService(env) : null;
-	return new ClassificationService(llmService, styleAnalysisDB, voltmem, avatarService);
+	const identityEnqueue: ClosetIdentityEnqueue | null = env
+		? {
+				enqueue: (params) =>
+					enqueueClosetIdentityFromClassification({
+						queue: env.CLOSET_IDENTITY_QUEUE,
+						closet: createClosetDB(env.GOSTYLENS_DB),
+						log: createLogger({ env: env.ENV_NAME }),
+						...params,
+					}),
+			}
+		: null;
+	return new ClassificationService(llmService, styleAnalysisDB, voltmem, avatarService, identityEnqueue);
 };

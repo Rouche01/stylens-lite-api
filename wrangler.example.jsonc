@@ -42,6 +42,10 @@
 			{
 				"binding": "CLOSET_MATCH_DIGEST_QUEUE",
 				"queue": "closet-match-digest"
+			},
+			{
+				"binding": "CLOSET_IDENTITY_QUEUE",
+				"queue": "closet-identity"
 			}
 		],
 		"consumers": [
@@ -54,6 +58,11 @@
 				"queue": "closet-match-digest",
 				"max_batch_size": 1,
 				"max_retries": 5
+			},
+			{
+				"queue": "closet-identity",
+				"max_batch_size": 1,
+				"max_retries": 25
 			}
 		]
 	},
@@ -119,6 +128,10 @@
 					{
 						"binding": "CLOSET_MATCH_DIGEST_QUEUE",
 						"queue": "closet-match-digest-staging"
+					},
+					{
+						"binding": "CLOSET_IDENTITY_QUEUE",
+						"queue": "closet-identity-staging"
 					}
 				],
 				"consumers": [
@@ -131,6 +144,11 @@
 						"queue": "closet-match-digest-staging",
 						"max_batch_size": 1,
 						"max_retries": 5
+					},
+					{
+						"queue": "closet-identity-staging",
+						"max_batch_size": 1,
+						"max_retries": 25
 					}
 				]
 			},
@@ -187,6 +205,10 @@
 					{
 						"binding": "CLOSET_MATCH_DIGEST_QUEUE",
 						"queue": "closet-match-digest"
+					},
+					{
+						"binding": "CLOSET_IDENTITY_QUEUE",
+						"queue": "closet-identity"
 					}
 				],
 				"consumers": [
@@ -199,6 +221,11 @@
 						"queue": "closet-match-digest",
 						"max_batch_size": 1,
 						"max_retries": 5
+					},
+					{
+						"queue": "closet-identity",
+						"max_batch_size": 1,
+						"max_retries": 25
 					}
 				]
 			},

@@ -601,6 +601,10 @@ class MemoryCloset {
 		return outfit;
 	}
 
+	async getOutfitByUserImageKey(userId: string, imageKey: string): Promise<Outfit | null> {
+		return this.outfits.find((row) => row.user_id === userId && row.image_key === imageKey) ?? null;
+	}
+
 	async createClosetItem(params: {
 		id?: string;
 		userId: string;

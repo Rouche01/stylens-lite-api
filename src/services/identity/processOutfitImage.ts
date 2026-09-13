@@ -35,6 +35,7 @@ export type OutfitIdentityQueries = Pick<
 export type OutfitIdentityStore = Pick<
 	ClosetDB,
 	| 'createOutfit'
+	| 'getOutfitByUserImageKey'
 	| 'createClosetItem'
 	| 'linkClosetItemToOutfit'
 	| 'createPendingMatch'
@@ -95,6 +96,8 @@ export type ProcessOutfitImageParams = {
 	imageUrl: string;
 	imageKey: string;
 	signal?: AbortSignal;
+	cachedExtraction?: OutfitExtractionResponse;
+	onExtracted?: (extraction: OutfitExtractionResponse) => Promise<void>;
 };
 
 export type IdentityCreateReason =
@@ -276,10 +279,21 @@ export class OutfitIdentityProcessor {
 	) {}
 
 	async process(params: ProcessOutfitImageParams): Promise<ProcessOutfitImageResult | null> {
-		const extracted = await this.extract.extractOutfitItems({
-			imageUrl: params.imageUrl,
-			signal: params.signal,
-		});
+		let extracted = params.cachedExtraction;
+		if (!extracted) {
+			extracted =
+				(await this.extract.extractOutfitItems({
+					imageUrl: params.imageUrl,
+					signal: params.signal,
+				})) ?? undefined;
+			if (extracted) {
+				try {
+					await params.onExtracted?.(extracted);
+				} catch (err) {
+					this.log.warn('outfit_identity_cache_extract_failed', { image_key: params.imageKey }, err);
+				}
+			}
+		}
 		if (!extracted) {
 			return null;
 		}
@@ -291,7 +305,9 @@ export class OutfitIdentityProcessor {
 		}
 
 		try {
-			const outfit = await this.closet.createOutfit(params.userId, params.imageUrl, params.imageKey);
+			const outfit =
+				(await this.closet.getOutfitByUserImageKey(params.userId, params.imageKey)) ??
+				(await this.closet.createOutfit(params.userId, params.imageUrl, params.imageKey));
 			const items: ProcessedOutfitItem[] = [];
 			for (const item of extracted.items) {
 				items.push(

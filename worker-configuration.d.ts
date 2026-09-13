@@ -10,6 +10,7 @@ declare namespace Cloudflare {
 		GOSTYLENS_DB: D1Database;
 		AVATAR_GENERATION_QUEUE: Queue;
 		CLOSET_MATCH_DIGEST_QUEUE: Queue;
+		CLOSET_IDENTITY_QUEUE: Queue;
 		IMAGES: ImagesBinding;
 		ENV_NAME: "staging";
 		OPENAI_MODEL_ENDPOINT_URL: string;
@@ -65,6 +66,7 @@ declare namespace Cloudflare {
 		GOSTYLENS_DB: D1Database;
 		AVATAR_GENERATION_QUEUE: Queue;
 		CLOSET_MATCH_DIGEST_QUEUE: Queue;
+		CLOSET_IDENTITY_QUEUE: Queue;
 		IMAGES: ImagesBinding;
 		ENV_NAME: "production";
 		OPENAI_MODEL_ENDPOINT_URL: string;
@@ -120,6 +122,7 @@ declare namespace Cloudflare {
 		GOSTYLENS_DB: D1Database;
 		AVATAR_GENERATION_QUEUE: Queue;
 		CLOSET_MATCH_DIGEST_QUEUE: Queue;
+		CLOSET_IDENTITY_QUEUE: Queue;
 		IMAGES: ImagesBinding;
 		ENV_NAME: "staging" | "production" | "dev";
 		OPENAI_MODEL_ENDPOINT_URL: string;

@@ -70,6 +70,20 @@ export type ClosetItemMatchWithOutfit = ClosetItemMatch & {
 	outfit_original_image_url: string;
 };
 
+export type ClosetIdentityJobRow = {
+	user_id: string;
+	image_key: string;
+	image_url: string;
+	session_id: string | null;
+	entry_id: string | null;
+	source: string;
+	status: 'queued' | 'done';
+	outfit_id: string | null;
+	extraction_json: string | null;
+	created_at: number;
+	updated_at: number;
+};
+
 export type OutfitLinkedItem = {
 	closet_item_id: string;
 	label: string;
@@ -107,6 +121,22 @@ export class ClosetDB {
 			image_key: imageKey,
 			created_at: now
 		};
+	}
+
+	async getOutfitByUserImageKey(userId: string, imageKey: string): Promise<Outfit | null> {
+		const row = await this.db
+			.prepare(
+				`
+				SELECT id, user_id, original_image_url, image_key, created_at
+				FROM outfits
+				WHERE user_id = ? AND image_key = ?
+				ORDER BY created_at ASC
+				LIMIT 1
+				`
+			)
+			.bind(userId, imageKey)
+			.first<Outfit>();
+		return row ?? null;
 	}
 
 	/**
@@ -370,6 +400,80 @@ export class ClosetDB {
 		await this.db
 			.prepare(`DELETE FROM identity_inflight WHERE user_id = ? AND job_id = ?`)
 			.bind(userId, jobId)
+			.run();
+	}
+
+	async tryInsertIdentityJob(params: {
+		userId: string;
+		imageKey: string;
+		imageUrl: string;
+		sessionId?: string;
+		entryId?: string;
+		source?: string;
+	}): Promise<boolean> {
+		const now = Date.now();
+		const result = await this.db
+			.prepare(
+				`
+				INSERT OR IGNORE INTO closet_identity_jobs (
+					user_id, image_key, image_url, session_id, entry_id, source, status, created_at, updated_at
+				)
+				VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+				`
+			)
+			.bind(
+				params.userId,
+				params.imageKey,
+				params.imageUrl,
+				params.sessionId ?? null,
+				params.entryId ?? null,
+				params.source ?? 'session',
+				now,
+				now
+			)
+			.run();
+		return (result.meta.changes ?? 0) > 0;
+	}
+
+	async getIdentityJob(userId: string, imageKey: string): Promise<ClosetIdentityJobRow | null> {
+		const row = await this.db
+			.prepare(
+				`
+				SELECT user_id, image_key, image_url, session_id, entry_id, source, status, outfit_id, extraction_json, created_at, updated_at
+				FROM closet_identity_jobs
+				WHERE user_id = ? AND image_key = ?
+				`
+			)
+			.bind(userId, imageKey)
+			.first<ClosetIdentityJobRow>();
+		return row ?? null;
+	}
+
+	async saveIdentityJobExtraction(userId: string, imageKey: string, extractionJson: string): Promise<void> {
+		const now = Date.now();
+		await this.db
+			.prepare(
+				`
+				UPDATE closet_identity_jobs
+				SET extraction_json = ?, updated_at = ?
+				WHERE user_id = ? AND image_key = ?
+				`
+			)
+			.bind(extractionJson, now, userId, imageKey)
+			.run();
+	}
+
+	async markIdentityJobDone(userId: string, imageKey: string, outfitId: string): Promise<void> {
+		const now = Date.now();
+		await this.db
+			.prepare(
+				`
+				UPDATE closet_identity_jobs
+				SET status = 'done', outfit_id = ?, updated_at = ?
+				WHERE user_id = ? AND image_key = ?
+				`
+			)
+			.bind(outfitId, now, userId, imageKey)
 			.run();
 	}
 
