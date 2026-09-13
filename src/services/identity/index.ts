@@ -7,6 +7,9 @@ export {
 	candidateClosetItemId,
 	shouldQueryIdentity,
 	IdentityBusyError,
+	ClosetMatchNotFoundError,
+	ClosetMatchResolvedError,
+	closetMatchNotification,
 } from './processOutfitImage';
 export type {
 	ProcessOutfitImageParams,
@@ -14,6 +17,9 @@ export type {
 	ProcessedOutfitItem,
 	IdentityDecision,
 	CommitDecision,
+	ResolveClosetMatchParams,
+	ResolveClosetMatchResult,
+	ClosetMatchNotifier,
 } from './processOutfitImage';
 export type {
 	EmbedClosetCropParams,

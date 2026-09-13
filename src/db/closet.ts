@@ -65,6 +65,11 @@ export type ClosetItemMatch = {
 	resolved_at: number | null;
 };
 
+export type ClosetItemMatchWithOutfit = ClosetItemMatch & {
+	outfit_image_key: string;
+	outfit_original_image_url: string;
+};
+
 export type OutfitLinkedItem = {
 	closet_item_id: string;
 	label: string;
@@ -481,6 +486,95 @@ export class ClosetDB {
 		};
 	}
 
+	async listPendingMatches(userId: string): Promise<ClosetItemMatchWithOutfit[]> {
+		const result = await this.db
+			.prepare(
+				`
+				SELECT
+					m.*,
+					o.image_key as outfit_image_key,
+					o.original_image_url as outfit_original_image_url
+				FROM closet_item_matches m
+				INNER JOIN outfits o ON o.id = m.outfit_id
+				WHERE m.user_id = ? AND m.status = 'pending'
+				ORDER BY m.created_at DESC
+				`
+			)
+			.bind(userId)
+			.all<ClosetItemMatchRow>();
+
+		return (result.results || []).map(parseMatchWithOutfit);
+	}
+
+	async getMatchWithOutfit(userId: string, matchId: string): Promise<ClosetItemMatchWithOutfit | null> {
+		const row = await this.db
+			.prepare(
+				`
+				SELECT
+					m.*,
+					o.image_key as outfit_image_key,
+					o.original_image_url as outfit_original_image_url
+				FROM closet_item_matches m
+				INNER JOIN outfits o ON o.id = m.outfit_id
+				WHERE m.id = ? AND m.user_id = ?
+				`
+			)
+			.bind(matchId, userId)
+			.first<ClosetItemMatchRow>();
+
+		return row ? parseMatchWithOutfit(row) : null;
+	}
+
+	async markMatchResolved(
+		userId: string,
+		matchId: string,
+		status: 'same' | 'new'
+	): Promise<boolean> {
+		const result = await this.db
+			.prepare(
+				`
+				UPDATE closet_item_matches
+				SET status = ?, resolved_at = ?
+				WHERE id = ? AND user_id = ? AND status = 'pending'
+				`
+			)
+			.bind(status, Date.now(), matchId, userId)
+			.run();
+
+		return (result.meta.changes ?? 0) > 0;
+	}
+
+	async updatePendingMatch(
+		userId: string,
+		matchId: string,
+		params: {
+			candidateClosetItemId: string;
+			score: number;
+			cosine?: number | null;
+			colorDistance?: number | null;
+		}
+	): Promise<boolean> {
+		const result = await this.db
+			.prepare(
+				`
+				UPDATE closet_item_matches
+				SET candidate_closet_item_id = ?, score = ?, cosine = ?, color_distance = ?
+				WHERE id = ? AND user_id = ? AND status = 'pending'
+				`
+			)
+			.bind(
+				params.candidateClosetItemId,
+				params.score,
+				params.cosine ?? null,
+				params.colorDistance ?? null,
+				matchId,
+				userId
+			)
+			.run();
+
+		return (result.meta.changes ?? 0) > 0;
+	}
+
 	/**
 	 * Deletes a closet item completely from the catalog.
 	 */
@@ -492,4 +586,61 @@ export class ClosetDB {
 
 		return result.success;
 	}
+}
+
+type ClosetItemMatchRow = {
+	id: string;
+	user_id: string;
+	outfit_id: string;
+	candidate_closet_item_id: string;
+	bounding_box: string;
+	confidence: string;
+	extract_snapshot: string;
+	score: number;
+	cosine: number | null;
+	color_distance: number | null;
+	band: 'ask';
+	status: 'pending' | 'same' | 'new';
+	created_at: number;
+	resolved_at: number | null;
+	outfit_image_key: string;
+	outfit_original_image_url: string;
+};
+
+function parseMatchWithOutfit(row: ClosetItemMatchRow): ClosetItemMatchWithOutfit {
+	return {
+		id: row.id,
+		user_id: row.user_id,
+		outfit_id: row.outfit_id,
+		candidate_closet_item_id: row.candidate_closet_item_id,
+		bounding_box: parseJsonBox(row.bounding_box),
+		confidence: row.confidence,
+		extract_snapshot: parseExtractSnapshot(row.extract_snapshot),
+		score: row.score,
+		cosine: row.cosine,
+		color_distance: row.color_distance,
+		band: 'ask',
+		status: row.status,
+		created_at: row.created_at,
+		resolved_at: row.resolved_at,
+		outfit_image_key: row.outfit_image_key,
+		outfit_original_image_url: row.outfit_original_image_url,
+	};
+}
+
+function parseJsonBox(raw: string): { x: number; y: number; width: number; height: number } {
+	const parsed = JSON.parse(raw) as { x: number; y: number; width: number; height: number };
+	return { x: parsed.x, y: parsed.y, width: parsed.width, height: parsed.height };
+}
+
+function parseExtractSnapshot(raw: string): ClosetItemExtractSnapshot {
+	const parsed = JSON.parse(raw) as Partial<ClosetItemExtractSnapshot>;
+	return {
+		label: String(parsed.label ?? ''),
+		category: String(parsed.category ?? ''),
+		subcategory: String(parsed.subcategory ?? ''),
+		color: String(parsed.color ?? ''),
+		pattern: String(parsed.pattern ?? ''),
+		styleTags: Array.isArray(parsed.styleTags) ? parsed.styleTags.map(String) : [],
+	};
 }

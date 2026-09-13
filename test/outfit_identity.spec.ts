@@ -8,14 +8,17 @@ import {
 	OutfitExtractionResponse,
 } from '../src/types';
 import {
+	ClosetMatchNotFoundError,
+	ClosetMatchResolvedError,
 	OutfitIdentityProcessor,
 	candidateClosetItemId,
+	closetMatchNotification,
 	decideCommitAfterRequery,
 	decideIdentityFromNeighbors,
 	shouldQueryIdentity,
 } from '../src/services/identity/processOutfitImage';
 import type { PreparedClosetCrop, QueryClosetCropMatch } from '../src/services/identity';
-import type { ClosetItem, ClosetItemMatch, Outfit } from '../src/db/closet';
+import type { ClosetItem, ClosetItemMatch, ClosetItemMatchWithOutfit, Outfit } from '../src/db/closet';
 import type { Logger } from '../src/utils/logger.utils';
 
 const BOX = { x: 20, y: 15, width: 40, height: 35 };
@@ -127,6 +130,38 @@ describe('decideCommitAfterRequery', () => {
 			])
 		).toEqual({ action: 'commit' });
 	});
+
+	it('commits when the only matching neighbor was rejected as new', () => {
+		expect(
+			decideCommitAfterRequery(
+				'self-1',
+				[neighbor({ identity_score: 0.77, d1_closet_item_id: 'c1', closet_item_id: 'c1' })],
+				['c1']
+			)
+		).toEqual({ action: 'commit' });
+	});
+});
+
+describe('closetMatchNotification', () => {
+	it('sends a question with string FCM data', () => {
+		expect(
+			closetMatchNotification({
+				matchId: 'm1',
+				candidateClosetItemId: 'c1',
+				outfitId: 'o1',
+				label: 'olive shirt',
+			})
+		).toEqual({
+			title: 'Is this the same item?',
+			body: 'Is this the same olive shirt?',
+			data: {
+				type: 'closet_match',
+				match_id: 'm1',
+				candidate_closet_item_id: 'c1',
+				outfit_id: 'o1',
+			},
+		});
+	});
 });
 
 describe('candidateClosetItemId', () => {
@@ -208,6 +243,15 @@ describe('OutfitIdentityProcessor', () => {
 		expect(harness.closet.links).toHaveLength(0);
 		expect(harness.closet.matches).toHaveLength(1);
 		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.notifications).toEqual([
+			{
+				userId: 'u1',
+				matchId: result?.items[0].match_id,
+				candidateClosetItemId: 'c1',
+				outfitId: result?.outfit_id,
+				label: 'olive shirt',
+			},
+		]);
 	});
 
 	it('creates when identity query throws but upsert succeeds', async () => {
@@ -290,6 +334,137 @@ describe('OutfitIdentityProcessor', () => {
 		expect(result?.items[0].identity_reason).toBe('d1_failed');
 		expect(harness.closet.items).toHaveLength(0);
 		expect(harness.identity.deletes).toHaveLength(1);
+	});
+});
+
+describe('OutfitIdentityProcessor.resolveMatch', () => {
+	it('links the wear to the candidate on same and does not upsert', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const match = seedPendingMatch(harness.closet);
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'same',
+		});
+
+		expect(result).toMatchObject({
+			decision: 'same',
+			match_id: match.id,
+			closet_item_id: 'c1',
+			identity_reason: 'same',
+		});
+		expect(harness.closet.links).toEqual([{ outfitId: 'outfit-1', closetItemId: 'c1' }]);
+		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1']);
+		expect(harness.closet.matches[0].status).toBe('same');
+		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.identity.prepares).toBe(0);
+	});
+
+	it('creates a new tile with create-commit even if the rejected candidate still matches', async () => {
+		const harness = createHarness({
+			neighbors: [neighbor({ identity_score: 0.77 })],
+			requeryNeighbors: [neighbor({ identity_score: 0.77 })],
+		});
+		const match = seedPendingMatch(harness.closet);
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(result.decision).toBe('new');
+		expect(result.identity_status).toBe('created');
+		expect(result.closet_item_id).toBeTruthy();
+		expect(result.closet_item_id).not.toBe('c1');
+		expect(harness.closet.matches[0].status).toBe('new');
+		expect(harness.closet.items).toHaveLength(2);
+		expect(harness.closet.links).toEqual([
+			{ outfitId: 'outfit-1', closetItemId: result.closet_item_id },
+		]);
+		expect(harness.identity.upserts).toHaveLength(1);
+		expect(harness.identity.deletes).toHaveLength(0);
+	});
+
+	it('asks against a different neighbor instead of creating a second pending row', async () => {
+		const harness = createHarness({
+			neighbors: [
+				neighbor({
+					id: 'item:c2',
+					closet_item_id: 'c2',
+					d1_closet_item_id: 'c2',
+					identity_score: 0.81,
+				}),
+			],
+		});
+		harness.closet.items.push({
+			id: 'c2',
+			user_id: 'u1',
+			label: 'navy shirt',
+			category: 'top',
+			subcategory: 'shirt',
+			color: 'navy',
+			pattern: 'solid',
+			style_tags: [],
+			created_at: Date.now(),
+			updated_at: Date.now(),
+		});
+		const match = seedPendingMatch(harness.closet);
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(result).toMatchObject({
+			decision: 'ask',
+			match_id: match.id,
+			closet_item_id: null,
+			candidate_closet_item_id: 'c2',
+			identity_status: 'ask',
+		});
+		expect(harness.closet.matches).toHaveLength(1);
+		expect(harness.closet.matches[0]).toMatchObject({
+			status: 'pending',
+			candidate_closet_item_id: 'c2',
+		});
+		expect(harness.closet.items.map((item) => item.id)).toEqual(['c2', 'c1']);
+		expect(harness.identity.deletes).toHaveLength(1);
+	});
+
+	it('leaves the match pending when create-commit fails', async () => {
+		const harness = createHarness({ upsertError: new Error('vectorize down') });
+		const match = seedPendingMatch(harness.closet);
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(result.identity_status).toBe('failed');
+		expect(result.identity_reason).toBe('upsert_failed');
+		expect(harness.closet.matches[0].status).toBe('pending');
+		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1']);
+	});
+
+	it('rejects an already resolved match', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const match = seedPendingMatch(harness.closet);
+		harness.closet.matches[0].status = 'same';
+
+		await expect(
+			harness.processor.resolveMatch({ userId: 'u1', matchId: match.id, decision: 'same' })
+		).rejects.toBeInstanceOf(ClosetMatchResolvedError);
+	});
+
+	it('rejects an unknown match', async () => {
+		const harness = createHarness({ neighbors: [] });
+		await expect(
+			harness.processor.resolveMatch({ userId: 'u1', matchId: 'missing', decision: 'same' })
+		).rejects.toBeInstanceOf(ClosetMatchNotFoundError);
 	});
 });
 
@@ -376,14 +551,26 @@ function createHarness(options: {
 			identity.deletes.push(vectorId);
 		},
 	};
+	const notifications: Array<{
+		userId: string;
+		matchId: string;
+		candidateClosetItemId: string;
+		outfitId: string;
+		label: string;
+	}> = [];
 	const processor = new OutfitIdentityProcessor(
 		{ extractOutfitItems: async () => extraction },
 		identity as never,
 		closet,
 		silentLogger(),
-		{ timeoutMs: 0, pollMs: 0, now: Date.now, sleep: async () => {} }
+		{ timeoutMs: 0, pollMs: 0, now: Date.now, sleep: async () => {} },
+		{
+			notifyPendingMatch: async (params) => {
+				notifications.push(params);
+			},
+		}
 	);
-	return { processor, closet, identity };
+	return { processor, closet, identity, notifications };
 }
 
 class MemoryCloset {
@@ -489,6 +676,93 @@ class MemoryCloset {
 		this.matches.push(match);
 		return match;
 	}
+
+	async getMatchWithOutfit(userId: string, matchId: string): Promise<ClosetItemMatchWithOutfit | null> {
+		const match = this.matches.find((row) => row.id === matchId && row.user_id === userId);
+		if (!match) return null;
+		const outfit = this.outfits.find((row) => row.id === match.outfit_id);
+		if (!outfit) return null;
+		return {
+			...match,
+			outfit_image_key: outfit.image_key,
+			outfit_original_image_url: outfit.original_image_url,
+		};
+	}
+
+	async markMatchResolved(userId: string, matchId: string, status: 'same' | 'new'): Promise<boolean> {
+		const match = this.matches.find((row) => row.id === matchId && row.user_id === userId);
+		if (!match || match.status !== 'pending') return false;
+		match.status = status;
+		match.resolved_at = Date.now();
+		return true;
+	}
+
+	async updatePendingMatch(
+		userId: string,
+		matchId: string,
+		params: {
+			candidateClosetItemId: string;
+			score: number;
+			cosine?: number | null;
+			colorDistance?: number | null;
+		}
+	): Promise<boolean> {
+		const match = this.matches.find((row) => row.id === matchId && row.user_id === userId);
+		if (!match || match.status !== 'pending') return false;
+		match.candidate_closet_item_id = params.candidateClosetItemId;
+		match.score = params.score;
+		match.cosine = params.cosine ?? null;
+		match.color_distance = params.colorDistance ?? null;
+		return true;
+	}
+}
+
+function seedPendingMatch(closet: MemoryCloset): ClosetItemMatch {
+	const now = Date.now();
+	closet.outfits.push({
+		id: 'outfit-1',
+		user_id: 'u1',
+		original_image_url: 'https://img/test.jpg',
+		image_key: 'users/u1/test.jpg',
+		created_at: now,
+	});
+	closet.items.push({
+		id: 'c1',
+		user_id: 'u1',
+		label: 'olive shirt',
+		category: 'top',
+		subcategory: 'shirt',
+		color: 'olive',
+		pattern: 'solid',
+		style_tags: [],
+		created_at: now,
+		updated_at: now,
+	});
+	const match: ClosetItemMatch = {
+		id: 'match-1',
+		user_id: 'u1',
+		outfit_id: 'outfit-1',
+		candidate_closet_item_id: 'c1',
+		bounding_box: BOX,
+		confidence: 'high',
+		extract_snapshot: {
+			label: 'olive shirt',
+			category: 'top',
+			subcategory: 'shirt',
+			color: 'olive',
+			pattern: 'solid',
+			styleTags: [],
+		},
+		score: 0.77,
+		cosine: 0.96,
+		color_distance: 0.03,
+		band: 'ask',
+		status: 'pending',
+		created_at: now,
+		resolved_at: null,
+	};
+	closet.matches.push(match);
+	return match;
 }
 
 function silentLogger(): Logger {
