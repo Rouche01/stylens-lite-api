@@ -1,12 +1,17 @@
 import { env } from 'cloudflare:workers';
 import { error, RequestHandler } from 'itty-router';
 import { ApiRequest } from 'types';
+import { CATALOG_BOX_PAD, percentBoxToTrim } from 'utils/bounding_box';
 import { getImageDimensions } from 'utils/image.utils';
 import { orientImageJpeg } from 'utils/cf_images.utils';
+import { parseIsolateWidth } from 'utils/assets.utils';
 
 /**
  * Crop + isolate a clothing item. Percent boxes are applied to the EXIF-oriented pixels,
  * not to caller-supplied imgW/imgH (those were often dummy 1000×1000).
+ *
+ * Optional `width` scales the crop down (fit: scale-down) before segmentation so closet
+ * tiles do not download a full-resolution PNG.
  */
 const getIsolatedItemHandler: RequestHandler<ApiRequest> = async (request) => {
 	try {
@@ -28,6 +33,11 @@ const getIsolatedItemHandler: RequestHandler<ApiRequest> = async (request) => {
 			return error(400, 'Invalid numeric parameters');
 		}
 
+		const width = parseIsolateWidth(query.width);
+		if (width === null) {
+			return error(400, '`width` must be a positive integer');
+		}
+
 		const r2Object = await env.OUTFIT_PHOTOS_BUCKET.get(query.key);
 		if (!r2Object) {
 			return error(404, 'Outfit image not found in storage');
@@ -35,37 +45,23 @@ const getIsolatedItemHandler: RequestHandler<ApiRequest> = async (request) => {
 
 		const orientedBytes = await orientImageJpeg(env.IMAGES, await r2Object.arrayBuffer());
 		const { width: imgW, height: imgH } = await getImageDimensions(orientedBytes);
+		const trim = percentBoxToTrim({ x, y, width: w, height: h }, imgW, imgH, CATALOG_BOX_PAD);
 
-		const padW = Math.max(1, Math.min(5, w * 0.10));
-		const padH = Math.max(1, Math.min(5, h * 0.10));
-		const paddedX = Math.max(0, x - padW);
-		const paddedY = Math.max(0, y - padH);
-		const paddedW = Math.min(100 - paddedX, w + padW * 2);
-		const paddedH = Math.min(100 - paddedY, h + padH * 2);
-
-		const top = Math.round((paddedY / 100) * imgH);
-		const left = Math.round((paddedX / 100) * imgW);
-		const bottom = Math.max(0, Math.round(imgH - ((paddedY + paddedH) / 100) * imgH));
-		const right = Math.max(0, Math.round(imgW - ((paddedX + paddedW) / 100) * imgW));
+		let pipeline = env.IMAGES.input(new Blob([orientedBytes]).stream()).transform({ trim });
+		if (width != null) {
+			pipeline = pipeline.transform({ width, fit: 'scale-down' });
+		}
 
 		const transformedImage = (
-			await env.IMAGES.input(new Blob([orientedBytes]).stream())
-				.transform({
-					trim: {
-						top,
-						left,
-						bottom,
-						right
-					}
-				})
+			await pipeline
 				.transform({
 					segment: 'foreground',
 					sharpen: 1.5,
-					contrast: 0.05
+					contrast: 0.05,
 				})
 				.output({
 					format: 'image/png',
-					quality: 85
+					quality: 85,
 				})
 		).response();
 

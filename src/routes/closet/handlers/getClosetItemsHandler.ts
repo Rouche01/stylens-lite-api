@@ -2,7 +2,7 @@ import { error, RequestHandler } from 'itty-router';
 import { createClosetDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
-import { getIsolatedItemUrl, signClosetOriginalUrl } from 'utils/assets.utils';
+import { getIsolatedItemUrl, signClosetOriginalUrl, CLOSET_TILE_ISOLATE_WIDTH } from 'utils/assets.utils';
 import { logRouteError } from 'utils/error';
 
 const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
@@ -31,11 +31,9 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 						imageUrl: originalImageUrl,
 						imageKey: item.image_key,
 						boundingBox: item.bounding_box,
-						dimensions: { width: 1000, height: 1000 },
+						width: CLOSET_TILE_ISOLATE_WIDTH,
 						enhance,
-						color: item.color,
-						subcategory: item.subcategory
-					})
+					}),
 				};
 			})
 		);

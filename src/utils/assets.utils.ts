@@ -109,12 +109,13 @@ export const getIsolatedItemUrl = (params: {
 	imageUrl: string;
 	imageKey?: string;
 	boundingBox: { x: number; y: number; width: number; height: number };
-	dimensions: { width: number; height: number };
+	dimensions?: { width: number; height: number };
+	width?: number;
 	enhance?: boolean;
 	color?: string;
 	subcategory?: string;
 }): string => {
-	const { domain, imageUrl, imageKey, boundingBox, dimensions, enhance, color, subcategory } = params;
+	const { domain, imageUrl, imageKey, boundingBox, dimensions, width, enhance, color, subcategory } = params;
 
 	// Prefer the stored R2 key so Isolate does not depend on a live signed URL.
 	let objectKey = imageKey || imageUrl;
@@ -137,15 +138,33 @@ export const getIsolatedItemUrl = (params: {
 		y: boundingBox.y.toString(),
 		w: boundingBox.width.toString(),
 		h: boundingBox.height.toString(),
-		imgW: dimensions.width.toString(),
-		imgH: dimensions.height.toString()
 	});
 
+	if (dimensions) {
+		searchParams.set('imgW', dimensions.width.toString());
+		searchParams.set('imgH', dimensions.height.toString());
+	}
+	if (width != null) searchParams.set('width', String(width));
 	if (enhance) searchParams.append('enhance', 'true');
 	if (color) searchParams.append('color', color);
 	if (subcategory) searchParams.append('subcategory', subcategory);
 
 	return `${base}/assets/isolate?${searchParams.toString()}`;
 };
+
+/** Closet browse tiles: ~3-col phone width with a little headroom for 3x screens. */
+export const CLOSET_TILE_ISOLATE_WIDTH = 480;
+
+export const ISOLATE_WIDTH_MIN = 32;
+export const ISOLATE_WIDTH_MAX = 2048;
+
+/** Optional isolate `width` query. Undefined when omitted; null when present but invalid. */
+export function parseIsolateWidth(raw: unknown): number | undefined | null {
+	if (raw == null || raw === '') return undefined;
+	if (typeof raw !== 'string' && typeof raw !== 'number') return null;
+	const n = typeof raw === 'number' ? raw : Number(raw.trim());
+	if (!Number.isFinite(n) || n < 1) return null;
+	return Math.min(ISOLATE_WIDTH_MAX, Math.max(ISOLATE_WIDTH_MIN, Math.round(n)));
+}
 
 
