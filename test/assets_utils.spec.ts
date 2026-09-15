@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
 	CLOSET_TILE_ISOLATE_WIDTH,
 	getIsolatedItemUrl,
+	parseIsolateCutout,
+	parseIsolatePad,
 	parseIsolateWidth,
 } from '../src/utils/assets.utils';
 
@@ -57,5 +59,60 @@ describe('getIsolatedItemUrl', () => {
 			enhance: true,
 		});
 		expect(url).toContain('enhance=true');
+	});
+
+	it('appends cutout=0 and category for a padded photo crop', () => {
+		const url = getIsolatedItemUrl({
+			domain: 'api.example.com',
+			imageUrl: 'https://unused',
+			imageKey: 'photo.jpg',
+			boundingBox: box,
+			width: CLOSET_TILE_ISOLATE_WIDTH,
+			cutout: false,
+			category: 'footwear',
+		});
+		expect(url).toContain('cutout=0');
+		expect(url).toContain('category=footwear');
+		expect(url).toContain('width=480');
+		expect(url).not.toContain('pad=0');
+	});
+
+	it('appends pad=0 for an exact-box photo crop', () => {
+		const url = getIsolatedItemUrl({
+			domain: 'api.example.com',
+			imageUrl: 'https://unused',
+			imageKey: 'photo.jpg',
+			boundingBox: box,
+			width: 960,
+			cutout: false,
+			pad: false,
+		});
+		expect(url).toContain('cutout=0');
+		expect(url).toContain('pad=0');
+		expect(url).toContain('width=960');
+	});
+});
+
+describe('parseIsolateCutout', () => {
+	it('defaults to a foreground cutout', () => {
+		expect(parseIsolateCutout(undefined)).toBe(true);
+		expect(parseIsolateCutout('1')).toBe(true);
+	});
+
+	it('treats 0/false as a photo crop', () => {
+		expect(parseIsolateCutout('0')).toBe(false);
+		expect(parseIsolateCutout('false')).toBe(false);
+	});
+});
+
+describe('parseIsolatePad', () => {
+	it('defaults to applying pad', () => {
+		expect(parseIsolatePad(undefined)).toBe(true);
+		expect(parseIsolatePad('1')).toBe(true);
+	});
+
+	it('treats 0/false as an exact-box trim', () => {
+		expect(parseIsolatePad('0')).toBe(false);
+		expect(parseIsolatePad('false')).toBe(false);
 	});
 });

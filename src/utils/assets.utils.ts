@@ -112,10 +112,15 @@ export const getIsolatedItemUrl = (params: {
 	dimensions?: { width: number; height: number };
 	width?: number;
 	enhance?: boolean;
+	/** Default true. False is a padded photo crop (`cutout=0`), no foreground segment. */
+	cutout?: boolean;
+	/** Default true. False skips closet/catalog pad (`pad=0`) so isolate trims the exact box. */
+	pad?: boolean;
 	color?: string;
+	category?: string;
 	subcategory?: string;
 }): string => {
-	const { domain, imageUrl, imageKey, boundingBox, dimensions, width, enhance, color, subcategory } = params;
+	const { domain, imageUrl, imageKey, boundingBox, dimensions, width, enhance, cutout, pad, color, category, subcategory } = params;
 
 	// Prefer the stored R2 key so Isolate does not depend on a live signed URL.
 	let objectKey = imageKey || imageUrl;
@@ -145,8 +150,11 @@ export const getIsolatedItemUrl = (params: {
 		searchParams.set('imgH', dimensions.height.toString());
 	}
 	if (width != null) searchParams.set('width', String(width));
+	if (cutout === false) searchParams.set('cutout', '0');
+	if (pad === false) searchParams.set('pad', '0');
 	if (enhance) searchParams.append('enhance', 'true');
 	if (color) searchParams.append('color', color);
+	if (category) searchParams.append('category', category);
 	if (subcategory) searchParams.append('subcategory', subcategory);
 
 	return `${base}/assets/isolate?${searchParams.toString()}`;
@@ -154,6 +162,9 @@ export const getIsolatedItemUrl = (params: {
 
 /** Closet browse tiles: ~3-col phone width with a little headroom for 3x screens. */
 export const CLOSET_TILE_ISOLATE_WIDTH = 480;
+
+/** Admin item-crop preview hero. */
+export const CLOSET_PREVIEW_CROP_WIDTH = 960;
 
 export const ISOLATE_WIDTH_MIN = 32;
 export const ISOLATE_WIDTH_MAX = 2048;
@@ -165,6 +176,20 @@ export function parseIsolateWidth(raw: unknown): number | undefined | null {
 	const n = typeof raw === 'number' ? raw : Number(raw.trim());
 	if (!Number.isFinite(n) || n < 1) return null;
 	return Math.min(ISOLATE_WIDTH_MAX, Math.max(ISOLATE_WIDTH_MIN, Math.round(n)));
+}
+
+/** Foreground cutout unless `cutout=0` / `false`. */
+export function parseIsolateCutout(raw: unknown): boolean {
+	if (raw == null || raw === '') return true;
+	const value = String(raw).trim().toLowerCase();
+	return value !== '0' && value !== 'false' && value !== 'no';
+}
+
+/** Closet/catalog pad unless `pad=0` / `false`. Default true. */
+export function parseIsolatePad(raw: unknown): boolean {
+	if (raw == null || raw === '') return true;
+	const value = String(raw).trim().toLowerCase();
+	return value !== '0' && value !== 'false' && value !== 'none' && value !== 'no';
 }
 
 

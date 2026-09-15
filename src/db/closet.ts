@@ -1,6 +1,6 @@
 
 
-import { percentBoxIou, tileAspectRatio } from '../utils/bounding_box';
+import { percentBoxIou, tileAspectRatio, closetTilePad } from '../utils/bounding_box';
 
 export interface ClosetItem {
 	id: string;
@@ -42,6 +42,8 @@ export interface ClosetItemDetails extends ClosetItem {
 		bounding_box: { x: number; y: number; width: number; height: number };
 		confidence: string;
 		worn_at: number;
+		image_width: number | null;
+		image_height: number | null;
 	}>;
 }
 
@@ -313,7 +315,12 @@ export class ClosetDB {
 				item.original_image_url = row.original_image_url;
 				item.image_key = row.image_key;
 				item.bounding_box = row.bounding_box ? JSON.parse(row.bounding_box) : undefined;
-				const ratio = closetTileAspectRatio(item.bounding_box, row.image_width, row.image_height);
+				const ratio = closetTileAspectRatio(
+					item.bounding_box,
+					row.image_width,
+					row.image_height,
+					item.category
+				);
 				if (ratio != null) {
 					item.tile_aspect_ratio = ratio;
 				}
@@ -349,7 +356,7 @@ export class ClosetDB {
 		const historyRows = await this.db
 			.prepare(
 				`
-				SELECT o.id as outfit_id, o.original_image_url, o.image_key, oci.bounding_box, oci.confidence, oci.created_at as worn_at
+				SELECT o.id as outfit_id, o.original_image_url, o.image_key, o.image_width, o.image_height, oci.bounding_box, oci.confidence, oci.created_at as worn_at
 				FROM outfit_clothing_items oci
 				JOIN outfits o ON oci.outfit_id = o.id
 				WHERE oci.closet_item_id = ?
@@ -365,7 +372,9 @@ export class ClosetDB {
 			image_key: row.image_key,
 			bounding_box: JSON.parse(row.bounding_box),
 			confidence: row.confidence,
-			worn_at: row.worn_at
+			worn_at: row.worn_at,
+			image_width: row.image_width == null ? null : Number(row.image_width),
+			image_height: row.image_height == null ? null : Number(row.image_height),
 		}));
 
 		// Use the first wear history item as the primary dynamic cover
@@ -891,12 +900,13 @@ function mapOutfitRow(row: {
 function closetTileAspectRatio(
 	boundingBox: { x: number; y: number; width: number; height: number } | undefined,
 	imageWidth: unknown,
-	imageHeight: unknown
+	imageHeight: unknown,
+	category?: string
 ): number | undefined {
 	const imgW = toPositiveInt(imageWidth);
 	const imgH = toPositiveInt(imageHeight);
 	if (!boundingBox || imgW == null || imgH == null) return undefined;
-	const ratio = tileAspectRatio(boundingBox, imgW, imgH);
+	const ratio = tileAspectRatio(boundingBox, imgW, imgH, closetTilePad(category));
 	if (ratio == null) return undefined;
 	return Math.round(ratio * 10000) / 10000;
 }

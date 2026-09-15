@@ -32,6 +32,8 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 						imageKey: item.image_key,
 						boundingBox: item.bounding_box,
 						width: CLOSET_TILE_ISOLATE_WIDTH,
+						cutout: false,
+						category: item.category,
 						enhance,
 					}),
 				};

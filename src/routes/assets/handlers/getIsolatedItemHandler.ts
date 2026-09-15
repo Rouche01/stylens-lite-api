@@ -1,17 +1,19 @@
 import { env } from 'cloudflare:workers';
 import { error, RequestHandler } from 'itty-router';
 import { ApiRequest } from 'types';
-import { CATALOG_BOX_PAD, percentBoxToTrim } from 'utils/bounding_box';
+import { CATALOG_BOX_PAD, closetTilePad, percentBoxToTrim } from 'utils/bounding_box';
 import { getImageDimensions } from 'utils/image.utils';
 import { orientImageJpeg } from 'utils/cf_images.utils';
-import { parseIsolateWidth } from 'utils/assets.utils';
+import { parseIsolateCutout, parseIsolatePad, parseIsolateWidth } from 'utils/assets.utils';
 
 /**
- * Crop + isolate a clothing item. Percent boxes are applied to the EXIF-oriented pixels,
+ * Crop a clothing item. Percent boxes are applied to the EXIF-oriented pixels,
  * not to caller-supplied imgW/imgH (those were often dummy 1000×1000).
  *
- * Optional `width` scales the crop down (fit: scale-down) before segmentation so closet
- * tiles do not download a full-resolution PNG.
+ * Default: padded crop + `segment: foreground` (PNG) with catalog pad.
+ * `cutout=0`: closet photo crop (JPEG) with category-aware pad. `category` selects the pad.
+ * `pad=0`: trim the exact percent box (item-view native-aspect crop).
+ * Optional `width` scales the crop down (fit: scale-down) before the rest of the pipeline.
  */
 const getIsolatedItemHandler: RequestHandler<ApiRequest> = async (request) => {
 	try {
@@ -37,6 +39,10 @@ const getIsolatedItemHandler: RequestHandler<ApiRequest> = async (request) => {
 		if (width === null) {
 			return error(400, '`width` must be a positive integer');
 		}
+		const cutout = parseIsolateCutout(query.cutout);
+		const applyPad = parseIsolatePad(query.pad);
+		const category = typeof query.category === 'string' ? query.category.trim() : '';
+		const pad = !applyPad ? undefined : cutout ? CATALOG_BOX_PAD : closetTilePad(category || undefined);
 
 		const r2Object = await env.OUTFIT_PHOTOS_BUCKET.get(query.key);
 		if (!r2Object) {
@@ -45,24 +51,25 @@ const getIsolatedItemHandler: RequestHandler<ApiRequest> = async (request) => {
 
 		const orientedBytes = await orientImageJpeg(env.IMAGES, await r2Object.arrayBuffer());
 		const { width: imgW, height: imgH } = await getImageDimensions(orientedBytes);
-		const trim = percentBoxToTrim({ x, y, width: w, height: h }, imgW, imgH, CATALOG_BOX_PAD);
+		const trim = percentBoxToTrim({ x, y, width: w, height: h }, imgW, imgH, pad);
 
 		let pipeline = env.IMAGES.input(new Blob([orientedBytes]).stream()).transform({ trim });
 		if (width != null) {
 			pipeline = pipeline.transform({ width, fit: 'scale-down' });
 		}
+		if (cutout) {
+			pipeline = pipeline.transform({
+				segment: 'foreground',
+				sharpen: 1.5,
+				contrast: 0.05,
+			});
+		}
 
 		const transformedImage = (
-			await pipeline
-				.transform({
-					segment: 'foreground',
-					sharpen: 1.5,
-					contrast: 0.05,
-				})
-				.output({
-					format: 'image/png',
-					quality: 85,
-				})
+			await pipeline.output({
+				format: cutout ? 'image/png' : 'image/jpeg',
+				quality: 85,
+			})
 		).response();
 
 		const response = new Response(transformedImage.body, transformedImage);

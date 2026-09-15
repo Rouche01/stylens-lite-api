@@ -16,7 +16,7 @@ const router = Router({ base: '/closet' });
 
 router.post('/identity/embed', adminApiKeyMiddleware, embedClosetCropHandler);
 router.post('/identity/query', adminApiKeyMiddleware, queryClosetCropHandler);
-router.get('/items/:id/preview', adminApiKeyQueryMiddleware, previewClosetItemHandler);
+router.get('/items/:id/preview', adminApiKeyQueryMiddleware, previewClosetItemHandler); // `?layout=closet` = padded tile vs person-centered native-aspect crop + dim
 router.get('/items', authMiddleware, dbIdMiddleware, getClosetItemsHandler);
 router.get('/items/:id', authMiddleware, dbIdMiddleware, getClosetItemDetailsHandler);
 router.delete('/items/:id', authMiddleware, dbIdMiddleware, deleteClosetItemHandler);
