@@ -36,6 +36,7 @@ export type OutfitIdentityStore = Pick<
 	ClosetDB,
 	| 'createOutfit'
 	| 'getOutfitByUserImageKey'
+	| 'setOutfitImageDimensionsIfMissing'
 	| 'createClosetItem'
 	| 'linkClosetItemToOutfit'
 	| 'createPendingMatch'
@@ -305,9 +306,13 @@ export class OutfitIdentityProcessor {
 		}
 
 		try {
+			const dims = extracted.image_dimensions;
 			const outfit =
 				(await this.closet.getOutfitByUserImageKey(params.userId, params.imageKey)) ??
-				(await this.closet.createOutfit(params.userId, params.imageUrl, params.imageKey));
+				(await this.closet.createOutfit(params.userId, params.imageUrl, params.imageKey, dims));
+			if (outfit.image_width == null || outfit.image_height == null) {
+				await this.closet.setOutfitImageDimensionsIfMissing(outfit.id, dims.width, dims.height);
+			}
 			const items: ProcessedOutfitItem[] = [];
 			for (const item of extracted.items) {
 				items.push(

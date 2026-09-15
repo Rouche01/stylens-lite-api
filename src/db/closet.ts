@@ -1,6 +1,6 @@
 
 
-import { percentBoxIou } from '../utils/bounding_box';
+import { percentBoxIou, tileAspectRatio } from '../utils/bounding_box';
 
 export interface ClosetItem {
 	id: string;
@@ -17,6 +17,8 @@ export interface ClosetItem {
 	original_image_url?: string;
 	image_key?: string;
 	bounding_box?: { x: number; y: number; width: number; height: number };
+	/** Padded isolate crop aspect. Omitted when the source photo size is unknown. */
+	tile_aspect_ratio?: number;
 }
 
 export interface Outfit {
@@ -25,6 +27,8 @@ export interface Outfit {
 	original_image_url: string;
 	image_key: string;
 	created_at: number;
+	image_width: number | null;
+	image_height: number | null;
 }
 
 export interface ClosetItemDetails extends ClosetItem {
@@ -100,18 +104,24 @@ export class ClosetDB {
 	/**
 	 * Creates a new Outfit record representing the raw uploaded photo.
 	 */
-	async createOutfit(userId: string, imageUrl: string, imageKey: string): Promise<Outfit> {
+	async createOutfit(
+		userId: string,
+		imageUrl: string,
+		imageKey: string,
+		imageDimensions?: { width: number; height: number }
+	): Promise<Outfit> {
 		const id = crypto.randomUUID();
 		const now = Date.now();
+		const dims = normalizeImageDimensions(imageDimensions);
 
 		await this.db
 			.prepare(
 				`
-				INSERT INTO outfits (id, user_id, original_image_url, image_key, created_at)
-				VALUES (?, ?, ?, ?, ?)
+				INSERT INTO outfits (id, user_id, original_image_url, image_key, created_at, image_width, image_height)
+				VALUES (?, ?, ?, ?, ?, ?, ?)
 				`
 			)
-			.bind(id, userId, imageUrl, imageKey, now)
+			.bind(id, userId, imageUrl, imageKey, now, dims?.width ?? null, dims?.height ?? null)
 			.run();
 
 		return {
@@ -119,7 +129,9 @@ export class ClosetDB {
 			user_id: userId,
 			original_image_url: imageUrl,
 			image_key: imageKey,
-			created_at: now
+			created_at: now,
+			image_width: dims?.width ?? null,
+			image_height: dims?.height ?? null,
 		};
 	}
 
@@ -127,7 +139,7 @@ export class ClosetDB {
 		const row = await this.db
 			.prepare(
 				`
-				SELECT id, user_id, original_image_url, image_key, created_at
+				SELECT id, user_id, original_image_url, image_key, created_at, image_width, image_height
 				FROM outfits
 				WHERE user_id = ? AND image_key = ?
 				ORDER BY created_at ASC
@@ -135,8 +147,36 @@ export class ClosetDB {
 				`
 			)
 			.bind(userId, imageKey)
-			.first<Outfit>();
-		return row ?? null;
+			.first<{
+				id: string;
+				user_id: string;
+				original_image_url: string;
+				image_key: string;
+				created_at: number;
+				image_width: number | null;
+				image_height: number | null;
+			}>();
+		return row ? mapOutfitRow(row) : null;
+	}
+
+	async setOutfitImageDimensionsIfMissing(
+		outfitId: string,
+		width: number,
+		height: number
+	): Promise<void> {
+		const dims = normalizeImageDimensions({ width, height });
+		if (!dims) return;
+
+		await this.db
+			.prepare(
+				`
+				UPDATE outfits
+				SET image_width = ?, image_height = ?
+				WHERE id = ? AND image_width IS NULL AND image_height IS NULL
+				`
+			)
+			.bind(dims.width, dims.height, outfitId)
+			.run();
 	}
 
 	/**
@@ -216,7 +256,9 @@ export class ClosetDB {
 					oci.bounding_box,
 					oci.confidence,
 					o.original_image_url,
-					o.image_key
+					o.image_key,
+					o.image_width,
+					o.image_height
 				FROM closet_items ci
 				LEFT JOIN (
 					-- Subquery to select the most recent link for each closet item
@@ -250,6 +292,10 @@ export class ClosetDB {
 				item.original_image_url = row.original_image_url;
 				item.image_key = row.image_key;
 				item.bounding_box = row.bounding_box ? JSON.parse(row.bounding_box) : undefined;
+				const ratio = closetTileAspectRatio(item.bounding_box, row.image_width, row.image_height);
+				if (ratio != null) {
+					item.tile_aspect_ratio = ratio;
+				}
 			}
 
 			return item;
@@ -795,4 +841,53 @@ function parseExtractSnapshot(raw: string): ClosetItemExtractSnapshot {
 		pattern: String(parsed.pattern ?? ''),
 		styleTags: Array.isArray(parsed.styleTags) ? parsed.styleTags.map(String) : [],
 	};
+}
+
+function mapOutfitRow(row: {
+	id: string;
+	user_id: string;
+	original_image_url: string;
+	image_key: string;
+	created_at: number;
+	image_width: number | null;
+	image_height: number | null;
+}): Outfit {
+	return {
+		id: row.id,
+		user_id: row.user_id,
+		original_image_url: row.original_image_url,
+		image_key: row.image_key,
+		created_at: row.created_at,
+		image_width: toPositiveInt(row.image_width),
+		image_height: toPositiveInt(row.image_height),
+	};
+}
+
+function closetTileAspectRatio(
+	boundingBox: { x: number; y: number; width: number; height: number } | undefined,
+	imageWidth: unknown,
+	imageHeight: unknown
+): number | undefined {
+	const imgW = toPositiveInt(imageWidth);
+	const imgH = toPositiveInt(imageHeight);
+	if (!boundingBox || imgW == null || imgH == null) return undefined;
+	const ratio = tileAspectRatio(boundingBox, imgW, imgH);
+	if (ratio == null) return undefined;
+	return Math.round(ratio * 10000) / 10000;
+}
+
+function normalizeImageDimensions(
+	dims?: { width: number; height: number } | null
+): { width: number; height: number } | null {
+	if (!dims) return null;
+	const width = toPositiveInt(dims.width);
+	const height = toPositiveInt(dims.height);
+	if (width == null || height == null) return null;
+	return { width, height };
+}
+
+function toPositiveInt(value: unknown): number | null {
+	const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+	if (!Number.isFinite(n) || n <= 0) return null;
+	return Math.round(n);
 }

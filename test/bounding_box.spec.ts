@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CATALOG_BOX_PAD, isUsableIdentityBox, normalizeOutfitBoundingBox, percentBoxIou, percentBoxToTrim } from '../src/utils/bounding_box';
+import { CATALOG_BOX_PAD, isUsableIdentityBox, normalizeOutfitBoundingBox, percentBoxIou, percentBoxToTrim, tileAspectRatio } from '../src/utils/bounding_box';
 import { outfitExtractionUserPrompt } from '../src/llm/prompts/outfit_extraction';
 
 describe('normalizeOutfitBoundingBox', () => {
@@ -91,5 +91,17 @@ describe('percentBoxToTrim', () => {
 			bottom: 0,
 			right: 0,
 		});
+	});
+});
+
+describe('tileAspectRatio', () => {
+	it('matches the padded isolate crop for a 3:4 photo', () => {
+		const box = { x: 20, y: 20, width: 40, height: 50 };
+		// pad trim: top 300, left 160, bottom 500, right 360 on 1000×2000 → 480×1200
+		expect(tileAspectRatio(box, 1000, 2000)).toBe(0.4);
+	});
+
+	it('is omitted when photo size is unknown', () => {
+		expect(tileAspectRatio({ x: 10, y: 10, width: 40, height: 40 }, 0, 1000)).toBeNull();
 	});
 });

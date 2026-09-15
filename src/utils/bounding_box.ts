@@ -64,6 +64,19 @@ export function percentBoxToTrim(box: PercentBox, imgW: number, imgH: number, pa
 	return { top, left, bottom, right };
 }
 
+/**
+ * Isolate / browse tile aspect after catalog pad (same trim as `/assets/isolate`).
+ * Null when the crop would be empty or the photo size is unknown.
+ */
+export function tileAspectRatio(box: PercentBox, imgW: number, imgH: number, pad: BoxPad = CATALOG_BOX_PAD): number | null {
+	if (!(imgW > 0) || !(imgH > 0)) return null;
+	const trim = percentBoxToTrim(box, imgW, imgH, pad);
+	const cropW = imgW - trim.left - trim.right;
+	const cropH = imgH - trim.top - trim.bottom;
+	if (cropW <= 0 || cropH <= 0) return null;
+	return cropW / cropH;
+}
+
 function isFiniteNumber(value: unknown): value is number {
 	return typeof value === 'number' && Number.isFinite(value);
 }

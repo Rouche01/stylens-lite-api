@@ -248,6 +248,8 @@ CREATE TABLE IF NOT EXISTS outfits (
     original_image_url TEXT NOT NULL,
     image_key TEXT NOT NULL,
     created_at INTEGER NOT NULL,
+    image_width INTEGER,
+    image_height INTEGER,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 

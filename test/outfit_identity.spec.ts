@@ -180,6 +180,31 @@ describe('OutfitIdentityProcessor', () => {
 		expect(harness.identity.prepares).toBe(1);
 		expect(harness.identity.deletes).toHaveLength(0);
 		expect(harness.digestSchedules).toEqual([]);
+		expect(harness.closet.outfits[0].image_width).toBe(1000);
+		expect(harness.closet.outfits[0].image_height).toBe(1500);
+	});
+
+	it('backfills image dimensions on an existing outfit without size', async () => {
+		const harness = createHarness({ neighbors: [] });
+		harness.closet.outfits.push({
+			id: 'outfit-existing',
+			user_id: 'u1',
+			original_image_url: 'https://img/test.jpg',
+			image_key: 'users/u1/test.jpg',
+			created_at: Date.now(),
+			image_width: null,
+			image_height: null,
+		});
+		await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/test.jpg',
+		});
+
+		expect(harness.closet.outfits).toHaveLength(1);
+		expect(harness.closet.outfits[0].id).toBe('outfit-existing');
+		expect(harness.closet.outfits[0].image_width).toBe(1000);
+		expect(harness.closet.outfits[0].image_height).toBe(1500);
 	});
 
 	it('creates when identity_score is 0.24', async () => {
@@ -589,13 +614,20 @@ class MemoryCloset {
 		return item ? { id: item.id, label: item.label, category: item.category } : null;
 	}
 
-	async createOutfit(userId: string, imageUrl: string, imageKey: string): Promise<Outfit> {
+	async createOutfit(
+		userId: string,
+		imageUrl: string,
+		imageKey: string,
+		imageDimensions?: { width: number; height: number }
+	): Promise<Outfit> {
 		const outfit: Outfit = {
 			id: `outfit-${this.outfits.length + 1}`,
 			user_id: userId,
 			original_image_url: imageUrl,
 			image_key: imageKey,
 			created_at: Date.now(),
+			image_width: imageDimensions?.width ?? null,
+			image_height: imageDimensions?.height ?? null,
 		};
 		this.outfits.push(outfit);
 		return outfit;
@@ -603,6 +635,13 @@ class MemoryCloset {
 
 	async getOutfitByUserImageKey(userId: string, imageKey: string): Promise<Outfit | null> {
 		return this.outfits.find((row) => row.user_id === userId && row.image_key === imageKey) ?? null;
+	}
+
+	async setOutfitImageDimensionsIfMissing(outfitId: string, width: number, height: number): Promise<void> {
+		const outfit = this.outfits.find((row) => row.id === outfitId);
+		if (!outfit || (outfit.image_width != null && outfit.image_height != null)) return;
+		outfit.image_width = width;
+		outfit.image_height = height;
 	}
 
 	async createClosetItem(params: {
@@ -719,6 +758,8 @@ function seedPendingMatch(closet: MemoryCloset): ClosetItemMatch {
 		original_image_url: 'https://img/test.jpg',
 		image_key: 'users/u1/test.jpg',
 		created_at: now,
+		image_width: null,
+		image_height: null,
 	});
 	closet.items.push({
 		id: 'c1',
