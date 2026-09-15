@@ -34,6 +34,7 @@ const PREPARED: PreparedClosetCrop = {
 	crop_height: 100,
 	source_image_key: 'users/u1/test.jpg',
 	crop_color: null,
+	crop_blur_hash: 'LEHV6nWB2yk8pyo0adR*.7kCMdnj',
 	vector: Array(1024).fill(0.1),
 };
 
@@ -174,6 +175,7 @@ describe('OutfitIdentityProcessor', () => {
 		expect(result?.items[0].closet_item_id).toBeTruthy();
 		expect(harness.closet.items).toHaveLength(1);
 		expect(harness.closet.links).toHaveLength(1);
+		expect(harness.closet.links[0].blurHash).toBe('LEHV6nWB2yk8pyo0adR*.7kCMdnj');
 		expect(harness.closet.matches).toHaveLength(0);
 		expect(harness.identity.upserts).toHaveLength(1);
 		expect(harness.identity.upserts[0].closetItemId).toBe(result?.items[0].closet_item_id);
@@ -367,7 +369,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 			closet_item_id: 'c1',
 			identity_reason: 'same',
 		});
-		expect(harness.closet.links).toEqual([{ outfitId: 'outfit-1', closetItemId: 'c1' }]);
+		expect(harness.closet.links).toEqual([{ outfitId: 'outfit-1', closetItemId: 'c1', blurHash: null }]);
 		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1']);
 		expect(harness.closet.matches[0].status).toBe('same');
 		expect(harness.identity.upserts).toHaveLength(0);
@@ -394,7 +396,11 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(harness.closet.matches[0].status).toBe('new');
 		expect(harness.closet.items).toHaveLength(2);
 		expect(harness.closet.links).toEqual([
-			{ outfitId: 'outfit-1', closetItemId: result.closet_item_id },
+			{
+				outfitId: 'outfit-1',
+				closetItemId: result.closet_item_id,
+				blurHash: 'LEHV6nWB2yk8pyo0adR*.7kCMdnj',
+			},
 		]);
 		expect(harness.identity.upserts).toHaveLength(1);
 		expect(harness.identity.deletes).toHaveLength(0);
@@ -586,7 +592,7 @@ function createHarness(options: {
 class MemoryCloset {
 	outfits: Outfit[] = [];
 	items: ClosetItem[] = [];
-	links: Array<{ outfitId: string; closetItemId: string }> = [];
+	links: Array<{ outfitId: string; closetItemId: string; blurHash: string | null }> = [];
 	matches: ClosetItemMatch[] = [];
 	askTouches: string[] = [];
 	lock: { userId: string; jobId: string } | null = null;
@@ -671,8 +677,24 @@ class MemoryCloset {
 		return item;
 	}
 
-	async linkClosetItemToOutfit(params: { outfitId: string; closetItemId: string }): Promise<void> {
-		this.links.push({ outfitId: params.outfitId, closetItemId: params.closetItemId });
+	async linkClosetItemToOutfit(params: {
+		outfitId: string;
+		closetItemId: string;
+		blurHash?: string | null;
+	}): Promise<void> {
+		this.links.push({
+			outfitId: params.outfitId,
+			closetItemId: params.closetItemId,
+			blurHash: params.blurHash ?? null,
+		});
+	}
+
+	async getLatestItemBlurHash(closetItemId: string): Promise<string | null> {
+		for (let i = this.links.length - 1; i >= 0; i--) {
+			const link = this.links[i];
+			if (link.closetItemId === closetItemId && link.blurHash) return link.blurHash;
+		}
+		return null;
 	}
 
 	async createPendingMatch(params: {

@@ -19,6 +19,8 @@ export interface ClosetItem {
 	bounding_box?: { x: number; y: number; width: number; height: number };
 	/** Padded isolate crop aspect. Omitted when the source photo size is unknown. */
 	tile_aspect_ratio?: number;
+	/** 4×3 BlurHash of the latest garment crop. Omitted when not yet encoded. */
+	blur_hash?: string;
 }
 
 export interface Outfit {
@@ -228,20 +230,38 @@ export class ClosetDB {
 		closetItemId: string;
 		boundingBox: { x: number; y: number; width: number; height: number };
 		confidence: 'high' | 'medium' | 'low';
+		blurHash?: string | null;
 	}): Promise<void> {
 		const id = crypto.randomUUID();
 		const now = Date.now();
 		const boundingBoxJson = JSON.stringify(params.boundingBox);
+		const blurHash = params.blurHash?.trim() || null;
 
 		await this.db
 			.prepare(
 				`
-				INSERT INTO outfit_clothing_items (id, outfit_id, closet_item_id, bounding_box, confidence, created_at)
-				VALUES (?, ?, ?, ?, ?, ?)
+				INSERT INTO outfit_clothing_items (id, outfit_id, closet_item_id, bounding_box, confidence, blur_hash, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?)
 				`
 			)
-			.bind(id, params.outfitId, params.closetItemId, boundingBoxJson, params.confidence, now)
+			.bind(id, params.outfitId, params.closetItemId, boundingBoxJson, params.confidence, blurHash, now)
 			.run();
+	}
+
+	async getLatestItemBlurHash(closetItemId: string): Promise<string | null> {
+		const row = await this.db
+			.prepare(
+				`
+				SELECT blur_hash
+				FROM outfit_clothing_items
+				WHERE closet_item_id = ? AND blur_hash IS NOT NULL AND length(blur_hash) > 0
+				ORDER BY created_at DESC
+				LIMIT 1
+				`
+			)
+			.bind(closetItemId)
+			.first<{ blur_hash: string }>();
+		return row?.blur_hash?.trim() || null;
 	}
 
 	/**
@@ -258,11 +278,12 @@ export class ClosetDB {
 					o.original_image_url,
 					o.image_key,
 					o.image_width,
-					o.image_height
+					o.image_height,
+					oci.blur_hash
 				FROM closet_items ci
 				LEFT JOIN (
 					-- Subquery to select the most recent link for each closet item
-					SELECT closet_item_id, outfit_id, bounding_box, confidence, MAX(created_at) as max_created
+					SELECT closet_item_id, outfit_id, bounding_box, confidence, blur_hash, MAX(created_at) as max_created
 					FROM outfit_clothing_items
 					GROUP BY closet_item_id
 				) oci ON ci.id = oci.closet_item_id
@@ -295,6 +316,10 @@ export class ClosetDB {
 				const ratio = closetTileAspectRatio(item.bounding_box, row.image_width, row.image_height);
 				if (ratio != null) {
 					item.tile_aspect_ratio = ratio;
+				}
+				const blurHash = typeof row.blur_hash === 'string' ? row.blur_hash.trim() : '';
+				if (blurHash) {
+					item.blur_hash = blurHash;
 				}
 			}
 

@@ -17,7 +17,7 @@ import {
 	colorSignatureFromMetadata,
 	colorSignatureToMetadata,
 	cropColorDistance,
-	extractCropColorSignature,
+	extractCropVisuals,
 	identityScore,
 	isIdentityMatch,
 	type CropColorSignature,
@@ -50,6 +50,7 @@ export type EmbedClosetCropResult = {
 	crop_height: number;
 	source_image_key: string;
 	crop_color: CropColorSignature | null;
+	crop_blur_hash: string | null;
 };
 
 export type UpsertClosetCropParams = EmbedClosetCropParams & {
@@ -300,8 +301,11 @@ export class IdentityService {
 		}
 		const cropImageUrl = await signDownloadUrlForKey(cropImageKey);
 		let cropColor: CropColorSignature | null = null;
+		let cropBlurHash: string | null = null;
 		try {
-			cropColor = await extractCropColorSignature(this.images, cropJpeg);
+			const visuals = await extractCropVisuals(this.images, cropJpeg);
+			cropColor = visuals.color;
+			cropBlurHash = visuals.blurHash;
 		} catch (err) {
 			log.warn('identity_crop_color_failed', {
 				error: err instanceof Error ? err.message : 'unknown',
@@ -334,6 +338,7 @@ export class IdentityService {
 			crop_height: cropDims.height,
 			source_image_key: imageKey,
 			crop_color: cropColor,
+			crop_blur_hash: cropBlurHash,
 			vector: embedded.vector,
 		};
 	}

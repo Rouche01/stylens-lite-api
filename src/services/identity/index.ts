@@ -90,5 +90,7 @@ export {
 	colorSignatureToMetadata,
 	colorSignatureFromMetadata,
 	decodePngRgba,
+	extractCropColorSignature,
+	extractCropVisuals,
 } from './cropColor';
 export type { CropColorSignature } from './cropColor';

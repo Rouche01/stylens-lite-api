@@ -39,6 +39,7 @@ export type OutfitIdentityStore = Pick<
 	| 'setOutfitImageDimensionsIfMissing'
 	| 'createClosetItem'
 	| 'linkClosetItemToOutfit'
+	| 'getLatestItemBlurHash'
 	| 'createPendingMatch'
 	| 'findClosetItemForPhotoCrop'
 	| 'getClosetItemSummary'
@@ -402,6 +403,7 @@ export class OutfitIdentityProcessor {
 				closetItemId: existing.id,
 				boundingBox: params.item.bounding_box,
 				confidence: extractionConfidence(params.item.confidence),
+				blurHash: await this.closet.getLatestItemBlurHash(existing.id),
 			});
 			this.log.info('outfit_identity_existing_crop', {
 				outfit_id: params.outfitId,
@@ -573,6 +575,7 @@ export class OutfitIdentityProcessor {
 				closetItemId: closetItem.id,
 				boundingBox: params.item.bounding_box,
 				confidence: extractionConfidence(params.item.confidence),
+				blurHash: prepared.crop_blur_hash,
 			});
 			this.log.info('outfit_identity_created', {
 				outfit_id: params.outfitId,
@@ -612,6 +615,7 @@ export class OutfitIdentityProcessor {
 			closetItemId: match.candidate_closet_item_id,
 			boundingBox: match.bounding_box,
 			confidence: extractionConfidence(match.confidence as ExtractionConfidence),
+			blurHash: await this.closet.getLatestItemBlurHash(match.candidate_closet_item_id),
 		});
 		const marked = await this.closet.markMatchResolved(match.user_id, match.id, 'same');
 		if (!marked) {

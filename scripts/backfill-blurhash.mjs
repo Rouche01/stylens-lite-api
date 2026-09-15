@@ -2,13 +2,14 @@
 /**
  * Backfill BlurHash metadata for existing R2 outfit photos.
  *
- * Reads distinct image keys from D1 that are missing blur_hash / image_blur_hash,
- * fetches each object from R2, encodes a 4x3 BlurHash (same as the Flutter client),
- * and UPDATEs D1 rows. Does not modify R2 objects.
+ * Session images: fills blur_hash / image_blur_hash from the full photo.
+ * Closet tiles: fills outfit_clothing_items.blur_hash from the tight garment crop
+ * (same trim as identity embed). Does not modify R2 objects.
  *
  * Usage:
  *   node scripts/backfill-blurhash.mjs [--local|--remote] [--env staging|production]
  *     [--dry-run] [--limit N] [--concurrency N] [--vars-file PATH]
+ *     [--closet-only] [--sessions-only]
  *
  * Requires:
  *   - Wrangler logged in (for D1)
@@ -18,10 +19,12 @@
  *       OUTFIT_PHOTOS_BUCKET_NAME
  *       R2_ACCOUNT_ID
  *   - npm packages: sharp, blurhash, aws4fetch (aws4fetch is already a dependency)
+ *   - Closet crop hashes need migration 0026_add_closet_item_blur_hash.sql
  *
  * Examples:
  *   node scripts/backfill-blurhash.mjs --local --dry-run --limit 5
  *   node scripts/backfill-blurhash.mjs --remote --env production --concurrency 4
+ *   node scripts/backfill-blurhash.mjs --closet-only --dry-run --limit 5
  */
 
 import { spawnSync } from 'node:child_process';
@@ -57,6 +60,8 @@ function parseArgs(argv) {
 		concurrency: 3,
 		varsFile: resolve(ROOT, '.dev.vars'),
 		delayMs: 50,
+		closetOnly: false,
+		sessionsOnly: false,
 	};
 
 	for (let i = 0; i < argv.length; i++) {
@@ -69,6 +74,8 @@ function parseArgs(argv) {
 		else if (a === '--concurrency') opts.concurrency = Number(argv[++i]);
 		else if (a === '--vars-file') opts.varsFile = resolve(argv[++i]);
 		else if (a === '--delay-ms') opts.delayMs = Number(argv[++i]);
+		else if (a === '--closet-only') opts.closetOnly = true;
+		else if (a === '--sessions-only') opts.sessionsOnly = true;
 		else if (a === '--help' || a === '-h') {
 			console.log(`See header comment in scripts/backfill-blurhash.mjs`);
 			process.exit(0);
@@ -83,6 +90,10 @@ function parseArgs(argv) {
 	}
 	if (opts.local && opts.remote) {
 		console.error('Use only one of --local or --remote');
+		process.exit(1);
+	}
+	if (opts.closetOnly && opts.sessionsOnly) {
+		console.error('Use only one of --closet-only or --sessions-only');
 		process.exit(1);
 	}
 	return opts;
@@ -207,6 +218,85 @@ async function encodeHashFromBytes(bytes) {
 	return encodeBlurHash(new Uint8ClampedArray(data), info.width, info.height, 4, 3);
 }
 
+/**
+ * Tight garment crop — same trim as identity embed (no catalog pad).
+ * Percent xywh of the EXIF-oriented photo.
+ */
+async function encodeHashFromCrop(bytes, box) {
+	const image = sharp(bytes).rotate();
+	const meta = await image.metadata();
+	const imgW = meta.width;
+	const imgH = meta.height;
+	if (!(imgW > 0) || !(imgH > 0)) {
+		throw new Error('Could not read image size');
+	}
+
+	const left = Math.round((box.x / 100) * imgW);
+	const top = Math.round((box.y / 100) * imgH);
+	const right = Math.max(0, Math.round(imgW - ((box.x + box.width) / 100) * imgW));
+	const bottom = Math.max(0, Math.round(imgH - ((box.y + box.height) / 100) * imgH));
+	const width = Math.max(1, imgW - left - right);
+	const height = Math.max(1, imgH - top - bottom);
+	const extract = {
+		left: Math.max(0, Math.min(left, imgW - 1)),
+		top: Math.max(0, Math.min(top, imgH - 1)),
+		width: Math.min(width, imgW),
+		height: Math.min(height, imgH),
+	};
+	extract.width = Math.max(1, Math.min(extract.width, imgW - extract.left));
+	extract.height = Math.max(1, Math.min(extract.height, imgH - extract.top));
+
+	const { data, info } = await image
+		.extract(extract)
+		.resize(32, 32, { fit: 'cover' })
+		.ensureAlpha()
+		.raw()
+		.toBuffer({ resolveWithObject: true });
+
+	return encodeBlurHash(new Uint8ClampedArray(data), info.width, info.height, 4, 3);
+}
+
+function parseBoundingBox(raw) {
+	const box = typeof raw === 'string' ? JSON.parse(raw) : raw;
+	if (
+		!box ||
+		!Number.isFinite(box.x) ||
+		!Number.isFinite(box.y) ||
+		!Number.isFinite(box.width) ||
+		!Number.isFinite(box.height) ||
+		box.width <= 0 ||
+		box.height <= 0
+	) {
+		return null;
+	}
+	return box;
+}
+
+async function fetchClosetRows(opts) {
+	const sql = `
+SELECT oci.id, o.image_key, oci.bounding_box
+FROM outfit_clothing_items oci
+JOIN outfits o ON o.id = oci.outfit_id
+WHERE oci.blur_hash IS NULL
+AND o.image_key IS NOT NULL AND length(o.image_key) > 0
+`.replace(/\s+/g, ' ').trim();
+
+	let rows = queryResults(wranglerD1(sql, opts)).filter((r) => r.id && r.image_key);
+	if (opts.limit != null && Number.isFinite(opts.limit)) {
+		rows = rows.slice(0, opts.limit);
+	}
+	return rows;
+}
+
+function updateClosetRow(id, hash, opts) {
+	const rowId = sqlString(id);
+	const h = sqlString(hash);
+	wranglerD1(
+		`UPDATE outfit_clothing_items SET blur_hash = ${h} WHERE id = ${rowId} AND blur_hash IS NULL`,
+		opts
+	);
+}
+
 function updateD1ForKey(key, hash, opts) {
 	const k = sqlString(key);
 	const h = sqlString(hash);
@@ -249,26 +339,39 @@ async function main() {
 	console.log(`  dry-run: ${opts.dryRun}`);
 	console.log(`  concurrency: ${opts.concurrency}`);
 	console.log(`  vars: ${opts.varsFile}`);
+	if (opts.closetOnly) console.log('  scope: closet crops');
+	else if (opts.sessionsOnly) console.log('  scope: session images');
+	else console.log('  scope: sessions + closet crops');
 
-	const keys = await fetchKeys(opts);
-	console.log(`Found ${keys.length} key(s) missing BlurHash`);
+	const keys = opts.closetOnly ? [] : await fetchKeys(opts);
+	const closetRows = opts.sessionsOnly ? [] : await fetchClosetRows(opts);
+	console.log(`Found ${keys.length} session key(s) missing BlurHash`);
+	console.log(`Found ${closetRows.length} closet wear(s) missing BlurHash`);
 
-	if (keys.length === 0) {
+	if (keys.length === 0 && closetRows.length === 0) {
 		console.log('Nothing to do.');
 		return;
 	}
 
 	const r2 = createR2Client();
 	console.log(`  R2 bucket: ${r2.bucketName}`);
+	const objectCache = new Map();
+
+	async function bytesForKey(key) {
+		if (objectCache.has(key)) return objectCache.get(key);
+		const bytes = await getObjectBytes(r2, key);
+		objectCache.set(key, bytes);
+		return bytes;
+	}
 
 	let ok = 0;
 	let missing = 0;
 	let failed = 0;
 
 	await mapPool(keys, opts.concurrency, async (key, i) => {
-		const label = `[${i + 1}/${keys.length}] ${key}`;
+		const label = `[session ${i + 1}/${keys.length}] ${key}`;
 		try {
-			const bytes = await getObjectBytes(r2, key);
+			const bytes = await bytesForKey(key);
 			if (!bytes) {
 				console.warn(`${label} — missing in R2, skipped`);
 				missing++;
@@ -280,6 +383,37 @@ async function main() {
 				console.log(`${label} — dry-run hash=${hash}`);
 			} else {
 				updateD1ForKey(key, hash, opts);
+				console.log(`${label} — updated hash=${hash}`);
+			}
+			ok++;
+			if (opts.delayMs > 0) await sleep(opts.delayMs);
+		} catch (e) {
+			failed++;
+			console.error(`${label} — ERROR:`, e.message || e);
+		}
+	});
+
+	await mapPool(closetRows, opts.concurrency, async (row, i) => {
+		const label = `[closet ${i + 1}/${closetRows.length}] ${row.id}`;
+		try {
+			const box = parseBoundingBox(row.bounding_box);
+			if (!box) {
+				console.warn(`${label} — invalid bounding_box, skipped`);
+				failed++;
+				return;
+			}
+			const bytes = await bytesForKey(row.image_key);
+			if (!bytes) {
+				console.warn(`${label} — missing in R2 (${row.image_key}), skipped`);
+				missing++;
+				return;
+			}
+
+			const hash = await encodeHashFromCrop(bytes, box);
+			if (opts.dryRun) {
+				console.log(`${label} — dry-run hash=${hash}`);
+			} else {
+				updateClosetRow(row.id, hash, opts);
 				console.log(`${label} — updated hash=${hash}`);
 			}
 			ok++;

@@ -1,3 +1,5 @@
+import { encodeBlurHash4x3 } from '../../utils/blurhash';
+
 /** Pixel color of the Florence crop — not Claude's color string. */
 
 export type CropColorSignature = {
@@ -145,6 +147,12 @@ export function colorSignatureFromMetadata(metadata?: {
 }
 
 export async function decodePngRgba(bytes: ArrayBuffer): Promise<Uint8Array> {
+	return (await decodePngRgbaImage(bytes)).rgba;
+}
+
+export async function decodePngRgbaImage(
+	bytes: ArrayBuffer
+): Promise<{ rgba: Uint8Array; width: number; height: number }> {
 	const png = new Uint8Array(bytes);
 	if (png.length < 8 || png[0] !== 0x89 || png[1] !== 0x50 || png[2] !== 0x4e || png[3] !== 0x47) {
 		throw new Error('Not a PNG');
@@ -178,13 +186,21 @@ export async function decodePngRgba(bytes: ArrayBuffer): Promise<Uint8Array> {
 		throw new Error(`Unsupported PNG (${bitDepth}-bit type ${colorType})`);
 	}
 	const inflated = await inflateZlib(concatBytes(idatParts));
-	return unfilterPng(inflated, width, height, colorType === 6 ? 4 : 3);
+	return { rgba: unfilterPng(inflated, width, height, colorType === 6 ? 4 : 3), width, height };
 }
 
 export async function extractCropColorSignature(
 	images: ImagesBinding,
 	cropJpeg: ArrayBuffer
 ): Promise<CropColorSignature> {
+	const visuals = await extractCropVisuals(images, cropJpeg);
+	return visuals.color;
+}
+
+export async function extractCropVisuals(
+	images: ImagesBinding,
+	cropJpeg: ArrayBuffer
+): Promise<{ color: CropColorSignature; blurHash: string | null }> {
 	const pngResponse = (
 		await images.input(new Blob([cropJpeg]).stream()).transform({ width: 32, height: 32, fit: 'cover' }).output({
 			format: 'image/png',
@@ -193,8 +209,11 @@ export async function extractCropColorSignature(
 	if (!pngResponse.ok) {
 		throw new Error(`Failed to downsample crop for color (${pngResponse.status})`);
 	}
-	const rgba = await decodePngRgba(await pngResponse.arrayBuffer());
-	return rgbaToColorSignature(rgba);
+	const { rgba, width, height } = await decodePngRgbaImage(await pngResponse.arrayBuffer());
+	return {
+		color: rgbaToColorSignature(rgba),
+		blurHash: encodeBlurHash4x3(rgba, width, height),
+	};
 }
 
 function readU32(bytes: Uint8Array, offset: number): number {

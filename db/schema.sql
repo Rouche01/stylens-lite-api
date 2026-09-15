@@ -279,6 +279,7 @@ CREATE TABLE IF NOT EXISTS outfit_clothing_items (
     closet_item_id TEXT NOT NULL,
     bounding_box TEXT NOT NULL, -- JSON coordinates: {"x", "y", "width", "height"}
     confidence TEXT CHECK(confidence IN ('high', 'medium', 'low')) DEFAULT 'medium',
+    blur_hash TEXT, -- nullable: 4×3 BlurHash of the garment crop for closet tiles
     created_at INTEGER NOT NULL,
     FOREIGN KEY (outfit_id) REFERENCES outfits(id) ON DELETE CASCADE,
     FOREIGN KEY (closet_item_id) REFERENCES closet_items(id) ON DELETE CASCADE

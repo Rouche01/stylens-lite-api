@@ -45,3 +45,11 @@ Useful flags: `--concurrency 4`, `--delay-ms 100`, `--limit N`, `--vars-file PAT
 - Idempotent: only rows where the hash column is `NULL` are updated.
 - Missing R2 objects are logged and skipped.
 - Component size is **4×3**, matching the Flutter encoder.
+- Closet tiles: apply `0026_add_closet_item_blur_hash.sql`, then:
+
+```bash
+npm run backfill:blurhash -- --closet-only --dry-run --limit 5
+npm run backfill:blurhash -- --closet-only --remote --env staging
+```
+
+Default run still backfills session images **and** closet crops. `--sessions-only` skips closet rows.
