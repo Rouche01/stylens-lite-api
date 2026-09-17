@@ -3,6 +3,7 @@ import { createClosetDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
 import { getIsolatedItemUrl, signClosetOriginalUrl, CLOSET_TILE_ISOLATE_WIDTH } from 'utils/assets.utils';
+import { isClosetBrowseItem } from 'utils/closet_browse';
 import { logRouteError } from 'utils/error';
 
 const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
@@ -10,7 +11,7 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 		const closetDB = createClosetDB(env.GOSTYLENS_DB);
 		const userId = request.user.dbId;
 
-		const items = await closetDB.getClosetItems(userId);
+		const items = (await closetDB.getClosetItems(userId)).filter(isClosetBrowseItem);
 
 		const requestUrl = new URL(request.url);
 		const domain = requestUrl.host;
