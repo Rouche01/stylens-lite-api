@@ -31,6 +31,7 @@ export type { ClosetMatchDigestJob, ClosetMatchDigestDecision } from './closetMa
 export {
 	IDENTITY_BUSY_RETRY_SECONDS,
 	IDENTITY_ERROR_RETRY_SECONDS,
+	IDENTITY_FAIL_AFTER_ATTEMPTS,
 	collectOutfitIdentityImages,
 	enqueueClosetIdentityJobs,
 	enqueueClosetIdentityFromClassification,

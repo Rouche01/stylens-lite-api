@@ -7,6 +7,8 @@ import { IdentityBusyError, type ProcessOutfitImageParams, type ProcessOutfitIma
 
 export const IDENTITY_BUSY_RETRY_SECONDS = 30;
 export const IDENTITY_ERROR_RETRY_SECONDS = 15;
+/** After this many queue deliveries, ack as failed so the processing indicator can stop. */
+export const IDENTITY_FAIL_AFTER_ATTEMPTS = 5;
 
 const OUTFIT_IMAGE_TAGS = new Set<StyleEntryTag['tag']>([
 	'session_state:primary_outfit_image',
@@ -23,15 +25,22 @@ export type ClosetIdentityQueueJob = {
 	source: 'session';
 };
 
-export type ClosetIdentityEnqueueStore = Pick<ClosetDB, 'tryInsertIdentityJob' | 'getIdentityJob'>;
+export type ClosetIdentityEnqueueStore = Pick<
+	ClosetDB,
+	'tryInsertIdentityJob' | 'getIdentityJob' | 'touchIdentityProgressActivity'
+>;
 
 export type ClosetIdentityRunStore = Pick<
 	ClosetDB,
-	'getIdentityJob' | 'saveIdentityJobExtraction' | 'markIdentityJobDone'
+	| 'getIdentityJob'
+	| 'saveIdentityJobExtraction'
+	| 'markIdentityJobDone'
+	| 'markIdentityJobStatus'
+	| 'touchIdentityProgressActivity'
 >;
 
 export type ClosetIdentityRunDecision =
-	| { action: 'ack'; reason: 'done' | 'invalid' | 'completed' }
+	| { action: 'ack'; reason: 'done' | 'invalid' | 'completed' | 'failed' }
 	| { action: 'retry'; delaySeconds: number; reason: 'busy' | 'extract_empty' | 'error' };
 
 export function collectOutfitIdentityImages(message: MessageEntry, tags: StyleEntryTag[]): RemoteImage[] {
@@ -121,6 +130,10 @@ export async function enqueueClosetIdentityJobs(params: {
 		});
 	}
 
+	if (enqueued > 0) {
+		await params.closet.touchIdentityProgressActivity(params.userId);
+	}
+
 	return { enqueued, skipped };
 }
 
@@ -152,6 +165,7 @@ export async function runClosetIdentityJob(params: {
 	closet: ClosetIdentityRunStore;
 	process: (input: ProcessOutfitImageParams) => Promise<ProcessOutfitImageResult | null>;
 	log: Logger;
+	attempts?: number;
 }): Promise<ClosetIdentityRunDecision> {
 	const userId = params.job.userId?.trim();
 	const imageKey = params.job.imageKey?.trim();
@@ -161,6 +175,10 @@ export async function runClosetIdentityJob(params: {
 			user_id: userId,
 			image_key: imageKey,
 		});
+		if (userId && imageKey) {
+			await params.closet.markIdentityJobStatus(userId, imageKey, 'failed');
+			await params.closet.touchIdentityProgressActivity(userId);
+		}
 		return { action: 'ack', reason: 'invalid' };
 	}
 
@@ -168,6 +186,10 @@ export async function runClosetIdentityJob(params: {
 	if (stored?.status === 'done') {
 		return { action: 'ack', reason: 'done' };
 	}
+
+	const attempts = params.attempts ?? 1;
+	await params.closet.markIdentityJobStatus(userId, imageKey, 'running');
+	await params.closet.touchIdentityProgressActivity(userId);
 
 	try {
 		const result = await params.process({
@@ -180,10 +202,11 @@ export async function runClosetIdentityJob(params: {
 			},
 		});
 		if (!result) {
-			params.log.warn('closet_identity_extract_empty', { user_id: userId, image_key: imageKey });
-			return { action: 'retry', delaySeconds: IDENTITY_ERROR_RETRY_SECONDS, reason: 'extract_empty' };
+			params.log.warn('closet_identity_extract_empty', { user_id: userId, image_key: imageKey, attempts });
+			return failOrRetry(params, userId, imageKey, attempts, 'extract_empty');
 		}
 		await params.closet.markIdentityJobDone(userId, imageKey, result.outfit_id);
+		await params.closet.touchIdentityProgressActivity(userId);
 		params.log.info('closet_identity_completed', {
 			user_id: userId,
 			image_key: imageKey,
@@ -192,12 +215,43 @@ export async function runClosetIdentityJob(params: {
 		return { action: 'ack', reason: 'completed' };
 	} catch (err) {
 		if (isIdentityBusyError(err)) {
-			params.log.info('closet_identity_busy', { user_id: userId, image_key: imageKey });
-			return { action: 'retry', delaySeconds: IDENTITY_BUSY_RETRY_SECONDS, reason: 'busy' };
+			params.log.info('closet_identity_busy', { user_id: userId, image_key: imageKey, attempts });
+			return failOrRetry(params, userId, imageKey, attempts, 'busy');
 		}
-		params.log.error('closet_identity_failed', { user_id: userId, image_key: imageKey }, err);
-		return { action: 'retry', delaySeconds: IDENTITY_ERROR_RETRY_SECONDS, reason: 'error' };
+		params.log.error('closet_identity_failed', { user_id: userId, image_key: imageKey, attempts }, err);
+		return failOrRetry(params, userId, imageKey, attempts, 'error');
 	}
+}
+
+async function failOrRetry(
+	params: {
+		closet: ClosetIdentityRunStore;
+		log: Logger;
+	},
+	userId: string,
+	imageKey: string,
+	attempts: number,
+	reason: 'busy' | 'extract_empty' | 'error'
+): Promise<ClosetIdentityRunDecision> {
+	if (attempts >= IDENTITY_FAIL_AFTER_ATTEMPTS) {
+		await params.closet.markIdentityJobStatus(userId, imageKey, 'failed');
+		await params.closet.touchIdentityProgressActivity(userId);
+		params.log.warn('closet_identity_gave_up', {
+			user_id: userId,
+			image_key: imageKey,
+			attempts,
+			reason,
+		});
+		return { action: 'ack', reason: 'failed' };
+	}
+
+	await params.closet.markIdentityJobStatus(userId, imageKey, 'queued');
+	await params.closet.touchIdentityProgressActivity(userId);
+	return {
+		action: 'retry',
+		delaySeconds: reason === 'busy' ? IDENTITY_BUSY_RETRY_SECONDS : IDENTITY_ERROR_RETRY_SECONDS,
+		reason,
+	};
 }
 
 function parseCachedExtraction(row: ClosetIdentityJobRow | null | undefined): OutfitExtractionResponse | undefined {

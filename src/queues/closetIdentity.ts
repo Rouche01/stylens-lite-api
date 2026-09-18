@@ -20,6 +20,7 @@ export async function handleClosetIdentityQueue(
 			closet,
 			process: (params) => processor.process(params),
 			log,
+			attempts: message.attempts,
 		});
 
 		if (decision.action === 'retry') {

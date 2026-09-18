@@ -3,6 +3,7 @@ import type { ClosetIdentityJobRow } from '../src/db/closet';
 import {
 	IDENTITY_BUSY_RETRY_SECONDS,
 	IDENTITY_ERROR_RETRY_SECONDS,
+	IDENTITY_FAIL_AFTER_ATTEMPTS,
 	collectOutfitIdentityImages,
 	enqueueClosetIdentityFromClassification,
 	enqueueClosetIdentityJobs,
@@ -83,6 +84,7 @@ describe('enqueueClosetIdentityJobs', () => {
 		expect(queue.sent).toHaveLength(2);
 		expect(queue.sent.map((job) => job.imageKey)).toEqual(['users/u1/a.jpg', 'users/u1/b.jpg']);
 		expect(closet.rows.size).toBe(2);
+		expect(closet.activityTouches).toBe(1);
 	});
 
 	it('does not enqueue non-outfit tags', async () => {
@@ -100,6 +102,7 @@ describe('enqueueClosetIdentityJobs', () => {
 
 		expect(result).toEqual({ enqueued: 0, skipped: 0 });
 		expect(queue.sent).toHaveLength(0);
+		expect(closet.activityTouches).toBe(0);
 	});
 
 	it('skips a photo that already finished identity', async () => {
@@ -118,6 +121,7 @@ describe('enqueueClosetIdentityJobs', () => {
 
 		expect(result).toEqual({ enqueued: 0, skipped: 1 });
 		expect(queue.sent).toHaveLength(0);
+		expect(closet.activityTouches).toBe(0);
 	});
 
 	it('re-sends a queued job so a lost queue message can recover', async () => {
@@ -136,6 +140,7 @@ describe('enqueueClosetIdentityJobs', () => {
 
 		expect(result).toEqual({ enqueued: 1, skipped: 0 });
 		expect(queue.sent).toHaveLength(1);
+		expect(closet.activityTouches).toBe(1);
 	});
 });
 
@@ -163,6 +168,7 @@ describe('runClosetIdentityJob', () => {
 		expect(message.acks).toBe(0);
 		expect(message.retries).toEqual([{ delaySeconds: IDENTITY_BUSY_RETRY_SECONDS }]);
 		expect(closet.rows.get('u1|users/u1/a.jpg')?.status).toBe('queued');
+		expect(closet.statusTrace).toEqual(['running', 'queued']);
 	});
 
 	it('acks an already completed job without processing', async () => {
@@ -207,6 +213,8 @@ describe('runClosetIdentityJob', () => {
 		expect(closet.rows.get('u1|users/u1/a.jpg')?.status).toBe('done');
 		expect(closet.rows.get('u1|users/u1/a.jpg')?.outfit_id).toBe('outfit-1');
 		expect(closet.rows.get('u1|users/u1/a.jpg')?.extraction_json).toBeTruthy();
+		expect(closet.statusTrace).toEqual(['running']);
+		expect(closet.activityTouches).toBeGreaterThan(0);
 	});
 
 	it('retries an empty extract without marking the job done', async () => {
@@ -226,6 +234,39 @@ describe('runClosetIdentityJob', () => {
 			reason: 'extract_empty',
 		});
 		expect(closet.rows.get('u1|users/u1/a.jpg')?.status).toBe('queued');
+		expect(closet.statusTrace).toEqual(['running', 'queued']);
+	});
+
+	it('acks as failed after the attempt cap', async () => {
+		const closet = memoryJobs();
+		closet.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'queued' }));
+
+		const decision = await runClosetIdentityJob({
+			job: queueJob(),
+			closet,
+			process: async () => null,
+			log: silentLogger(),
+			attempts: IDENTITY_FAIL_AFTER_ATTEMPTS,
+		});
+
+		expect(decision).toEqual({ action: 'ack', reason: 'failed' });
+		expect(closet.rows.get('u1|users/u1/a.jpg')?.status).toBe('failed');
+		expect(closet.statusTrace).toEqual(['running', 'failed']);
+	});
+
+	it('marks an invalid job failed when a row can be keyed', async () => {
+		const closet = memoryJobs();
+		closet.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'queued' }));
+
+		const decision = await runClosetIdentityJob({
+			job: { ...queueJob(), imageUrl: '' },
+			closet,
+			process: async () => null,
+			log: silentLogger(),
+		});
+
+		expect(decision).toEqual({ action: 'ack', reason: 'invalid' });
+		expect(closet.rows.get('u1|users/u1/a.jpg')?.status).toBe('failed');
 	});
 });
 
@@ -276,9 +317,12 @@ function memoryQueue() {
 
 function memoryJobs() {
 	const rows = new Map<string, ClosetIdentityJobRow>();
+	const statusTrace: Array<ClosetIdentityJobRow['status']> = [];
 	const keyOf = (userId: string, imageKey: string) => `${userId}|${imageKey}`;
 	return {
 		rows,
+		statusTrace,
+		activityTouches: 0,
 		async tryInsertIdentityJob(params: {
 			userId: string;
 			imageKey: string;
@@ -316,6 +360,15 @@ function memoryJobs() {
 			if (!row) return;
 			row.status = 'done';
 			row.outfit_id = outfitId;
+		},
+		async markIdentityJobStatus(userId: string, imageKey: string, status: Exclude<ClosetIdentityJobRow['status'], 'done'>) {
+			const row = rows.get(keyOf(userId, imageKey));
+			if (!row || row.status === 'done') return;
+			row.status = status;
+			statusTrace.push(status);
+		},
+		async touchIdentityProgressActivity() {
+			this.activityTouches += 1;
 		},
 	};
 }
