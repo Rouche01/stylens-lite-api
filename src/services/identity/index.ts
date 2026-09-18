@@ -54,6 +54,14 @@ export type {
 	ClosetIdentityProgressDecision,
 	ClosetIdentityRealtimePayload,
 } from './closetIdentityProgress';
+export {
+	notifyClosetCatalogIfChanged,
+	createClosetCatalogNotifier,
+} from './closetCatalogBroadcast';
+export type {
+	ClosetCatalogUpdatedPayload,
+	ClosetCatalogNotifier,
+} from './closetCatalogBroadcast';
 export type {
 	EmbedClosetCropParams,
 	EmbedClosetCropResult,

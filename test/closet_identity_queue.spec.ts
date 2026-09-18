@@ -11,6 +11,7 @@ import {
 	type ClosetIdentityQueueJob,
 } from '../src/services/identity/closetIdentityJob';
 import { IdentityBusyError, type ProcessOutfitImageResult } from '../src/services/identity/processOutfitImage';
+import { notifyClosetCatalogIfChanged } from '../src/services/identity/closetCatalogBroadcast';
 import { isAvatarGenerationQueue, isClosetIdentityQueue, isClosetMatchDigestQueue } from '../src/queues';
 import type { StyleEntryTag } from '../src/db/types';
 import type { MessageEntry, RemoteImage } from '../src/utils/types';
@@ -236,6 +237,108 @@ describe('runClosetIdentityJob', () => {
 		expect(closet.activityTouches).toBeGreaterThan(0);
 	});
 
+	it('broadcasts catalog ids once after a completed job', async () => {
+		const closet = memoryJobs();
+		closet.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'queued' }));
+		const realtime = memoryCatalogRealtime();
+
+		const decision = await runClosetIdentityJob({
+			job: queueJob(),
+			closet,
+			process: async (params) => ({
+				outfit_id: 'outfit-1',
+				image_key: params.imageKey,
+				extraction: { items: [] } as never,
+				items: [
+					catalogItem({ closet_item_id: 'top-1', identity_status: 'created', category: 'top', subcategory: 'shirt' }),
+					catalogItem({ closet_item_id: 'socks-1', identity_status: 'created', category: 'accessory', subcategory: 'socks' }),
+					catalogItem({ closet_item_id: null, identity_status: 'ask', category: 'top', subcategory: 'sweater' }),
+				],
+			}),
+			log: silentLogger(),
+			notifyCatalog: ({ userId, outfitId, items }) =>
+				notifyClosetCatalogIfChanged({
+					userId,
+					outfitId,
+					items,
+					realtime,
+					log: silentLogger(),
+				}),
+		});
+
+		expect(decision).toEqual({ action: 'ack', reason: 'completed' });
+		expect(realtime.events).toEqual([
+			{
+				userId: 'u1',
+				payload: {
+					reason: 'identity',
+					outfit_id: 'outfit-1',
+					closet_item_ids: ['top-1'],
+				},
+			},
+		]);
+	});
+
+	it('does not broadcast catalog when the photo is ask-only', async () => {
+		const closet = memoryJobs();
+		closet.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'queued' }));
+		const realtime = memoryCatalogRealtime();
+
+		await runClosetIdentityJob({
+			job: queueJob(),
+			closet,
+			process: async (params) => ({
+				outfit_id: 'outfit-1',
+				image_key: params.imageKey,
+				extraction: { items: [] } as never,
+				items: [
+					catalogItem({ closet_item_id: null, identity_status: 'ask', category: 'top', subcategory: 'shirt' }),
+				],
+			}),
+			log: silentLogger(),
+			notifyCatalog: ({ userId, outfitId, items }) =>
+				notifyClosetCatalogIfChanged({
+					userId,
+					outfitId,
+					items,
+					realtime,
+					log: silentLogger(),
+				}),
+		});
+
+		expect(realtime.events).toHaveLength(0);
+	});
+
+	it('does not broadcast catalog on failed give-up or already-done ack', async () => {
+		const realtime = memoryCatalogRealtime();
+		const notifyCatalog = async () => {
+			realtime.events.push({ userId: 'u1', payload: { reason: 'identity', outfit_id: 'x', closet_item_ids: ['nope'] } });
+		};
+
+		const failedCloset = memoryJobs();
+		failedCloset.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'queued' }));
+		await runClosetIdentityJob({
+			job: queueJob(),
+			closet: failedCloset,
+			process: async () => null,
+			log: silentLogger(),
+			attempts: IDENTITY_FAIL_AFTER_ATTEMPTS,
+			notifyCatalog,
+		});
+
+		const doneCloset = memoryJobs();
+		doneCloset.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'done', outfit_id: 'outfit-1' }));
+		await runClosetIdentityJob({
+			job: queueJob(),
+			closet: doneCloset,
+			process: async () => null,
+			log: silentLogger(),
+			notifyCatalog,
+		});
+
+		expect(realtime.events).toHaveLength(0);
+	});
+
 	it('retries an empty extract without marking the job done', async () => {
 		const closet = memoryJobs();
 		closet.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'queued' }));
@@ -321,6 +424,31 @@ function jobRow(overrides: Partial<ClosetIdentityJobRow> = {}): ClosetIdentityJo
 		created_at: 1,
 		updated_at: 1,
 		...overrides,
+	};
+}
+
+function catalogItem(item: {
+	closet_item_id: string | null;
+	identity_status: 'created' | 'ask' | 'failed';
+	category: string;
+	subcategory?: string | null;
+}): ProcessOutfitImageResult['items'][number] {
+	return item as ProcessOutfitImageResult['items'][number];
+}
+
+function memoryCatalogRealtime() {
+	const events: Array<{
+		userId: string;
+		payload: { reason: 'identity'; outfit_id: string | null; closet_item_ids: string[] };
+	}> = [];
+	return {
+		events,
+		async notifyClosetCatalogUpdated(
+			userId: string,
+			payload: (typeof events)[number]['payload']
+		) {
+			events.push({ userId, payload });
+		},
 	};
 }
 

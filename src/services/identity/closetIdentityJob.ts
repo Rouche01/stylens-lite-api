@@ -4,6 +4,7 @@ import type { OutfitExtractionResponse } from '../../types';
 import type { Logger } from '../../utils/logger.utils';
 import type { MessageEntry, RemoteImage } from '../../utils/types';
 import { IdentityBusyError, type ProcessOutfitImageParams, type ProcessOutfitImageResult } from './processOutfitImage';
+import type { ClosetCatalogNotifyItem } from '../../utils/closet_browse';
 
 export const IDENTITY_BUSY_RETRY_SECONDS = 30;
 export const IDENTITY_ERROR_RETRY_SECONDS = 15;
@@ -176,6 +177,11 @@ export async function runClosetIdentityJob(params: {
 	process: (input: ProcessOutfitImageParams) => Promise<ProcessOutfitImageResult | null>;
 	log: Logger;
 	attempts?: number;
+	notifyCatalog?: (params: {
+		userId: string;
+		outfitId: string;
+		items: readonly ClosetCatalogNotifyItem[];
+	}) => Promise<unknown>;
 }): Promise<ClosetIdentityRunDecision> {
 	const userId = params.job.userId?.trim();
 	const imageKey = params.job.imageKey?.trim();
@@ -217,6 +223,19 @@ export async function runClosetIdentityJob(params: {
 		}
 		await params.closet.markIdentityJobDone(userId, imageKey, result.outfit_id);
 		await params.closet.touchIdentityProgressActivity(userId);
+		try {
+			await params.notifyCatalog?.({
+				userId,
+				outfitId: result.outfit_id,
+				items: result.items,
+			});
+		} catch (err) {
+			params.log.warn(
+				'closet_catalog_broadcast_failed',
+				{ user_id: userId, outfit_id: result.outfit_id },
+				err
+			);
+		}
 		params.log.info('closet_identity_completed', {
 			user_id: userId,
 			image_key: imageKey,

@@ -61,6 +61,20 @@ export class RealtimeService {
 	) {
 		await this.broadcast(`closet-identity:${userId}`, 'closet_identity_updated', payload);
 	}
+
+	/**
+	 * Catalog mutation ping. Separate from progress — the client still loads tiles from GET.
+	 */
+	async notifyClosetCatalogUpdated(
+		userId: string,
+		payload: {
+			reason: 'identity';
+			outfit_id: string | null;
+			closet_item_ids: string[];
+		}
+	) {
+		await this.broadcast(`closet-identity:${userId}`, 'closet_catalog_updated', payload);
+	}
 }
 
 export const createRealtimeService = () => {

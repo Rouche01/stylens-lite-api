@@ -11,6 +11,7 @@ import {
 import { isUsableIdentityBox } from '../../utils/bounding_box';
 import { Logger, createLogger } from '../../utils/logger.utils';
 import { createOutfitExtractionService, OutfitExtractionService } from '../outfit_extraction.svc';
+import { createRealtimeService } from '../realtime.svc';
 import {
 	createIdentityService,
 	IdentityService,
@@ -22,6 +23,11 @@ import {
 import { isIdentityMatch } from './cropColor';
 import { closetItemVectorId } from './vectorize.store';
 import { createClosetMatchDigestScheduler } from './closetMatchDigest';
+import {
+	createClosetCatalogNotifier,
+	type ClosetCatalogNotifier,
+} from './closetCatalogBroadcast';
+import type { ClosetCatalogNotifyItem } from '../../utils/closet_browse';
 
 export type OutfitIdentityExtractor = Pick<OutfitExtractionService, 'extractOutfitItems'>;
 export type OutfitIdentityQueries = Pick<
@@ -277,7 +283,8 @@ export class OutfitIdentityProcessor {
 		private closet: OutfitIdentityStore,
 		private log: Logger,
 		private wait: IdentityWait = DEFAULT_WAIT,
-		private digest?: ClosetMatchDigestScheduler
+		private digest?: ClosetMatchDigestScheduler,
+		private catalog?: ClosetCatalogNotifier
 	) {}
 
 	async process(params: ProcessOutfitImageParams): Promise<ProcessOutfitImageResult | null> {
@@ -627,6 +634,14 @@ export class OutfitIdentityProcessor {
 			outfit_id: match.outfit_id,
 			closet_item_id: match.candidate_closet_item_id,
 		});
+		await this.notifyCatalog(match.user_id, match.outfit_id, [
+			{
+				closet_item_id: match.candidate_closet_item_id,
+				identity_status: 'created',
+				category: match.extract_snapshot.category,
+				subcategory: match.extract_snapshot.subcategory,
+			},
+		]);
 		return {
 			decision: 'same',
 			match_id: match.id,
@@ -690,6 +705,7 @@ export class OutfitIdentityProcessor {
 				outfit_id: match.outfit_id,
 				closet_item_id: processed.closet_item_id,
 			});
+			await this.notifyCatalog(match.user_id, match.outfit_id, [processed]);
 			return {
 				decision: 'new',
 				match_id: match.id,
@@ -794,6 +810,23 @@ export class OutfitIdentityProcessor {
 		}
 	}
 
+	private async notifyCatalog(
+		userId: string,
+		outfitId: string,
+		items: readonly ClosetCatalogNotifyItem[]
+	): Promise<void> {
+		if (!this.catalog) return;
+		try {
+			await this.catalog.notify({ userId, outfitId, items });
+		} catch (err) {
+			this.log.warn(
+				'closet_catalog_broadcast_failed',
+				{ user_id: userId, outfit_id: outfitId },
+				err
+			);
+		}
+	}
+
 	private async waitForClosetItem(itemId: string): Promise<{ id: string } | null> {
 		const deadline = this.wait.now() + this.wait.timeoutMs;
 		for (;;) {
@@ -815,7 +848,8 @@ export const createOutfitIdentityProcessor = (envBindings: Env, log?: Logger) =>
 		createClosetDB(envBindings.GOSTYLENS_DB),
 		logger,
 		DEFAULT_WAIT,
-		createClosetMatchDigestScheduler(envBindings, logger)
+		createClosetMatchDigestScheduler(envBindings, logger),
+		createClosetCatalogNotifier(createRealtimeService(), logger)
 	);
 };
 

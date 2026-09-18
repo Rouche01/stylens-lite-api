@@ -182,6 +182,7 @@ describe('OutfitIdentityProcessor', () => {
 		expect(harness.identity.prepares).toBe(1);
 		expect(harness.identity.deletes).toHaveLength(0);
 		expect(harness.digestSchedules).toEqual([]);
+		expect(harness.catalogNotifies).toEqual([]);
 		expect(harness.closet.outfits[0].image_width).toBe(1000);
 		expect(harness.closet.outfits[0].image_height).toBe(1500);
 	});
@@ -374,6 +375,13 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(harness.closet.matches[0].status).toBe('same');
 		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.identity.prepares).toBe(0);
+		expect(harness.catalogNotifies).toEqual([
+			{
+				userId: 'u1',
+				outfitId: 'outfit-1',
+				items: [{ closet_item_id: 'c1', identity_status: 'created' }],
+			},
+		]);
 	});
 
 	it('creates a new tile with create-commit even if the rejected candidate still matches', async () => {
@@ -404,6 +412,12 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		]);
 		expect(harness.identity.upserts).toHaveLength(1);
 		expect(harness.identity.deletes).toHaveLength(0);
+		expect(harness.catalogNotifies).toHaveLength(1);
+		expect(harness.catalogNotifies[0]).toMatchObject({
+			userId: 'u1',
+			outfitId: 'outfit-1',
+			items: [{ closet_item_id: result.closet_item_id, identity_status: 'created' }],
+		});
 	});
 
 	it('asks against a different neighbor instead of creating a second pending row', async () => {
@@ -452,6 +466,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(harness.closet.items.map((item) => item.id)).toEqual(['c2', 'c1']);
 		expect(harness.identity.deletes).toHaveLength(1);
 		expect(harness.digestSchedules).toEqual(['u1']);
+		expect(harness.catalogNotifies).toHaveLength(0);
 	});
 
 	it('leaves the match pending when create-commit fails', async () => {
@@ -468,6 +483,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(result.identity_reason).toBe('upsert_failed');
 		expect(harness.closet.matches[0].status).toBe('pending');
 		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1']);
+		expect(harness.catalogNotifies).toHaveLength(0);
 	});
 
 	it('rejects an already resolved match', async () => {
@@ -574,6 +590,11 @@ function createHarness(options: {
 		},
 	};
 	const digestSchedules: string[] = [];
+	const catalogNotifies: Array<{
+		userId: string;
+		outfitId: string | null;
+		items: Array<{ closet_item_id: string | null; identity_status: string }>;
+	}> = [];
 	const processor = new OutfitIdentityProcessor(
 		{ extractOutfitItems: async () => extraction },
 		identity as never,
@@ -584,9 +605,21 @@ function createHarness(options: {
 			schedule: async (userId) => {
 				digestSchedules.push(userId);
 			},
+		},
+		{
+			notify: async (params) => {
+				catalogNotifies.push({
+					userId: params.userId,
+					outfitId: params.outfitId,
+					items: params.items.map((item) => ({
+						closet_item_id: item.closet_item_id,
+						identity_status: item.identity_status,
+					})),
+				});
+			},
 		}
 	);
-	return { processor, closet, identity, digestSchedules };
+	return { processor, closet, identity, digestSchedules, catalogNotifies };
 }
 
 class MemoryCloset {

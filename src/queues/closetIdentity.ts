@@ -9,6 +9,7 @@ import {
 	type ClosetIdentitySettleJob,
 } from '../services/identity/closetIdentityProgress';
 import { createOutfitIdentityProcessor } from '../services/identity/processOutfitImage';
+import { notifyClosetCatalogIfChanged } from '../services/identity/closetCatalogBroadcast';
 import { createRealtimeService } from '../services/realtime.svc';
 import type { Logger } from '../utils/logger.utils';
 
@@ -35,6 +36,14 @@ export async function handleClosetIdentityQueue(
 			process: (params) => processor.process(params),
 			log,
 			attempts: message.attempts,
+			notifyCatalog: ({ userId, outfitId, items }) =>
+				notifyClosetCatalogIfChanged({
+					userId,
+					outfitId,
+					items,
+					realtime,
+					log,
+				}),
 		});
 
 		if (decision.action === 'retry') {
