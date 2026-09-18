@@ -78,6 +78,15 @@ export type ClosetItemMatchWithOutfit = ClosetItemMatch & {
 	outfit_original_image_url: string;
 };
 
+export type ClosetIdentityJobStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export type ClosetIdentityJobCounts = {
+	queued: number;
+	running: number;
+	done: number;
+	failed: number;
+};
+
 export type ClosetIdentityJobRow = {
 	user_id: string;
 	image_key: string;
@@ -85,12 +94,23 @@ export type ClosetIdentityJobRow = {
 	session_id: string | null;
 	entry_id: string | null;
 	source: string;
-	status: 'queued' | 'done';
+	status: ClosetIdentityJobStatus;
 	outfit_id: string | null;
 	extraction_json: string | null;
 	created_at: number;
 	updated_at: number;
 };
+
+export type ClosetIdentityProgressRow = {
+	user_id: string;
+	last_activity_at: number;
+	last_started_at: number | null;
+	last_settled_at: number | null;
+};
+
+export function identityJobsProcessing(counts: ClosetIdentityJobCounts): boolean {
+	return counts.queued + counts.running > 0;
+}
 
 export type OutfitLinkedItem = {
 	closet_item_id: string;
@@ -554,6 +574,108 @@ export class ClosetDB {
 				`
 			)
 			.bind(outfitId, now, userId, imageKey)
+			.run();
+	}
+
+	/** Set queued/running/failed. Does not move a done job, and does not set done (use markIdentityJobDone). */
+	async markIdentityJobStatus(
+		userId: string,
+		imageKey: string,
+		status: Exclude<ClosetIdentityJobStatus, 'done'>
+	): Promise<void> {
+		const now = Date.now();
+		await this.db
+			.prepare(
+				`
+				UPDATE closet_identity_jobs
+				SET status = ?, updated_at = ?
+				WHERE user_id = ? AND image_key = ? AND status != 'done'
+				`
+			)
+			.bind(status, now, userId, imageKey)
+			.run();
+	}
+
+	async countIdentityJobsByStatus(userId: string): Promise<ClosetIdentityJobCounts> {
+		const result = await this.db
+			.prepare(
+				`
+				SELECT status, COUNT(*) as total
+				FROM closet_identity_jobs
+				WHERE user_id = ?
+				GROUP BY status
+				`
+			)
+			.bind(userId)
+			.all<{ status: string; total: number }>();
+
+		const counts: ClosetIdentityJobCounts = { queued: 0, running: 0, done: 0, failed: 0 };
+		for (const row of result.results ?? []) {
+			if (row.status === 'queued' || row.status === 'running' || row.status === 'done' || row.status === 'failed') {
+				counts[row.status] = Number(row.total) || 0;
+			}
+		}
+		return counts;
+	}
+
+	async touchIdentityProgressActivity(userId: string, atMs = Date.now()): Promise<void> {
+		await this.db
+			.prepare(
+				`
+				INSERT INTO closet_identity_progress (user_id, last_activity_at, last_started_at, last_settled_at)
+				VALUES (?, ?, NULL, NULL)
+				ON CONFLICT(user_id) DO UPDATE SET last_activity_at = excluded.last_activity_at
+				`
+			)
+			.bind(userId, atMs)
+			.run();
+	}
+
+	async getIdentityProgressState(userId: string): Promise<ClosetIdentityProgressRow | null> {
+		const row = await this.db
+			.prepare(
+				`
+				SELECT user_id, last_activity_at, last_started_at, last_settled_at
+				FROM closet_identity_progress
+				WHERE user_id = ?
+				`
+			)
+			.bind(userId)
+			.first<ClosetIdentityProgressRow>();
+		return row ?? null;
+	}
+
+	async markIdentityProgressStarted(userId: string, atMs = Date.now()): Promise<void> {
+		const result = await this.db
+			.prepare(`UPDATE closet_identity_progress SET last_started_at = ? WHERE user_id = ?`)
+			.bind(atMs, userId)
+			.run();
+		if ((result.meta.changes ?? 0) > 0) return;
+		await this.db
+			.prepare(
+				`
+				INSERT INTO closet_identity_progress (user_id, last_activity_at, last_started_at, last_settled_at)
+				VALUES (?, ?, ?, NULL)
+				`
+			)
+			.bind(userId, atMs, atMs)
+			.run();
+	}
+
+	async markIdentityProgressSettled(userId: string, atMs = Date.now()): Promise<void> {
+		const result = await this.db
+			.prepare(`UPDATE closet_identity_progress SET last_settled_at = ? WHERE user_id = ?`)
+			.bind(atMs, userId)
+			.run();
+		if ((result.meta.changes ?? 0) > 0) return;
+		await this.db
+			.prepare(
+				`
+				INSERT INTO closet_identity_progress (user_id, last_activity_at, last_started_at, last_settled_at)
+				VALUES (?, ?, NULL, ?)
+				`
+			)
+			.bind(userId, atMs, atMs)
 			.run();
 	}
 

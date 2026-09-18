@@ -336,7 +336,7 @@ CREATE TABLE IF NOT EXISTS closet_identity_jobs (
 	session_id TEXT,
 	entry_id TEXT,
 	source TEXT NOT NULL DEFAULT 'session',
-	status TEXT NOT NULL CHECK(status IN ('queued', 'done')) DEFAULT 'queued',
+	status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'done', 'failed')) DEFAULT 'queued',
 	outfit_id TEXT,
 	extraction_json TEXT,
 	created_at INTEGER NOT NULL,
@@ -346,6 +346,16 @@ CREATE TABLE IF NOT EXISTS closet_identity_jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_closet_identity_jobs_status ON closet_identity_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_closet_identity_jobs_user_status ON closet_identity_jobs(user_id, status);
+
+-- Per-user batch progress for the closet processing indicator (start/settle, not per photo).
+CREATE TABLE IF NOT EXISTS closet_identity_progress (
+	user_id TEXT PRIMARY KEY,
+	last_activity_at INTEGER NOT NULL,
+	last_started_at INTEGER,
+	last_settled_at INTEGER,
+	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 
 
 
