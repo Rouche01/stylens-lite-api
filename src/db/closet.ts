@@ -112,6 +112,21 @@ export function identityJobsProcessing(counts: ClosetIdentityJobCounts): boolean
 	return counts.queued + counts.running > 0;
 }
 
+/** Client payload for GET /closet/identity/status. Failed is counted but does not keep processing on. */
+export function closetIdentityStatusPayload(counts: ClosetIdentityJobCounts): {
+	processing: boolean;
+	queued: number;
+	running: number;
+	failed: number;
+} {
+	return {
+		processing: identityJobsProcessing(counts),
+		queued: counts.queued,
+		running: counts.running,
+		failed: counts.failed,
+	};
+}
+
 export type OutfitLinkedItem = {
 	closet_item_id: string;
 	label: string;

@@ -9,6 +9,7 @@ import deleteClosetItemHandler from './handlers/deleteClosetItemHandler';
 import previewClosetItemHandler from './handlers/previewClosetItemHandler';
 import embedClosetCropHandler from './handlers/embedClosetCropHandler';
 import queryClosetCropHandler from './handlers/queryClosetCropHandler';
+import getClosetIdentityStatusHandler from './handlers/getClosetIdentityStatusHandler';
 import listPendingClosetMatchesHandler from './handlers/listPendingClosetMatchesHandler';
 import resolveClosetMatchHandler from './handlers/resolveClosetMatchHandler';
 
@@ -16,6 +17,7 @@ const router = Router({ base: '/closet' });
 
 router.post('/identity/embed', adminApiKeyMiddleware, embedClosetCropHandler);
 router.post('/identity/query', adminApiKeyMiddleware, queryClosetCropHandler);
+router.get('/identity/status', authMiddleware, dbIdMiddleware, getClosetIdentityStatusHandler);
 router.get('/items/:id/preview', adminApiKeyQueryMiddleware, previewClosetItemHandler); // `?layout=closet` = padded tile vs person-centered native-aspect crop + dim
 router.get('/items', authMiddleware, dbIdMiddleware, getClosetItemsHandler);
 router.get('/items/:id', authMiddleware, dbIdMiddleware, getClosetItemDetailsHandler);

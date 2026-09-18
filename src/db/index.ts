@@ -75,3 +75,4 @@ export {
 	EmailSegmentsDB,
 	AvatarsDB,
 };
+export { closetIdentityStatusPayload, identityJobsProcessing } from './closet';
