@@ -1,9 +1,8 @@
 import { createPostHogSink } from '../services/posthog.svc';
 import { createLogger } from '../utils/logger.utils';
 import { handleAvatarGenerationQueue } from './avatar';
-import { handleClosetIdentityQueue } from './closetIdentity';
+import { handleClosetIdentityQueue, type ClosetIdentityQueueMessage } from './closetIdentity';
 import { handleClosetMatchDigestQueue } from './closetMatchDigest';
-import type { ClosetIdentityQueueJob } from '../services/identity/closetIdentityJob';
 import type { ClosetMatchDigestJob } from '../services/identity/closetMatchDigest';
 import type { AvatarGenerationJob } from '../services/avatar';
 
@@ -40,7 +39,7 @@ export async function dispatchQueue(
 			return;
 		}
 		if (isClosetIdentityQueue(batch.queue)) {
-			await handleClosetIdentityQueue(batch as MessageBatch<ClosetIdentityQueueJob>, env, log);
+			await handleClosetIdentityQueue(batch as MessageBatch<ClosetIdentityQueueMessage>, env, log);
 			return;
 		}
 		if (isAvatarGenerationQueue(batch.queue)) {

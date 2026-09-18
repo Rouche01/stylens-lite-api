@@ -41,6 +41,19 @@ export type {
 	ClosetIdentityQueueJob,
 	ClosetIdentityRunDecision,
 } from './closetIdentityJob';
+export {
+	IDENTITY_PROGRESS_SETTLE_SECONDS,
+	decideClosetIdentityProgress,
+	scheduleClosetIdentitySettle,
+	runClosetIdentityProgress,
+	isClosetIdentitySettleJob,
+	inFlightIdentityJobs,
+} from './closetIdentityProgress';
+export type {
+	ClosetIdentitySettleJob,
+	ClosetIdentityProgressDecision,
+	ClosetIdentityRealtimePayload,
+} from './closetIdentityProgress';
 export type {
 	EmbedClosetCropParams,
 	EmbedClosetCropResult,

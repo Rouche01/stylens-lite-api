@@ -8,6 +8,8 @@ import { createVoltMemService, isVoltMemWriteTag, type VoltMemService } from './
 import { createAvatarService, type AvatarService } from './avatar';
 import { ModelProvider, ModelUseCase } from './model_config.svc';
 import { enqueueClosetIdentityFromClassification } from './identity/closetIdentityJob';
+import { runClosetIdentityProgress } from './identity/closetIdentityProgress';
+import { createRealtimeService } from './realtime.svc';
 import { createLogger } from '../utils/logger.utils';
 
 export type ClosetIdentityEnqueue = {
@@ -323,13 +325,25 @@ export const createClassificationService = (database: D1Database, env?: Env) => 
 	const avatarService = env ? createAvatarService(env) : null;
 	const identityEnqueue: ClosetIdentityEnqueue | null = env
 		? {
-				enqueue: (params) =>
-					enqueueClosetIdentityFromClassification({
+				enqueue: (params) => {
+					const closet = createClosetDB(env.GOSTYLENS_DB);
+					const log = createLogger({ env: env.ENV_NAME });
+					return enqueueClosetIdentityFromClassification({
 						queue: env.CLOSET_IDENTITY_QUEUE,
-						closet: createClosetDB(env.GOSTYLENS_DB),
-						log: createLogger({ env: env.ENV_NAME }),
+						closet,
+						log,
 						...params,
-					}),
+						syncProgress: (userId) =>
+							runClosetIdentityProgress({
+								userId,
+								closet,
+								realtime: createRealtimeService(),
+								log,
+								queue: env.CLOSET_IDENTITY_QUEUE,
+								scheduleOnRetry: true,
+							}),
+					});
+				},
 			}
 		: null;
 	return new ClassificationService(llmService, styleAnalysisDB, voltmem, avatarService, identityEnqueue);

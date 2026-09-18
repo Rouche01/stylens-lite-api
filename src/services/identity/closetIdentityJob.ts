@@ -86,9 +86,10 @@ export async function enqueueClosetIdentityJobs(params: {
 	sessionId?: string;
 	entryId?: string;
 	source?: ClosetIdentityQueueJob['source'];
+	syncProgress?: (userId: string) => Promise<unknown>;
 }): Promise<{ enqueued: number; skipped: number }> {
-	let enqueued = 0;
 	let skipped = 0;
+	const payloads: ClosetIdentityQueueJob[] = [];
 
 	for (const image of params.images) {
 		if (!image.key || !image.url) {
@@ -111,7 +112,7 @@ export async function enqueueClosetIdentityJobs(params: {
 			continue;
 		}
 
-		const payload: ClosetIdentityQueueJob = {
+		payloads.push({
 			kind: 'closet_identity',
 			userId: params.userId,
 			imageKey: image.key,
@@ -119,22 +120,29 @@ export async function enqueueClosetIdentityJobs(params: {
 			sessionId: params.sessionId,
 			entryId: params.entryId,
 			source: 'session',
-		};
+		});
+	}
+
+	if (payloads.length > 0) {
+		await params.closet.touchIdentityProgressActivity(params.userId);
+		try {
+			await params.syncProgress?.(params.userId);
+		} catch (err) {
+			params.log.warn('closet_identity_progress_sync_failed', { user_id: params.userId }, err);
+		}
+	}
+
+	for (const payload of payloads) {
 		await params.queue.send(payload);
-		enqueued += 1;
 		params.log.info('closet_identity_enqueued', {
 			user_id: params.userId,
-			image_key: image.key,
+			image_key: payload.imageKey,
 			session_id: params.sessionId,
 			entry_id: params.entryId,
 		});
 	}
 
-	if (enqueued > 0) {
-		await params.closet.touchIdentityProgressActivity(params.userId);
-	}
-
-	return { enqueued, skipped };
+	return { enqueued: payloads.length, skipped };
 }
 
 export async function enqueueClosetIdentityFromClassification(params: {
@@ -146,6 +154,7 @@ export async function enqueueClosetIdentityFromClassification(params: {
 	tags: StyleEntryTag[];
 	sessionId?: string;
 	entryId: string;
+	syncProgress?: (userId: string) => Promise<unknown>;
 }): Promise<{ enqueued: number; skipped: number }> {
 	const images = collectOutfitIdentityImages(params.message, params.tags);
 	return enqueueClosetIdentityJobs({
@@ -157,6 +166,7 @@ export async function enqueueClosetIdentityFromClassification(params: {
 		sessionId: params.sessionId,
 		entryId: params.entryId,
 		source: 'session',
+		syncProgress: params.syncProgress,
 	});
 }
 

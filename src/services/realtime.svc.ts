@@ -44,6 +44,23 @@ export class RealtimeService {
 			hasReachedLimit
 		});
 	}
+
+	/**
+	 * Batch closet-identity progress. Only started (idle → in-flight) and settled
+	 * (in-flight stayed 0 after the quiet window) — never per photo.
+	 */
+	async notifyClosetIdentityUpdated(
+		userId: string,
+		payload: {
+			processing: boolean;
+			queued: number;
+			running: number;
+			failed: number;
+			phase: 'started' | 'settled';
+		}
+	) {
+		await this.broadcast(`closet-identity:${userId}`, 'closet_identity_updated', payload);
+	}
 }
 
 export const createRealtimeService = () => {

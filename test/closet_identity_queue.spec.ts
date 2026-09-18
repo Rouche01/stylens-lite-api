@@ -66,9 +66,17 @@ describe('collectOutfitIdentityImages', () => {
 
 describe('enqueueClosetIdentityJobs', () => {
 	it('enqueues one job per unique outfit image', async () => {
-		const queue = memoryQueue();
 		const closet = memoryJobs();
 		const images = [remoteImage('users/u1/a.jpg'), remoteImage('users/u1/b.jpg')];
+		const progressSyncs: string[] = [];
+		const order: string[] = [];
+		const queue = {
+			sent: [] as ClosetIdentityQueueJob[],
+			async send(job: ClosetIdentityQueueJob) {
+				order.push('send');
+				this.sent.push(job);
+			},
+		};
 
 		const result = await enqueueClosetIdentityJobs({
 			queue,
@@ -78,6 +86,10 @@ describe('enqueueClosetIdentityJobs', () => {
 			images,
 			sessionId: 's1',
 			entryId: 'e1',
+			syncProgress: async (userId) => {
+				order.push('sync');
+				progressSyncs.push(userId);
+			},
 		});
 
 		expect(result).toEqual({ enqueued: 2, skipped: 0 });
@@ -85,6 +97,8 @@ describe('enqueueClosetIdentityJobs', () => {
 		expect(queue.sent.map((job) => job.imageKey)).toEqual(['users/u1/a.jpg', 'users/u1/b.jpg']);
 		expect(closet.rows.size).toBe(2);
 		expect(closet.activityTouches).toBe(1);
+		expect(progressSyncs).toEqual(['u1']);
+		expect(order).toEqual(['sync', 'send', 'send']);
 	});
 
 	it('does not enqueue non-outfit tags', async () => {
@@ -109,6 +123,7 @@ describe('enqueueClosetIdentityJobs', () => {
 		const queue = memoryQueue();
 		const closet = memoryJobs();
 		closet.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'done' }));
+		const progressSyncs: string[] = [];
 
 		const result = await enqueueClosetIdentityJobs({
 			queue,
@@ -117,11 +132,15 @@ describe('enqueueClosetIdentityJobs', () => {
 			userId: 'u1',
 			images: [remoteImage('users/u1/a.jpg')],
 			entryId: 'e1',
+			syncProgress: async (userId) => {
+				progressSyncs.push(userId);
+			},
 		});
 
 		expect(result).toEqual({ enqueued: 0, skipped: 1 });
 		expect(queue.sent).toHaveLength(0);
 		expect(closet.activityTouches).toBe(0);
+		expect(progressSyncs).toHaveLength(0);
 	});
 
 	it('re-sends a queued job so a lost queue message can recover', async () => {
