@@ -377,6 +377,12 @@ export class OutfitIdentityProcessor {
 		}
 	}
 
+	/**
+	 * Resolve a pending ask over HTTP.
+	 * Never acquires identity_inflight / never throws IdentityBusyError.
+	 * Prefer cached probe_embed; Replicate only if probe missing/stale.
+	 * new = CAS + D1 + enqueue index; same = CAS + link.
+	 */
 	async resolveMatch(params: ResolveClosetMatchParams): Promise<ResolveClosetMatchResult> {
 		const match = await this.closet.getMatchWithOutfit(params.userId, params.matchId);
 		if (!match) {

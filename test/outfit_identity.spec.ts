@@ -887,6 +887,7 @@ describe('serial identity writer', () => {
 		const harness = createHarness({ neighbors: [] });
 		harness.closet.lock = { userId: 'u1', jobId: 'outfit-writer' };
 		const match = seedPendingMatch(harness.closet);
+		const attemptsBefore = harness.closet.lockAcquireAttempts;
 
 		const result = await harness.processor.resolveMatch({
 			userId: 'u1',
@@ -896,7 +897,9 @@ describe('serial identity writer', () => {
 
 		expect(result.identity_status).toBe('created');
 		expect(harness.closet.lock).toEqual({ userId: 'u1', jobId: 'outfit-writer' });
+		expect(harness.closet.lockAcquireAttempts).toBe(attemptsBefore);
 		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.identity.prepares).toBe(0);
 		expect(harness.repairSends).toHaveLength(1);
 	});
 
@@ -904,6 +907,7 @@ describe('serial identity writer', () => {
 		const harness = createHarness({ neighbors: [] });
 		harness.closet.lock = { userId: 'u1', jobId: 'outfit-writer' };
 		const match = seedPendingMatch(harness.closet);
+		const attemptsBefore = harness.closet.lockAcquireAttempts;
 
 		const result = await harness.processor.resolveMatch({
 			userId: 'u1',
@@ -914,8 +918,24 @@ describe('serial identity writer', () => {
 		expect(result.identity_status).toBe('created');
 		expect(result.closet_item_id).toBe('c1');
 		expect(harness.closet.lock).toEqual({ userId: 'u1', jobId: 'outfit-writer' });
+		expect(harness.closet.lockAcquireAttempts).toBe(attemptsBefore);
 		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.identity.prepares).toBe(0);
 		expect(harness.repairSends).toEqual([]);
+	});
+
+	it('resolve-new never throws IdentityBusyError while the outfit writer is held', async () => {
+		const harness = createHarness({ neighbors: [] });
+		harness.closet.lock = { userId: 'u1', jobId: 'outfit-writer' };
+		const match = seedPendingMatch(harness.closet);
+
+		await expect(
+			harness.processor.resolveMatch({
+				userId: 'u1',
+				matchId: match.id,
+				decision: 'new',
+			})
+		).resolves.toMatchObject({ identity_status: 'created' });
 	});
 
 	it('gates prior unindexed creates before ANN on the next outfit', async () => {
@@ -1129,6 +1149,7 @@ function createHarness(options: {
 	matches: ClosetItemMatch[] = [];
 	askTouches: string[] = [];
 	lock: { userId: string; jobId: string } | null = null;
+	lockAcquireAttempts = 0;
 	stealClaimAs: 'same' | 'new' | null = null;
 	stealResolvedClosetItemId: string | null = null;
 	probeEmbeds: Record<string, NonNullable<ClosetItemMatch['probe_embed']>> = {};
@@ -1136,6 +1157,7 @@ function createHarness(options: {
 	constructor(private options: { d1Error?: Error } = {}) {}
 
 	async tryAcquireIdentityLock(userId: string, jobId: string): Promise<boolean> {
+		this.lockAcquireAttempts += 1;
 		if (this.lock) return false;
 		this.lock = { userId, jobId };
 		return true;

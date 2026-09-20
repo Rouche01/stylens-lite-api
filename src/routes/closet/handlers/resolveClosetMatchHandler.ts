@@ -14,6 +14,10 @@ type ResolveClosetMatchBody = {
 	userId?: string;
 };
 
+/**
+ * POST resolve for a pending closet match.
+ * Must stay free of IdentityBusyError / writer-lock waits; Replicate only if probe missing.
+ */
 const resolveClosetMatchHandler: RequestHandler<ApiRequest> = async (request) => {
 	try {
 		const matchId = request.params.id?.trim();
