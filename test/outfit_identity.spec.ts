@@ -10,6 +10,7 @@ import {
 import {
 	ClosetMatchNotFoundError,
 	ClosetMatchResolvedError,
+	IdentityBusyError,
 	OutfitIdentityProcessor,
 	candidateClosetItemId,
 	closetMatchProbeFromPrepared,
@@ -429,7 +430,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 				boundingBox: BOX,
 			},
 		]);
-		expect(harness.identity.upserts).toHaveLength(1);
+		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.identity.deletes).toHaveLength(0);
 		expect(harness.identity.prepares).toBe(0);
 		expect(harness.identity.queries).toBe(0);
@@ -507,7 +508,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(result.identity_status).toBe('created');
 		expect(result.closet_item_id).toBeTruthy();
 		expect(harness.identity.prepares).toBe(1);
-		expect(harness.identity.upserts).toHaveLength(1);
+		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.closet.matches[0].status).toBe('new');
 	});
 
@@ -525,7 +526,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 
 		expect(result.identity_status).toBe('created');
 		expect(harness.identity.prepares).toBe(1);
-		expect(harness.identity.upserts).toHaveLength(1);
+		expect(harness.identity.upserts).toHaveLength(0);
 	});
 
 	it('leaves the match pending when fallback embed throws', async () => {
@@ -548,7 +549,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(harness.repairSends).toEqual([]);
 	});
 
-	it('still creates the tile when vector upsert fails on resolve-new', async () => {
+	it('enqueues index onto the writer queue without Vectorize on resolve-new', async () => {
 		const harness = createHarness({ upsertError: new Error('vectorize down') });
 		const match = seedPendingMatch(harness.closet);
 
@@ -561,8 +562,12 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(result.identity_status).toBe('created');
 		expect(result.closet_item_id).toBeTruthy();
 		expect(harness.identity.prepares).toBe(0);
+		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.closet.matches[0].status).toBe('new');
 		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1', result.closet_item_id]);
+		expect(harness.closet.items.find((item) => item.id === result.closet_item_id)?.index_status).toBe(
+			'indexing'
+		);
 		expect(harness.catalogNotifies).toHaveLength(1);
 		expect(harness.closet.lock).toBeNull();
 		expect(harness.repairSends).toEqual([
@@ -575,11 +580,8 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		]);
 	});
 
-	it('returns 200 on retry after an upsert hiccup once the tile already exists', async () => {
-		const harness = createHarness({
-			upsertError: new Error('vectorize down'),
-			upsertFailOnce: true,
-		});
+	it('returns 200 on retry once the tile already exists', async () => {
+		const harness = createHarness({ neighbors: [] });
 		const match = seedPendingMatch(harness.closet);
 
 		const first = await harness.processor.resolveMatch({
@@ -599,6 +601,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(retry.identity_status).toBe('created');
 		expect(retry.closet_item_id).toBe(first.closet_item_id);
 		expect(harness.closet.items.filter((item) => item.id !== 'c1')).toHaveLength(1);
+		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.identity.deletes).toHaveLength(0);
 		expect(harness.closet.lock).toBeNull();
 	});
@@ -673,7 +676,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(again.closet_item_id).toBe(first.closet_item_id);
 		expect(harness.closet.items.filter((item) => item.id !== 'c1')).toHaveLength(1);
 		expect(harness.closet.links).toHaveLength(1);
-		expect(harness.identity.upserts).toHaveLength(1);
+		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.identity.prepares).toBe(0);
 	});
 
@@ -721,9 +724,17 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 				boundingBox: BOX,
 			},
 		]);
-		expect(harness.identity.upserts).toEqual([{ closetItemId: 'reserved-1' }]);
+		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.identity.prepares).toBe(0);
 		expect(harness.closet.matches[0].status).toBe('new');
+		expect(harness.repairSends).toEqual([
+			{
+				kind: 'closet_vector_repair',
+				closetItemId: 'reserved-1',
+				matchId: match.id,
+				userId: 'u1',
+			},
+		]);
 	});
 
 	it('returns 200 for the CAS-losing new tap when the winner was also new', async () => {
@@ -790,6 +801,102 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		await expect(
 			harness.processor.resolveMatch({ userId: 'u1', matchId: 'missing', decision: 'same' })
 		).rejects.toBeInstanceOf(ClosetMatchNotFoundError);
+	});
+});
+
+describe('serial identity writer', () => {
+	it('holds identity_inflight for outfit process and releases it', async () => {
+		const harness = createHarness({ neighbors: [] });
+		let lockDuringProcess: { userId: string; jobId: string } | null = null;
+		const originalCreate = harness.closet.createClosetItem.bind(harness.closet);
+		harness.closet.createClosetItem = async (params) => {
+			lockDuringProcess = harness.closet.lock;
+			return originalCreate(params);
+		};
+
+		await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/test.jpg',
+		});
+
+		expect(lockDuringProcess).toMatchObject({ userId: 'u1' });
+		expect(harness.closet.lock).toBeNull();
+		expect(harness.identity.upserts).toHaveLength(1);
+	});
+
+	it('processes crops sequentially under one writer lock', async () => {
+		const harness = createHarness({
+			items: [clothingItem(), clothingItem({ label: 'navy pants', category: ClothingItemCategory.BOTTOM })],
+			neighbors: [],
+		});
+		const order: string[] = [];
+		const originalPrepare = harness.identity.prepareClosetCrop;
+		harness.identity.prepareClosetCrop = async () => {
+			order.push(`prepare:${harness.closet.lock ? 'locked' : 'unlocked'}`);
+			return originalPrepare();
+		};
+
+		const result = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/test.jpg',
+		});
+
+		expect(result?.items).toHaveLength(2);
+		expect(order).toEqual(['prepare:locked', 'prepare:locked']);
+		expect(harness.closet.lock).toBeNull();
+	});
+
+	it('throws IdentityBusyError when another outfit writer holds the lock', async () => {
+		const harness = createHarness({ neighbors: [] });
+		harness.closet.lock = { userId: 'u1', jobId: 'other-job' };
+
+		await expect(
+			harness.processor.process({
+				userId: 'u1',
+				imageUrl: 'https://img/test.jpg',
+				imageKey: 'users/u1/busy.jpg',
+			})
+		).rejects.toBeInstanceOf(IdentityBusyError);
+
+		expect(harness.closet.lock).toEqual({ userId: 'u1', jobId: 'other-job' });
+		expect(harness.closet.items).toHaveLength(0);
+	});
+
+	it('resolve-new commits D1 without taking the identity lock', async () => {
+		const harness = createHarness({ neighbors: [] });
+		harness.closet.lock = { userId: 'u1', jobId: 'outfit-writer' };
+		const match = seedPendingMatch(harness.closet);
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(result.identity_status).toBe('created');
+		expect(harness.closet.lock).toEqual({ userId: 'u1', jobId: 'outfit-writer' });
+		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.repairSends).toHaveLength(1);
+	});
+
+	it('resolve-same links without taking the identity lock', async () => {
+		const harness = createHarness({ neighbors: [] });
+		harness.closet.lock = { userId: 'u1', jobId: 'outfit-writer' };
+		const match = seedPendingMatch(harness.closet);
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'same',
+		});
+
+		expect(result.identity_status).toBe('created');
+		expect(result.closet_item_id).toBe('c1');
+		expect(harness.closet.lock).toEqual({ userId: 'u1', jobId: 'outfit-writer' });
+		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.repairSends).toEqual([]);
 	});
 });
 

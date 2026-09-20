@@ -532,7 +532,9 @@ export class OutfitIdentityProcessor {
 	}
 
 	/**
-	 * Best-effort Vectorize write + queue index confirmation. Never rolls back D1.
+	 * Best-effort index after D1 commit. Never rolls back D1.
+	 * - writer (outfit process under identity_inflight): upsert now, then enqueue confirmation
+	 * - enqueue (resolve-new HTTP): mark indexing and enqueue onto CLOSET_IDENTITY_QUEUE only
 	 */
 	private async indexCommittedItem(params: {
 		userId: string;
@@ -540,22 +542,26 @@ export class OutfitIdentityProcessor {
 		category: string;
 		prepared: PreparedClosetCrop;
 		matchId?: string;
+		mode?: 'writer' | 'enqueue';
 	}): Promise<void> {
+		const mode = params.mode ?? 'writer';
 		await this.closet.setClosetIndexStatus(params.closetItemId, 'indexing', {
 			incrementAttempts: true,
 		});
-		try {
-			await this.identity.upsertPreparedCrop(params.prepared, {
-				userId: params.userId,
-				category: params.category,
-				closetItemId: params.closetItemId,
-			});
-		} catch (err) {
-			this.log.warn(
-				'outfit_identity_index_upsert_failed',
-				{ closet_item_id: params.closetItemId },
-				err
-			);
+		if (mode === 'writer') {
+			try {
+				await this.identity.upsertPreparedCrop(params.prepared, {
+					userId: params.userId,
+					category: params.category,
+					closetItemId: params.closetItemId,
+				});
+			} catch (err) {
+				this.log.warn(
+					'outfit_identity_index_upsert_failed',
+					{ closet_item_id: params.closetItemId },
+					err
+				);
+			}
 		}
 
 		if (params.matchId) {
@@ -662,6 +668,7 @@ export class OutfitIdentityProcessor {
 			category: item.category,
 			prepared,
 			matchId: match.id,
+			mode: 'enqueue',
 		});
 
 		return this.completeResolvedNew(match, closetItemId, prepared.crop_blur_hash, false);
@@ -805,6 +812,7 @@ export class OutfitIdentityProcessor {
 			category: item.category,
 			prepared,
 			matchId: match.id,
+			mode: 'enqueue',
 		});
 
 		return this.completeResolvedNew(match, closetItemId, prepared.crop_blur_hash, false);
