@@ -1000,6 +1000,62 @@ describe('serial identity writer', () => {
 		expect(harness.closet.items.filter((item) => item.id !== 'prior-1')).toHaveLength(0);
 		expect(harness.closet.matches).toHaveLength(1);
 	});
+
+	it('asks on a later crop when an earlier same-outfit create is still unindexed', async () => {
+		const harness = createHarness({
+			items: [
+				clothingItem({ label: 'olive shirt' }),
+				clothingItem({ label: 'cream shirt', color: 'cream' }),
+			],
+			neighbors: [],
+			visible: false,
+		});
+
+		const result = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/twins.jpg',
+		});
+
+		expect(result?.items[0].identity_status).toBe('created');
+		expect(result?.items[0].closet_item_id).toBeTruthy();
+		expect(result?.items[1]).toMatchObject({
+			identity_status: 'ask',
+			candidate_closet_item_id: result?.items[0].closet_item_id,
+			is_new_closet_item: false,
+		});
+		expect(harness.closet.items).toHaveLength(1);
+		expect(harness.closet.matches).toHaveLength(1);
+		expect(harness.identity.deletes).toHaveLength(0);
+	});
+
+	it('advances silent create through committed → indexing without rolling back D1', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const statuses: string[] = [];
+		const originalCreate = harness.closet.createClosetItem.bind(harness.closet);
+		harness.closet.createClosetItem = async (params) => {
+			const item = await originalCreate(params);
+			statuses.push(item.index_status ?? 'missing');
+			return item;
+		};
+		const originalSet = harness.closet.setClosetIndexStatus.bind(harness.closet);
+		harness.closet.setClosetIndexStatus = async (itemId, status, params) => {
+			const ok = await originalSet(itemId, status, params);
+			statuses.push(status);
+			return ok;
+		};
+
+		const result = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/status.jpg',
+		});
+
+		expect(result?.items[0].identity_status).toBe('created');
+		expect(statuses).toEqual(['committed', 'indexing']);
+		expect(harness.closet.items[0].index_status).toBe('indexing');
+		expect(harness.identity.deletes).toHaveLength(0);
+	});
 });
 
 function clothingItem(overrides: Partial<ClothingItem> = {}): ClothingItem {
