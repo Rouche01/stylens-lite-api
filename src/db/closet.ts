@@ -834,6 +834,7 @@ export class ClosetDB {
 		score: number;
 		cosine?: number | null;
 		colorDistance?: number | null;
+		probeEmbed?: ClosetMatchProbeEmbed | null;
 	}): Promise<ClosetItemMatch> {
 		const id = crypto.randomUUID();
 		const now = Date.now();
@@ -841,15 +842,18 @@ export class ClosetDB {
 		const snapshotJson = JSON.stringify(params.extractSnapshot);
 		const cosine = params.cosine ?? null;
 		const colorDistance = params.colorDistance ?? null;
+		const probeEmbed = params.probeEmbed ?? null;
+		const probeEmbedJson = probeEmbed ? serializeClosetMatchProbeEmbed(probeEmbed) : null;
 
 		await this.db
 			.prepare(
 				`
 				INSERT INTO closet_item_matches (
 					id, user_id, outfit_id, candidate_closet_item_id, bounding_box, confidence,
-					extract_snapshot, score, cosine, color_distance, band, status, created_at, resolved_at
+					extract_snapshot, score, cosine, color_distance, band, status, created_at, resolved_at,
+					probe_embed
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ask', 'pending', ?, NULL)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ask', 'pending', ?, NULL, ?)
 				`
 			)
 			.bind(
@@ -863,7 +867,8 @@ export class ClosetDB {
 				params.score,
 				cosine,
 				colorDistance,
-				now
+				now,
+				probeEmbedJson
 			)
 			.run();
 
@@ -883,7 +888,7 @@ export class ClosetDB {
 			created_at: now,
 			resolved_at: null,
 			resolved_closet_item_id: null,
-			probe_embed: null,
+			probe_embed: probeEmbed,
 		};
 	}
 
@@ -953,13 +958,15 @@ export class ClosetDB {
 			score: number;
 			cosine?: number | null;
 			colorDistance?: number | null;
+			probeEmbed?: ClosetMatchProbeEmbed | null;
 		}
 	): Promise<boolean> {
+		const probeEmbedJson = params.probeEmbed ? serializeClosetMatchProbeEmbed(params.probeEmbed) : null;
 		const result = await this.db
 			.prepare(
 				`
 				UPDATE closet_item_matches
-				SET candidate_closet_item_id = ?, score = ?, cosine = ?, color_distance = ?
+				SET candidate_closet_item_id = ?, score = ?, cosine = ?, color_distance = ?, probe_embed = ?
 				WHERE id = ? AND user_id = ? AND status = 'pending'
 				`
 			)
@@ -968,6 +975,7 @@ export class ClosetDB {
 				params.score,
 				params.cosine ?? null,
 				params.colorDistance ?? null,
+				probeEmbedJson,
 				matchId,
 				userId
 			)

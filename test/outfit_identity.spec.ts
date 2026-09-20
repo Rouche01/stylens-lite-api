@@ -251,6 +251,14 @@ describe('OutfitIdentityProcessor', () => {
 		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.digestSchedules).toEqual(['u1']);
 		expect(harness.closet.askTouches).toEqual(['u1']);
+		expect(harness.closet.matches[0].probe_embed).toEqual({
+			encoder: 'dinov3-cls-v1',
+			dimensions: PREPARED.dimensions,
+			vector: PREPARED.vector,
+			crop_color: PREPARED.crop_color,
+			crop_blur_hash: PREPARED.crop_blur_hash,
+		});
+		expect(harness.closet.matches[0].probe_embed?.encoder).not.toBe(PREPARED.model);
 	});
 
 	it('enqueues one digest when several crops ask in the same process', async () => {
@@ -462,7 +470,14 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(harness.closet.matches[0]).toMatchObject({
 			status: 'pending',
 			candidate_closet_item_id: 'c2',
+			probe_embed: {
+				encoder: 'dinov3-cls-v1',
+				dimensions: PREPARED.dimensions,
+				crop_color: PREPARED.crop_color,
+				crop_blur_hash: PREPARED.crop_blur_hash,
+			},
 		});
+		expect(harness.closet.matches[0].probe_embed?.vector).toEqual(PREPARED.vector);
 		expect(harness.closet.items.map((item) => item.id)).toEqual(['c2', 'c1']);
 		expect(harness.identity.deletes).toHaveLength(1);
 		expect(harness.digestSchedules).toEqual(['u1']);
@@ -740,6 +755,7 @@ class MemoryCloset {
 		score: number;
 		cosine?: number | null;
 		colorDistance?: number | null;
+		probeEmbed?: ClosetItemMatch['probe_embed'];
 	}): Promise<ClosetItemMatch> {
 		const match: ClosetItemMatch = {
 			id: `match-${this.matches.length + 1}`,
@@ -757,7 +773,7 @@ class MemoryCloset {
 			created_at: Date.now(),
 			resolved_at: null,
 			resolved_closet_item_id: null,
-			probe_embed: null,
+			probe_embed: params.probeEmbed ?? null,
 		};
 		this.matches.push(match);
 		return match;
@@ -791,6 +807,7 @@ class MemoryCloset {
 			score: number;
 			cosine?: number | null;
 			colorDistance?: number | null;
+			probeEmbed?: ClosetItemMatch['probe_embed'];
 		}
 	): Promise<boolean> {
 		const match = this.matches.find((row) => row.id === matchId && row.user_id === userId);
@@ -799,6 +816,9 @@ class MemoryCloset {
 		match.score = params.score;
 		match.cosine = params.cosine ?? null;
 		match.color_distance = params.colorDistance ?? null;
+		if (params.probeEmbed !== undefined) {
+			match.probe_embed = params.probeEmbed;
+		}
 		return true;
 	}
 

@@ -6,6 +6,7 @@ export {
 	decideCommitAfterRequery,
 	candidateClosetItemId,
 	shouldQueryIdentity,
+	closetMatchProbeFromPrepared,
 	IdentityBusyError,
 	ClosetMatchNotFoundError,
 	ClosetMatchResolvedError,

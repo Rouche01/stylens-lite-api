@@ -1,5 +1,5 @@
 import { createClosetDB, ClosetDB } from '../../db';
-import type { ClosetItemExtractSnapshot, ClosetItemMatchWithOutfit } from '../../db/closet';
+import type { ClosetItemExtractSnapshot, ClosetItemMatchWithOutfit, ClosetMatchProbeEmbed } from '../../db/closet';
 import {
 	ClothingItem,
 	ClothingItemCategory,
@@ -21,6 +21,7 @@ import {
 	type QueryClosetCropMatch,
 } from './identity.svc';
 import { isIdentityMatch } from './cropColor';
+import { IDENTITY_ENCODER } from './embed.types';
 import { closetItemVectorId } from './vectorize.store';
 import { createClosetMatchDigestScheduler } from './closetMatchDigest';
 import {
@@ -447,7 +448,7 @@ export class OutfitIdentityProcessor {
 
 		const decision = await this.decideItem(params, prepared);
 		if (decision.action === 'ask') {
-			return this.persistAsk(params, decision);
+			return this.persistAsk(params, decision, prepared);
 		}
 
 		return this.commitNewItem(params, prepared, decision);
@@ -544,7 +545,7 @@ export class OutfitIdentityProcessor {
 
 		if (commit.action === 'ask') {
 			await this.identity.deleteVector(vectorId);
-			return this.persistAsk(params, commit);
+			return this.persistAsk(params, commit, prepared);
 		}
 
 		if (commit.action === 'yield') {
@@ -557,13 +558,17 @@ export class OutfitIdentityProcessor {
 				});
 				return failedItem(params.item, 'race_lost', commit.identityScore);
 			}
-			return this.persistAsk(params, {
-				action: 'ask',
-				candidateClosetItemId: winner.id,
-				identityScore: commit.identityScore,
-				cosine: commit.cosine,
-				colorDistance: commit.colorDistance,
-			});
+			return this.persistAsk(
+				params,
+				{
+					action: 'ask',
+					candidateClosetItemId: winner.id,
+					identityScore: commit.identityScore,
+					cosine: commit.cosine,
+					colorDistance: commit.colorDistance,
+				},
+				prepared
+			);
 		}
 
 		try {
@@ -748,8 +753,10 @@ export class OutfitIdentityProcessor {
 			item: ClothingItem;
 			replaceMatchId?: string;
 		},
-		decision: Extract<IdentityDecision, { action: 'ask' }>
+		decision: Extract<IdentityDecision, { action: 'ask' }>,
+		prepared: PreparedClosetCrop
 	): Promise<ProcessedOutfitItem> {
+		const probeEmbed = closetMatchProbeFromPrepared(prepared);
 		let matchId = params.replaceMatchId;
 		if (matchId) {
 			const updated = await this.closet.updatePendingMatch(params.userId, matchId, {
@@ -757,6 +764,7 @@ export class OutfitIdentityProcessor {
 				score: decision.identityScore,
 				cosine: decision.cosine,
 				colorDistance: decision.colorDistance,
+				probeEmbed,
 			});
 			if (!updated) {
 				throw new ClosetMatchResolvedError(matchId, 'resolved');
@@ -772,6 +780,7 @@ export class OutfitIdentityProcessor {
 				score: decision.identityScore,
 				cosine: decision.cosine,
 				colorDistance: decision.colorDistance,
+				probeEmbed,
 			});
 			matchId = match.id;
 		}
@@ -892,6 +901,23 @@ function extractSnapshot(item: ClothingItem): ClosetItemExtractSnapshot {
 		color: item.color,
 		pattern: item.pattern,
 		styleTags: item.style_tags || [],
+	};
+}
+
+/** Pin IDENTITY_ENCODER, not the embedder model name. Null if the vector is unusable. */
+export function closetMatchProbeFromPrepared(prepared: PreparedClosetCrop): ClosetMatchProbeEmbed | null {
+	if (!Array.isArray(prepared.vector) || prepared.vector.length === 0) {
+		return null;
+	}
+	if (prepared.vector.length !== prepared.dimensions) {
+		return null;
+	}
+	return {
+		encoder: IDENTITY_ENCODER,
+		dimensions: prepared.dimensions,
+		vector: prepared.vector,
+		crop_color: prepared.crop_color,
+		crop_blur_hash: prepared.crop_blur_hash,
 	};
 }
 
