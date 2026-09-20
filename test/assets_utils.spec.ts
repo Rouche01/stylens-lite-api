@@ -6,6 +6,13 @@ import {
 	parseIsolatePad,
 	parseIsolateWidth,
 } from '../src/utils/assets.utils';
+import {
+	isolateCanonicalString,
+	isolateDerivedKey,
+	isolateOrientedKey,
+	isSafeR2Key,
+	type IsolateCacheParams,
+} from '../src/utils/isolate_cache';
 
 describe('parseIsolateWidth', () => {
 	it('is omitted when the query is missing', () => {
@@ -114,5 +121,65 @@ describe('parseIsolatePad', () => {
 	it('treats 0/false as an exact-box trim', () => {
 		expect(parseIsolatePad('0')).toBe(false);
 		expect(parseIsolatePad('false')).toBe(false);
+	});
+});
+
+describe('isolate cache keys', () => {
+	const base: IsolateCacheParams = {
+		key: 'users/u1/photo.jpg',
+		x: 10,
+		y: 20,
+		w: 30,
+		h: 40,
+		width: 480,
+		cutout: false,
+		pad: true,
+		category: 'footwear',
+	};
+
+	it('collides 10 and 10.0 on the same source box', () => {
+		const a = isolateCanonicalString({ ...base, x: parseFloat('10') });
+		const b = isolateCanonicalString({ ...base, x: parseFloat('10.0') });
+		expect(a).toBe(b);
+		expect(a).toContain('|10|20|30|40|480|0|1|footwear');
+	});
+
+	it('uses full when width is omitted', () => {
+		const { width: _width, ...rest } = base;
+		expect(isolateCanonicalString(rest)).toContain('|full|0|1|footwear');
+	});
+
+	it('omits category when it does not change pixels', () => {
+		expect(isolateCanonicalString({ ...base, cutout: true, category: 'footwear' })).toMatch(
+			/\|1\|1\|$/,
+		);
+		expect(isolateCanonicalString({ ...base, pad: false, category: 'footwear' })).toMatch(
+			/\|0\|0\|$/,
+		);
+	});
+
+	it('hashes to derived/isolate/{sha256}.jpg for photo crops', async () => {
+		const key = await isolateDerivedKey(base);
+		expect(key).toMatch(/^derived\/isolate\/[0-9a-f]{64}\.jpg$/);
+		expect(await isolateDerivedKey({ ...base, x: parseFloat('10.0') })).toBe(key);
+	});
+
+	it('uses .png when cutout is on', async () => {
+		const key = await isolateDerivedKey({ ...base, cutout: true });
+		expect(key).toMatch(/^derived\/isolate\/[0-9a-f]{64}\.png$/);
+	});
+
+	it('changes the derived key when pad category changes', async () => {
+		const footwear = await isolateDerivedKey(base);
+		const accessory = await isolateDerivedKey({ ...base, category: 'accessory' });
+		expect(footwear).not.toBe(accessory);
+	});
+
+	it('builds an oriented key from a safe source key', () => {
+		expect(isolateOrientedKey('users/u1/photo.jpg')).toBe('derived/oriented/users/u1/photo.jpg');
+		expect(isolateOrientedKey('../secret')).toBeNull();
+		expect(isolateOrientedKey('/absolute.jpg')).toBeNull();
+		expect(isSafeR2Key('users/u1/photo.jpg')).toBe(true);
+		expect(isSafeR2Key('..')).toBe(false);
 	});
 });
