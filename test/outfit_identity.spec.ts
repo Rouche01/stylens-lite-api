@@ -489,6 +489,61 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(harness.catalogNotifies).toHaveLength(1);
 	});
 
+	it('falls back to prepareClosetCrop when probe_embed is missing', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const match = seedPendingMatch(harness.closet);
+		harness.closet.matches[0].probe_embed = null;
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(result.identity_status).toBe('created');
+		expect(result.closet_item_id).toBeTruthy();
+		expect(harness.identity.prepares).toBe(1);
+		expect(harness.identity.upserts).toHaveLength(1);
+		expect(harness.closet.matches[0].status).toBe('new');
+	});
+
+	it('falls back to prepareClosetCrop when the stored encoder is stale', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const match = seedPendingMatch(harness.closet);
+		const probe = closetMatchProbeFromPrepared(PREPARED);
+		harness.closet.matches[0].probe_embed = probe ? { ...probe, encoder: 'jina-clip-v2' } : null;
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(result.identity_status).toBe('created');
+		expect(harness.identity.prepares).toBe(1);
+		expect(harness.identity.upserts).toHaveLength(1);
+	});
+
+	it('leaves the match pending when fallback embed throws', async () => {
+		const harness = createHarness({ prepareError: new Error('replicate down') });
+		const match = seedPendingMatch(harness.closet);
+		harness.closet.matches[0].probe_embed = null;
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(result.identity_status).toBe('failed');
+		expect(result.identity_reason).toBe('embed_failed');
+		expect(harness.identity.prepares).toBe(1);
+		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.closet.matches[0].status).toBe('pending');
+		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1']);
+		expect(harness.repairSends).toEqual([]);
+	});
+
 	it('leaves the match pending when create-commit fails', async () => {
 		const harness = createHarness({ upsertError: new Error('vectorize down') });
 		const match = seedPendingMatch(harness.closet);
@@ -507,6 +562,36 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(harness.catalogNotifies).toHaveLength(0);
 		expect(harness.closet.lock).toBeNull();
 		expect(harness.repairSends).toEqual([]);
+	});
+
+	it('retries a pending match after an upsert 502', async () => {
+		const harness = createHarness({
+			upsertError: new Error('vectorize down'),
+			upsertFailOnce: true,
+		});
+		const match = seedPendingMatch(harness.closet);
+
+		const failed = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+		expect(failed.identity_reason).toBe('upsert_failed');
+		expect(harness.closet.matches[0].status).toBe('pending');
+
+		const retry = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(retry.identity_status).toBe('created');
+		expect(retry.closet_item_id).toBeTruthy();
+		expect(harness.closet.matches[0].status).toBe('new');
+		expect(harness.identity.upserts).toHaveLength(2);
+		expect(harness.identity.prepares).toBe(0);
+		expect(harness.identity.deletes).toHaveLength(0);
+		expect(harness.closet.lock).toBeNull();
 	});
 
 	it('deletes the orphan vector when resolve-new loses the CAS', async () => {
@@ -737,9 +822,11 @@ function createHarness(options: {
 	requeryNeighbors?: QueryClosetCropMatch[];
 	queryError?: Error;
 	upsertError?: Error;
+	upsertFailOnce?: boolean;
 	d1Error?: Error;
 	visible?: boolean;
 	repairError?: Error;
+	prepareError?: Error;
 }) {
 	const items = options.items ?? [clothingItem()];
 	const extraction: OutfitExtractionResponse = {
@@ -758,6 +845,7 @@ function createHarness(options: {
 		deletes: [] as string[],
 		prepareClosetCrop: async () => {
 			identity.prepares += 1;
+			if (options.prepareError) throw options.prepareError;
 			return PREPARED;
 		},
 		queryPreparedCrop: async () => {
@@ -771,7 +859,9 @@ function createHarness(options: {
 		},
 		upsertPreparedCrop: async (_embedded: PreparedClosetCrop, params: { closetItemId?: string }) => {
 			identity.upserts.push({ closetItemId: params.closetItemId });
-			if (options.upsertError) throw options.upsertError;
+			if (options.upsertError && (!options.upsertFailOnce || identity.upserts.length === 1)) {
+				throw options.upsertError;
+			}
 			return undefined as never;
 		},
 		waitUntilVectorVisible: async () => {

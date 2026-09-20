@@ -5,6 +5,7 @@ import { ApiRequest } from 'types';
 import { getIsolatedItemUrl, signClosetOriginalUrl } from 'utils/assets.utils';
 import { logRouteError } from 'utils/error';
 import { isErrorResponse, requireClosetUserId } from './closetUser';
+import { pendingClosetMatchClientPayload } from './pendingClosetMatchPayload';
 
 const listPendingClosetMatchesHandler: RequestHandler<ApiRequest> = async (request) => {
 	try {
@@ -20,21 +21,19 @@ const listPendingClosetMatchesHandler: RequestHandler<ApiRequest> = async (reque
 
 		const matches = await Promise.all(
 			pending.map(async (match) => {
+				const snapshot = match.extract_snapshot;
 				const probeOriginalUrl = await signClosetOriginalUrl(
 					match.outfit_image_key,
 					match.outfit_original_image_url
 				);
-				const snapshot = match.extract_snapshot;
-				const probe = {
-					label: snapshot.label,
-					category: snapshot.category,
-					subcategory: snapshot.subcategory,
-					color: snapshot.color,
-					pattern: snapshot.pattern,
-					image_key: match.outfit_image_key,
-					bounding_box: match.bounding_box,
-					original_image_url: probeOriginalUrl,
-					isolated_image_url:
+				const candidateDetails = await closetDB.getClosetItemDetails(userId, match.candidate_closet_item_id);
+				const candidateOriginalUrl = candidateDetails
+					? await signClosetOriginalUrl(candidateDetails.image_key, candidateDetails.original_image_url)
+					: undefined;
+
+				return pendingClosetMatchClientPayload(match, {
+					probeOriginalUrl,
+					probeIsolatedUrl:
 						probeOriginalUrl && match.bounding_box
 							? getIsolatedItemUrl({
 									domain,
@@ -47,44 +46,22 @@ const listPendingClosetMatchesHandler: RequestHandler<ApiRequest> = async (reque
 									subcategory: snapshot.subcategory,
 								})
 							: undefined,
-				};
-
-				const candidateDetails = await closetDB.getClosetItemDetails(userId, match.candidate_closet_item_id);
-				const candidateOriginalUrl = candidateDetails
-					? await signClosetOriginalUrl(candidateDetails.image_key, candidateDetails.original_image_url)
-					: undefined;
-
-				return {
-					id: match.id,
-					outfit_id: match.outfit_id,
-					score: match.score,
-					cosine: match.cosine,
-					color_distance: match.color_distance,
-					created_at: match.created_at,
-					probe,
-					candidate: {
-						closet_item_id: match.candidate_closet_item_id,
-						label: candidateDetails?.label ?? snapshot.label,
-						category: candidateDetails?.category ?? snapshot.category,
-						subcategory: candidateDetails?.subcategory ?? snapshot.subcategory,
-						color: candidateDetails?.color ?? snapshot.color,
-						bounding_box: candidateDetails?.bounding_box,
-						original_image_url: candidateOriginalUrl,
-						isolated_image_url:
-							candidateOriginalUrl && candidateDetails?.bounding_box
-								? getIsolatedItemUrl({
-										domain,
-										imageUrl: candidateOriginalUrl,
-										imageKey: candidateDetails.image_key,
-										boundingBox: candidateDetails.bounding_box,
-										dimensions: { width: 1000, height: 1000 },
-										enhance,
-										color: candidateDetails.color,
-										subcategory: candidateDetails.subcategory,
-									})
-								: undefined,
-					},
-				};
+					candidateDetails,
+					candidateOriginalUrl,
+					candidateIsolatedUrl:
+						candidateOriginalUrl && candidateDetails?.bounding_box
+							? getIsolatedItemUrl({
+									domain,
+									imageUrl: candidateOriginalUrl,
+									imageKey: candidateDetails.image_key,
+									boundingBox: candidateDetails.bounding_box,
+									dimensions: { width: 1000, height: 1000 },
+									enhance,
+									color: candidateDetails.color,
+									subcategory: candidateDetails.subcategory,
+								})
+							: undefined,
+				});
 			})
 		);
 

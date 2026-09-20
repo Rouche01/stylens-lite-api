@@ -91,6 +91,23 @@ describe('runClosetVectorRepair', () => {
 		expect(harness.identity.deletes).toHaveLength(0);
 	});
 
+	it('re-embeds from the cover crop when the stored probe encoder is stale', async () => {
+		const harness = createRepairHarness({ visibleIds: [], staleProbe: true });
+
+		const decision = await runClosetVectorRepair({
+			job: JOB,
+			closet: harness.closet,
+			identity: harness.identity,
+			log: silentLogger(),
+			attempts: 1,
+		});
+
+		expect(decision).toEqual({ action: 'retry', delaySeconds: 2 });
+		expect(harness.identity.prepares).toBe(1);
+		expect(harness.identity.upserts).toEqual([{ closetItemId: 'new-1' }]);
+		expect(harness.identity.deletes).toHaveLength(0);
+	});
+
 	it('acks already-stamped items without touching Vectorize', async () => {
 		const harness = createRepairHarness({ visibleIds: [] });
 		harness.closet.item.vector_indexed_at = Date.now();
@@ -215,7 +232,7 @@ describe('enqueueClosetVectorBackfillScan', () => {
 	});
 });
 
-function createRepairHarness(options: { visibleIds: string[] }) {
+function createRepairHarness(options: { visibleIds: string[]; staleProbe?: boolean }) {
 	const match: ClosetItemMatchWithOutfit = {
 		id: 'match-1',
 		user_id: 'u1',
@@ -239,7 +256,15 @@ function createRepairHarness(options: { visibleIds: string[] }) {
 		created_at: Date.now(),
 		resolved_at: Date.now(),
 		resolved_closet_item_id: 'new-1',
-		probe_embed: closetMatchProbeFromPrepared(PREPARED),
+		probe_embed: options.staleProbe
+			? {
+					encoder: 'jina-clip-v2',
+					dimensions: PREPARED.dimensions,
+					vector: PREPARED.vector,
+					crop_color: PREPARED.crop_color,
+					crop_blur_hash: PREPARED.crop_blur_hash,
+				}
+			: closetMatchProbeFromPrepared(PREPARED),
 		outfit_image_key: 'users/u1/test.jpg',
 		outfit_original_image_url: 'https://img/test.jpg',
 	};
