@@ -1,7 +1,7 @@
 import { LLMService, createLLMService } from './llm.svc';
 import { CLASSIFICATION_SYSTEM_PROMPT } from '../llm/prompts/classification';
 import { CLASSIFICATION_RESPONSE_FORMAT } from '../llm/schemas/classification.schema';
-import { MessageEntry, RemoteImage } from '../utils/types';
+import { MessageEntry, RemoteImage, type ClaudeContentBlock, type ClaudeLLMInput, type LLMProviderInput } from '../utils/types';
 import { createClosetDB, StyleAnalysisDB } from '../db';
 import { StyleEntryTag } from '../db/types';
 import { createVoltMemService, isVoltMemWriteTag, type VoltMemService } from './voltmem.svc';
@@ -10,7 +10,7 @@ import { ModelProvider, ModelUseCase } from './model_config.svc';
 import { enqueueClosetIdentityFromClassification } from './identity/closetIdentityJob';
 import { runClosetIdentityProgress } from './identity/closetIdentityProgress';
 import { createRealtimeService } from './realtime.svc';
-import { createLogger } from '../utils/logger.utils';
+import { Logger, createLogger } from '../utils/logger.utils';
 
 export type ClosetIdentityEnqueue = {
 	enqueue(params: {
@@ -28,7 +28,8 @@ export class ClassificationService {
 		private styleAnalysisDB: StyleAnalysisDB,
 		private voltmem: VoltMemService | null = null,
 		private avatarService: AvatarService | null = null,
-		private identityEnqueue: ClosetIdentityEnqueue | null = null
+		private identityEnqueue: ClosetIdentityEnqueue | null = null,
+		private log: Logger = createLogger({ env: 'dev' })
 	) { }
 
 	/**
@@ -97,6 +98,10 @@ export class ClassificationService {
 	 * Classifies a message using the LLM and extracts relevant fashion context tags.
 	 */
 	async classifyMessage(message: MessageEntry, sessionId?: string, previousMessage?: MessageEntry): Promise<StyleEntryTag[]> {
+		if (message.role !== 'user') {
+			return [];
+		}
+
 		if (!message.prompt && (!message.remoteImages || message.remoteImages.length === 0) && !message.remoteImage) {
 			return [];
 		}
@@ -126,6 +131,14 @@ export class ClassificationService {
 
 			// Leverage provider-specific logic to wait for images, sign URLs, and format for the specific LLM
 			const preparedInput = await this.llmService.prepareMessagesForLLM(messagesForLLM);
+			const payload = summarizeClassificationPayload(preparedInput);
+			this.log.debug('classification_anthropic_payload', {
+				last_role: payload.last_role,
+				roles: payload.roles.join(','),
+				system_chars: payload.system_chars,
+				output_format: payload.output_format,
+				payload_json: JSON.stringify(payload.messages),
+			});
 
 			const res = await this.llmService.generateResponse(
 				preparedInput,
@@ -164,7 +177,7 @@ export class ClassificationService {
 
 			return response;
 		} catch (e) {
-			console.error('Failed to classify message:', e);
+			this.log.error('classification_failed', { session_id: sessionId }, e);
 			return [];
 		}
 	}
@@ -346,5 +359,51 @@ export const createClassificationService = (database: D1Database, env?: Env) => 
 				},
 			}
 		: null;
-	return new ClassificationService(llmService, styleAnalysisDB, voltmem, avatarService, identityEnqueue);
+	const log = createLogger({ env: env?.ENV_NAME ?? 'dev' }).child({ service: 'classification' });
+	return new ClassificationService(llmService, styleAnalysisDB, voltmem, avatarService, identityEnqueue, log);
 };
+
+function summarizeClassificationPayload(input: LLMProviderInput) {
+	const claude = input as ClaudeLLMInput;
+	const messages = Array.isArray(claude.messages) ? claude.messages : [];
+	const last = messages[messages.length - 1];
+	return {
+		last_role: last?.role ?? null,
+		roles: messages.map((message) => message.role),
+		system_chars: classificationSystemChars(claude.system),
+		output_format: CLASSIFICATION_RESPONSE_FORMAT.type,
+		messages: messages.map(summarizeClassificationMessage),
+	};
+}
+
+function summarizeClassificationMessage(message: ClaudeLLMInput['messages'][number]) {
+	if (typeof message.content === 'string') {
+		return { role: message.role, text: message.content, images: [] as string[] };
+	}
+
+	const text = message.content
+		.filter((block): block is Extract<ClaudeContentBlock, { type: 'text' }> => block.type === 'text')
+		.map((block) => block.text)
+		.join('\n');
+	const images = message.content.flatMap((block) => {
+		if (block.type !== 'image') return [];
+		if (block.source.type === 'url') return [stripUrlQuery(block.source.url)];
+		return [`base64:${block.source.media_type}`];
+	});
+	return { role: message.role, text, images };
+}
+
+function classificationSystemChars(system: ClaudeLLMInput['system']): number {
+	if (!system) return 0;
+	if (typeof system === 'string') return system.length;
+	return system.reduce((sum, block) => sum + (block.type === 'text' ? block.text.length : 0), 0);
+}
+
+function stripUrlQuery(url: string): string {
+	try {
+		const parsed = new URL(url);
+		return `${parsed.origin}${parsed.pathname}`;
+	} catch {
+		return url;
+	}
+}

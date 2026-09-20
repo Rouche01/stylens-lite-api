@@ -328,10 +328,15 @@ export class StyleAnalysisService {
 		const { sessionId, messageIds, messages, userId, ctx } = params;
 
 		for (let i = 0; i < messages.length; i++) {
+			const message = messages[i];
+			if (message.role !== 'user') continue;
+
 			const previousMessage = i > 0 ? messages[i - 1] : null;
+			const messageId = messageIds[i];
+
 			this.classificationService.tagEntryInBackground(
-				messageIds[i],
-				messages[i],
+				messageId,
+				message,
 				ctx as ExecutionContext,
 				sessionId,
 				previousMessage,
