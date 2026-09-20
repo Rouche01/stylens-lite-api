@@ -53,7 +53,7 @@ export type OutfitIdentityStore = Pick<
 	| 'tryAcquireIdentityLock'
 	| 'releaseIdentityLock'
 	| 'getMatchWithOutfit'
-	| 'markMatchResolved'
+	| 'claimMatch'
 	| 'updatePendingMatch'
 	| 'touchMatchAsk'
 >;
@@ -359,28 +359,10 @@ export class OutfitIdentityProcessor {
 			throw new ClosetMatchResolvedError(params.matchId, match.status);
 		}
 
-		const jobId = crypto.randomUUID();
-		const acquired = await this.acquireLock(params.userId, jobId);
-		if (!acquired) {
-			throw new IdentityBusyError(params.userId);
+		if (params.decision === 'same') {
+			return this.resolveSame(match);
 		}
-
-		try {
-			const latest = await this.closet.getMatchWithOutfit(params.userId, params.matchId);
-			if (!latest) {
-				throw new ClosetMatchNotFoundError(params.matchId);
-			}
-			if (latest.status !== 'pending') {
-				throw new ClosetMatchResolvedError(params.matchId, latest.status);
-			}
-
-			if (params.decision === 'same') {
-				return this.resolveSame(latest);
-			}
-			return this.resolveNew(latest, params.signal);
-		} finally {
-			await this.closet.releaseIdentityLock(params.userId, jobId);
-		}
+		return this.resolveNew(match, params.signal);
 	}
 
 	private async acquireLock(userId: string, jobId: string): Promise<boolean> {
@@ -622,6 +604,14 @@ export class OutfitIdentityProcessor {
 			throw new ClosetMatchNotFoundError(match.id);
 		}
 
+		const claimed = await this.closet.claimMatch(match.user_id, match.id, {
+			status: 'same',
+			closetItemId: match.candidate_closet_item_id,
+		});
+		if (!claimed) {
+			throw new ClosetMatchResolvedError(match.id, 'resolved');
+		}
+
 		await this.closet.linkClosetItemToOutfit({
 			outfitId: match.outfit_id,
 			closetItemId: match.candidate_closet_item_id,
@@ -629,10 +619,6 @@ export class OutfitIdentityProcessor {
 			confidence: extractionConfidence(match.confidence as ExtractionConfidence),
 			blurHash: await this.closet.getLatestItemBlurHash(match.candidate_closet_item_id),
 		});
-		const marked = await this.closet.markMatchResolved(match.user_id, match.id, 'same');
-		if (!marked) {
-			throw new ClosetMatchResolvedError(match.id, 'resolved');
-		}
 
 		this.log.info('outfit_identity_resolve_same', {
 			match_id: match.id,
@@ -687,62 +673,97 @@ export class OutfitIdentityProcessor {
 			};
 		}
 
-		const processed = await this.commitNewItem(
-			{
+		const closetItemId = crypto.randomUUID();
+		const vectorId = closetItemVectorId(closetItemId);
+		try {
+			await this.identity.upsertPreparedCrop(prepared, {
 				userId: match.user_id,
-				imageKey: match.outfit_image_key,
-				outfitId: match.outfit_id,
-				item,
-				ignoreClosetItemIds: [match.candidate_closet_item_id],
-				replaceMatchId: match.id,
-			},
-			prepared,
-			{ action: 'create', reason: 'no_neighbor' }
-		);
-
-		if (processed.identity_status === 'created' && processed.closet_item_id) {
-			const marked = await this.closet.markMatchResolved(match.user_id, match.id, 'new');
-			if (!marked) {
-				throw new ClosetMatchResolvedError(match.id, 'resolved');
-			}
-			this.log.info('outfit_identity_resolve_new', {
-				match_id: match.id,
-				outfit_id: match.outfit_id,
-				closet_item_id: processed.closet_item_id,
+				category: item.category,
+				closetItemId,
 			});
-			await this.notifyCatalog(match.user_id, match.outfit_id, [processed]);
+		} catch (err) {
+			this.log.warn(
+				'outfit_identity_resolve_upsert_failed',
+				{ match_id: match.id, closet_item_id: closetItemId },
+				err
+			);
 			return {
 				decision: 'new',
 				match_id: match.id,
-				closet_item_id: processed.closet_item_id,
-				candidate_closet_item_id: match.candidate_closet_item_id,
-				identity_status: 'created',
-				identity_reason: processed.identity_reason,
-				identity_score: processed.identity_score,
-			};
-		}
-
-		if (processed.identity_status === 'ask') {
-			await this.scheduleDigest(match.user_id);
-			return {
-				decision: 'ask',
-				match_id: processed.match_id ?? match.id,
 				closet_item_id: null,
-				candidate_closet_item_id: processed.candidate_closet_item_id,
-				identity_status: 'ask',
-				identity_reason: 'ask',
-				identity_score: processed.identity_score,
+				candidate_closet_item_id: match.candidate_closet_item_id,
+				identity_status: 'failed',
+				identity_reason: 'upsert_failed',
+				identity_score: match.score,
 			};
 		}
 
+		const claimed = await this.closet.claimMatch(match.user_id, match.id, {
+			status: 'new',
+			closetItemId,
+		});
+		if (!claimed) {
+			await this.identity.deleteVector(vectorId);
+			const latest = await this.closet.getMatchWithOutfit(match.user_id, match.id);
+			throw new ClosetMatchResolvedError(match.id, latest?.status ?? 'resolved');
+		}
+
+		try {
+			await this.closet.createClosetItem({
+				id: closetItemId,
+				userId: match.user_id,
+				label: item.label,
+				category: item.category,
+				subcategory: item.subcategory,
+				color: item.color,
+				pattern: item.pattern,
+				styleTags: item.style_tags || [],
+			});
+			await this.closet.linkClosetItemToOutfit({
+				outfitId: match.outfit_id,
+				closetItemId,
+				boundingBox: match.bounding_box,
+				confidence: extractionConfidence(item.confidence),
+				blurHash: prepared.crop_blur_hash,
+			});
+		} catch (err) {
+			this.log.warn(
+				'outfit_identity_resolve_d1_failed',
+				{ match_id: match.id, closet_item_id: closetItemId },
+				err
+			);
+			return {
+				decision: 'new',
+				match_id: match.id,
+				closet_item_id: closetItemId,
+				candidate_closet_item_id: match.candidate_closet_item_id,
+				identity_status: 'failed',
+				identity_reason: 'd1_failed',
+				identity_score: match.score,
+			};
+		}
+
+		this.log.info('outfit_identity_resolve_new', {
+			match_id: match.id,
+			outfit_id: match.outfit_id,
+			closet_item_id: closetItemId,
+		});
+		await this.notifyCatalog(match.user_id, match.outfit_id, [
+			{
+				closet_item_id: closetItemId,
+				identity_status: 'created',
+				category: item.category,
+				subcategory: item.subcategory,
+			},
+		]);
 		return {
 			decision: 'new',
 			match_id: match.id,
-			closet_item_id: null,
+			closet_item_id: closetItemId,
 			candidate_closet_item_id: match.candidate_closet_item_id,
-			identity_status: 'failed',
-			identity_reason: processed.identity_reason === 'ask' ? 'identity_error' : processed.identity_reason,
-			identity_score: processed.identity_score,
+			identity_status: 'created',
+			identity_reason: 'no_neighbor',
+			identity_score: match.score,
 		};
 	}
 

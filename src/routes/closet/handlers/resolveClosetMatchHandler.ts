@@ -4,7 +4,6 @@ import {
 	ClosetMatchNotFoundError,
 	ClosetMatchResolvedError,
 	createOutfitIdentityProcessor,
-	IdentityBusyError,
 } from 'services/identity';
 import { ApiRequest } from 'types';
 import { logRouteError } from 'utils/error';
@@ -51,9 +50,6 @@ const resolveClosetMatchHandler: RequestHandler<ApiRequest> = async (request) =>
 			return error(404, err.message);
 		}
 		if (err instanceof ClosetMatchResolvedError) {
-			return error(409, err.message);
-		}
-		if (err instanceof IdentityBusyError) {
 			return error(409, err.message);
 		}
 		logRouteError(request.log, 'resolve_closet_match_failed', err);

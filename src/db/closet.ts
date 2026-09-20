@@ -316,11 +316,11 @@ export class ClosetDB {
 		await this.db
 			.prepare(
 				`
-				INSERT INTO closet_items (id, user_id, label, category, subcategory, color, pattern, style_tags, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				INSERT INTO closet_items (id, user_id, label, category, subcategory, color, pattern, style_tags, created_at, updated_at, vector_id)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				`
 			)
-			.bind(id, params.userId, params.label, params.category, params.subcategory, params.color, params.pattern, styleTagsJson, now, now)
+			.bind(id, params.userId, params.label, params.category, params.subcategory, params.color, params.pattern, styleTagsJson, now, now, `item:${id}`)
 			.run();
 
 		return {
@@ -347,10 +347,21 @@ export class ClosetDB {
 		confidence: 'high' | 'medium' | 'low';
 		blurHash?: string | null;
 	}): Promise<void> {
-		const id = crypto.randomUUID();
 		const now = Date.now();
 		const boundingBoxJson = JSON.stringify(params.boundingBox);
 		const blurHash = params.blurHash?.trim() || null;
+
+		const existing = await this.db
+			.prepare(
+				`
+				SELECT id FROM outfit_clothing_items
+				WHERE outfit_id = ? AND closet_item_id = ? AND bounding_box = ?
+				LIMIT 1
+				`
+			)
+			.bind(params.outfitId, params.closetItemId, boundingBoxJson)
+			.first<{ id: string }>();
+		if (existing) return;
 
 		await this.db
 			.prepare(
@@ -359,7 +370,7 @@ export class ClosetDB {
 				VALUES (?, ?, ?, ?, ?, ?, ?)
 				`
 			)
-			.bind(id, params.outfitId, params.closetItemId, boundingBoxJson, params.confidence, blurHash, now)
+			.bind(crypto.randomUUID(), params.outfitId, params.closetItemId, boundingBoxJson, params.confidence, blurHash, now)
 			.run();
 	}
 
@@ -929,6 +940,25 @@ export class ClosetDB {
 			.first<ClosetItemMatchRow>();
 
 		return row ? parseMatchWithOutfit(row) : null;
+	}
+
+	async claimMatch(
+		userId: string,
+		matchId: string,
+		params: { status: 'same' | 'new'; closetItemId: string }
+	): Promise<boolean> {
+		const result = await this.db
+			.prepare(
+				`
+				UPDATE closet_item_matches
+				SET status = ?, resolved_at = ?, resolved_closet_item_id = ?
+				WHERE id = ? AND user_id = ? AND status = 'pending'
+				`
+			)
+			.bind(params.status, Date.now(), params.closetItemId, matchId, userId)
+			.run();
+
+		return (result.meta.changes ?? 0) > 0;
 	}
 
 	async markMatchResolved(
