@@ -756,6 +756,8 @@ class MemoryCloset {
 			status: 'pending',
 			created_at: Date.now(),
 			resolved_at: null,
+			resolved_closet_item_id: null,
+			probe_embed: null,
 		};
 		this.matches.push(match);
 		return match;
@@ -850,6 +852,8 @@ function seedPendingMatch(closet: MemoryCloset): ClosetItemMatch {
 		status: 'pending',
 		created_at: now,
 		resolved_at: null,
+		resolved_closet_item_id: null,
+		probe_embed: null,
 	};
 	closet.matches.push(match);
 	return match;

@@ -267,6 +267,8 @@ CREATE TABLE IF NOT EXISTS closet_items (
     style_tags TEXT, -- JSON array of strings
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
+    vector_id TEXT, -- item:{id}; written at insert
+    vector_indexed_at INTEGER, -- stamped when Vectorize getByIds hits
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -304,6 +306,8 @@ CREATE TABLE IF NOT EXISTS closet_item_matches (
 	status TEXT NOT NULL CHECK(status IN ('pending', 'same', 'new')) DEFAULT 'pending',
 	created_at INTEGER NOT NULL,
 	resolved_at INTEGER,
+	probe_embed TEXT, -- JSON ClosetMatchProbeEmbed; omit from list SELECT
+	resolved_closet_item_id TEXT, -- reserved at CAS; no FK (row may not exist yet)
 	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
 	FOREIGN KEY (outfit_id) REFERENCES outfits(id) ON DELETE CASCADE,
 	FOREIGN KEY (candidate_closet_item_id) REFERENCES closet_items(id) ON DELETE CASCADE
