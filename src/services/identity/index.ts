@@ -71,6 +71,13 @@ export type {
 	ClosetVectorRepairDecision,
 } from './closetVectorRepair';
 export {
+	SEARCHABLE_GATE_TIMEOUT_MS,
+	SEARCHABLE_GATE_POLL_MS,
+	awaitSearchableOrDegrade,
+	awaitPriorCreatesSearchable,
+} from './searchableGate';
+export type { SearchableGateResult, SearchableGateWait } from './searchableGate';
+export {
 	resolveClosetIndexStatus,
 	nextActionForIndexStatus,
 	resolveMatchLifecycle,

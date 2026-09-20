@@ -21,6 +21,7 @@ import {
 import type { PreparedClosetCrop, QueryClosetCropMatch } from '../src/services/identity';
 import type { ClosetItem, ClosetItemMatch, ClosetItemMatchWithOutfit, Outfit } from '../src/db/closet';
 import type { Logger } from '../src/utils/logger.utils';
+import { closetItemVectorId } from '../src/services/identity/vectorize.store';
 
 const BOX = { x: 20, y: 15, width: 40, height: 35 };
 
@@ -299,6 +300,7 @@ describe('OutfitIdentityProcessor', () => {
 		const harness = createHarness({
 			neighbors: [],
 			upsertError: new Error('vectorize down'),
+			visible: false,
 		});
 		const result = await harness.processor.process({
 			userId: 'u1',
@@ -315,13 +317,29 @@ describe('OutfitIdentityProcessor', () => {
 		expect(harness.closet.links).toHaveLength(1);
 		expect(harness.identity.upserts).toHaveLength(1);
 		expect(harness.identity.deletes).toHaveLength(0);
+		expect(harness.closet.items[0].index_status).toBe('indexing');
 		expect(harness.repairSends).toEqual([
 			{ kind: 'closet_vector_backfill', closetItemId: result?.items[0].closet_item_id },
 		]);
 	});
 
-	it('does not wait on Vectorize visibility before committing D1', async () => {
+	it('degrades prior creates when the searchable gate times out and continues', async () => {
 		const harness = createHarness({ neighbors: [], visible: false });
+		harness.closet.items.push({
+			id: 'prior-1',
+			user_id: 'u1',
+			label: 'prior shirt',
+			category: 'top',
+			subcategory: 'shirt',
+			color: 'olive',
+			pattern: 'solid',
+			style_tags: [],
+			created_at: Date.now(),
+			updated_at: Date.now(),
+			vector_indexed_at: null,
+			index_status: 'indexing',
+			index_attempts: 1,
+		});
 		const result = await harness.processor.process({
 			userId: 'u1',
 			imageUrl: 'https://img/test.jpg',
@@ -329,8 +347,9 @@ describe('OutfitIdentityProcessor', () => {
 		});
 
 		expect(result?.items[0].identity_status).toBe('created');
-		expect(harness.closet.items).toHaveLength(1);
-		expect(harness.identity.waits).toBe(0);
+		expect(harness.closet.items.find((item) => item.id === 'prior-1')?.index_status).toBe(
+			'index_degraded'
+		);
 		expect(harness.identity.deletes).toHaveLength(0);
 	});
 
@@ -898,6 +917,34 @@ describe('serial identity writer', () => {
 		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.repairSends).toEqual([]);
 	});
+	it('gates prior unindexed creates before ANN on the next outfit', async () => {
+		const harness = createHarness({ neighbors: [] });
+		harness.closet.items.push({
+			id: 'prior-1',
+			user_id: 'u1',
+			label: 'prior shirt',
+			category: 'top',
+			subcategory: 'shirt',
+			color: 'olive',
+			pattern: 'solid',
+			style_tags: [],
+			created_at: Date.now(),
+			updated_at: Date.now(),
+			vector_indexed_at: null,
+			index_status: 'indexing',
+			index_attempts: 1,
+		});
+
+		await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/next.jpg',
+		});
+
+		expect(harness.closet.items.find((item) => item.id === 'prior-1')?.index_status).toBe('indexed');
+		expect(harness.identity.getByIdsCalls[0]).toEqual([closetItemVectorId('prior-1')]);
+		expect(harness.identity.queries).toBe(1);
+	});
 });
 
 function clothingItem(overrides: Partial<ClothingItem> = {}): ClothingItem {
@@ -966,6 +1013,7 @@ function createHarness(options: {
 		waits: 0,
 		upserts: [] as Array<{ closetItemId?: string }>,
 		deletes: [] as string[],
+		getByIdsCalls: [] as string[][],
 		prepareClosetCrop: async () => {
 			identity.prepares += 1;
 			if (options.prepareError) throw options.prepareError;
@@ -987,6 +1035,12 @@ function createHarness(options: {
 			}
 			return undefined as never;
 		},
+		getVectorsByIds: async (ids: string[]) => {
+			identity.getByIdsCalls.push(ids);
+			identity.waits += 1;
+			if (options.visible === false) return [];
+			return ids.map((id) => ({ id }));
+		},
 	};
 	const digestSchedules: string[] = [];
 	const catalogNotifies: Array<{
@@ -1000,7 +1054,7 @@ function createHarness(options: {
 		identity as never,
 		closet,
 		silentLogger(),
-		{ sleep: async () => {} },
+		{ timeoutMs: 0, pollMs: 0, now: Date.now, sleep: async () => {} },
 		{
 			schedule: async (userId) => {
 				digestSchedules.push(userId);
@@ -1088,6 +1142,28 @@ function createHarness(options: {
 			item.index_attempts = (item.index_attempts ?? 0) + 1;
 		}
 		return true;
+	}
+
+	async stampVectorIndexedAt(itemId: string, atMs = Date.now()): Promise<boolean> {
+		const item = this.items.find((row) => row.id === itemId);
+		if (!item || item.vector_indexed_at != null) return false;
+		item.vector_indexed_at = atMs;
+		item.index_status = 'indexed';
+		return true;
+	}
+
+	async listPendingIndexClosetItemIdsForUser(userId: string, limit = 50): Promise<string[]> {
+		return this.items
+			.filter(
+				(item) =>
+					item.user_id === userId &&
+					item.vector_indexed_at == null &&
+					(item.index_status === 'committed' ||
+						item.index_status === 'indexing' ||
+						item.index_status == null)
+			)
+			.slice(0, limit)
+			.map((item) => item.id);
 	}
 
 	async createOutfit(

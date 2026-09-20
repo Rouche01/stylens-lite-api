@@ -22,6 +22,11 @@ import { isIdentityMatch } from './cropColor';
 import { closetItemVectorId } from './vectorize.store';
 import { closetMatchProbeFromPrepared, preparedFromProbeEmbed } from './probeEmbed';
 import type { ClosetVectorBackfillJob, ClosetVectorRepairJob } from './closetVectorRepair';
+import {
+	SEARCHABLE_GATE_POLL_MS,
+	SEARCHABLE_GATE_TIMEOUT_MS,
+	awaitPriorCreatesSearchable,
+} from './searchableGate';
 import { createClosetMatchDigestScheduler } from './closetMatchDigest';
 import {
 	createClosetCatalogNotifier,
@@ -32,7 +37,7 @@ import type { ClosetCatalogNotifyItem } from '../../utils/closet_browse';
 export type OutfitIdentityExtractor = Pick<OutfitExtractionService, 'extractOutfitItems'>;
 export type OutfitIdentityQueries = Pick<
 	IdentityService,
-	'prepareClosetCrop' | 'queryPreparedCrop' | 'upsertPreparedCrop'
+	'prepareClosetCrop' | 'queryPreparedCrop' | 'upsertPreparedCrop' | 'getVectorsByIds'
 >;
 export type OutfitIdentityStore = Pick<
 	ClosetDB,
@@ -52,6 +57,8 @@ export type OutfitIdentityStore = Pick<
 	| 'updatePendingMatch'
 	| 'touchMatchAsk'
 	| 'setClosetIndexStatus'
+	| 'stampVectorIndexedAt'
+	| 'listPendingIndexClosetItemIdsForUser'
 >;
 
 export type ClosetVectorRepairScheduler = {
@@ -97,6 +104,9 @@ export type ResolveClosetMatchResult = {
 };
 
 export type IdentityWait = {
+	timeoutMs: number;
+	pollMs: number;
+	now: () => number;
 	sleep: (ms: number) => Promise<void>;
 };
 
@@ -167,6 +177,9 @@ export type ProcessOutfitImageResult = {
 };
 
 const DEFAULT_WAIT: IdentityWait = {
+	timeoutMs: SEARCHABLE_GATE_TIMEOUT_MS,
+	pollMs: SEARCHABLE_GATE_POLL_MS,
+	now: Date.now,
 	sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
 
@@ -320,6 +333,15 @@ export class OutfitIdentityProcessor {
 			if (outfit.image_width == null || outfit.image_height == null) {
 				await this.closet.setOutfitImageDimensionsIfMissing(outfit.id, dims.width, dims.height);
 			}
+
+			await awaitPriorCreatesSearchable({
+				userId: params.userId,
+				closet: this.closet,
+				identity: this.identity,
+				wait: this.wait,
+				log: this.log,
+			});
+
 			const items: ProcessedOutfitItem[] = [];
 			for (const item of extracted.items) {
 				items.push(

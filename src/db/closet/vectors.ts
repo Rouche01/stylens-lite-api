@@ -129,6 +129,27 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 			return (result.results ?? []).map((row) => row.id).filter(Boolean);
 		}
 
+		/**
+		 * User tiles still waiting on Vectorize (committed/indexing).
+		 * Excludes index_degraded — those already exhausted the gate budget.
+		 */
+		async listPendingIndexClosetItemIdsForUser(userId: string, limit = 50): Promise<string[]> {
+			const result = await this.db
+				.prepare(
+					`
+					SELECT id FROM closet_items
+					WHERE user_id = ?
+						AND vector_indexed_at IS NULL
+						AND COALESCE(index_status, 'committed') IN ('committed', 'indexing')
+					ORDER BY created_at ASC
+					LIMIT ?
+					`
+				)
+				.bind(userId, limit)
+				.all<{ id: string }>();
+			return (result.results ?? []).map((row) => row.id).filter(Boolean);
+		}
+
 		async listClaimedNewMatchesWithoutItem(limit = 25): Promise<ClosetItemMatchWithOutfit[]> {
 			const result = await this.db
 				.prepare(
