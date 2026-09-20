@@ -269,10 +269,15 @@ CREATE TABLE IF NOT EXISTS closet_items (
     updated_at INTEGER NOT NULL,
     vector_id TEXT, -- item:{id}; written at insert
     vector_indexed_at INTEGER, -- stamped when Vectorize getByIds hits
+    index_status TEXT, -- committed | indexing | indexed | index_degraded
+    index_attempts INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_closet_items_user_id ON closet_items(user_id);
+CREATE INDEX IF NOT EXISTS idx_closet_items_index_status
+ON closet_items(index_status)
+WHERE index_status IS NOT NULL AND index_status != 'indexed';
 
 -- Create outfit_clothing_items join table
 CREATE TABLE IF NOT EXISTS outfit_clothing_items (

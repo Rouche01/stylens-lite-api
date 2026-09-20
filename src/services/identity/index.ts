@@ -71,6 +71,21 @@ export type {
 	ClosetVectorRepairDecision,
 } from './closetVectorRepair';
 export {
+	resolveClosetIndexStatus,
+	nextActionForIndexStatus,
+	resolveMatchLifecycle,
+	nextActionForMatchLifecycle,
+	isClosetIndexStatus,
+	CLOSET_INDEX_STATUSES,
+	CLOSET_MATCH_LIFECYCLES,
+} from './identityStatus';
+export type {
+	ClosetIndexNextAction,
+	ClosetMatchLifecycle,
+	ClosetMatchLifecycleNextAction,
+} from './identityStatus';
+export type { ClosetIndexStatus } from '../../db/closet';
+export {
 	notifyClosetCatalogIfChanged,
 	createClosetCatalogNotifier,
 } from './closetCatalogBroadcast';

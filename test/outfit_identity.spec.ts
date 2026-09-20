@@ -954,6 +954,8 @@ function createHarness(options: {
 					label: item.label,
 					category: item.category,
 					vector_indexed_at: item.vector_indexed_at ?? null,
+					index_status: item.index_status ?? null,
+					index_attempts: item.index_attempts ?? 0,
 				}
 			: null;
 	}
@@ -1013,6 +1015,10 @@ function createHarness(options: {
 			style_tags: params.styleTags,
 			created_at: Date.now(),
 			updated_at: Date.now(),
+			vector_id: `item:${id}`,
+			vector_indexed_at: null,
+			index_status: 'committed',
+			index_attempts: 0,
 		};
 		this.items.push(item);
 		return item;

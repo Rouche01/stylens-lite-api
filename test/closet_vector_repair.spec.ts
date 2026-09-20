@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ClosetItemMatchWithOutfit } from '../src/db/closet';
+import type { ClosetIndexStatus, ClosetItemMatchWithOutfit } from '../src/db/closet';
 import {
 	VECTOR_REPAIR_MAX_ATTEMPTS,
 	enqueueClosetVectorBackfillScan,
@@ -275,6 +275,16 @@ function createRepairHarness(options: { visibleIds: string[]; staleProbe?: boole
 			label: 'olive shirt',
 			category: 'top',
 			vector_indexed_at: null as number | null,
+			index_status: 'committed',
+			index_attempts: 0,
+		} as {
+			id: string;
+			user_id: string;
+			label: string;
+			category: string;
+			vector_indexed_at: number | null;
+			index_status: ClosetIndexStatus;
+			index_attempts: number;
 		},
 		stamps: [] as string[],
 		batchStamps: [] as string[][],
@@ -286,6 +296,7 @@ function createRepairHarness(options: { visibleIds: string[]; staleProbe?: boole
 		async stampVectorIndexedAt(itemId: string) {
 			this.stamps.push(itemId);
 			this.item.vector_indexed_at = Date.now();
+			this.item.index_status = 'indexed';
 			return true;
 		},
 		async stampVectorIndexedAtMany(itemIds: readonly string[]) {
