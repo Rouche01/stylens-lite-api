@@ -271,6 +271,7 @@ CREATE TABLE IF NOT EXISTS closet_items (
     vector_indexed_at INTEGER, -- stamped when Vectorize getByIds hits
     index_status TEXT, -- committed | indexing | indexed | index_degraded
     index_attempts INTEGER NOT NULL DEFAULT 0,
+    probe_embed TEXT, -- JSON ClosetMatchProbeEmbed; for repair + unindexed fallback
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 

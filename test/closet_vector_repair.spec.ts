@@ -335,6 +335,9 @@ function createRepairHarness(options: { visibleIds: string[]; staleProbe?: boole
 		async getMatchByResolvedClosetItemId() {
 			return match;
 		},
+		async getClosetItemProbeEmbed() {
+			return null;
+		},
 		async getLatestWearImageForClosetItem() {
 			return null;
 		},

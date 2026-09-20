@@ -917,6 +917,7 @@ describe('serial identity writer', () => {
 		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.repairSends).toEqual([]);
 	});
+
 	it('gates prior unindexed creates before ANN on the next outfit', async () => {
 		const harness = createHarness({ neighbors: [] });
 		harness.closet.items.push({
@@ -944,6 +945,40 @@ describe('serial identity writer', () => {
 		expect(harness.closet.items.find((item) => item.id === 'prior-1')?.index_status).toBe('indexed');
 		expect(harness.identity.getByIdsCalls[0]).toEqual([closetItemVectorId('prior-1')]);
 		expect(harness.identity.queries).toBe(1);
+	});
+
+	it('asks when an unindexed prior probe matches even if ANN is empty', async () => {
+		const harness = createHarness({ neighbors: [] });
+		harness.closet.items.push({
+			id: 'prior-1',
+			user_id: 'u1',
+			label: 'olive shirt',
+			category: 'top',
+			subcategory: 'shirt',
+			color: 'olive',
+			pattern: 'solid',
+			style_tags: [],
+			created_at: Date.now(),
+			updated_at: Date.now(),
+			vector_indexed_at: null,
+			index_status: 'index_degraded',
+			index_attempts: 3,
+		});
+		harness.closet.probeEmbeds['prior-1'] = closetMatchProbeFromPrepared(PREPARED)!;
+
+		const result = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/next.jpg',
+		});
+
+		expect(result?.items[0]).toMatchObject({
+			identity_status: 'ask',
+			candidate_closet_item_id: 'prior-1',
+			is_new_closet_item: false,
+		});
+		expect(harness.closet.items.filter((item) => item.id !== 'prior-1')).toHaveLength(0);
+		expect(harness.closet.matches).toHaveLength(1);
 	});
 });
 
@@ -1096,6 +1131,7 @@ function createHarness(options: {
 	lock: { userId: string; jobId: string } | null = null;
 	stealClaimAs: 'same' | 'new' | null = null;
 	stealResolvedClosetItemId: string | null = null;
+	probeEmbeds: Record<string, NonNullable<ClosetItemMatch['probe_embed']>> = {};
 
 	constructor(private options: { d1Error?: Error } = {}) {}
 
@@ -1166,6 +1202,34 @@ function createHarness(options: {
 			.map((item) => item.id);
 	}
 
+	async listRecentUnindexedProbes(userId: string, params?: { limit?: number; maxAgeMs?: number }) {
+		const limit = params?.limit ?? 25;
+		const maxAgeMs = params?.maxAgeMs ?? 7 * 24 * 60 * 60 * 1000;
+		const minCreatedAt = Date.now() - maxAgeMs;
+		return this.items
+			.filter(
+				(item) =>
+					item.user_id === userId &&
+					item.vector_indexed_at == null &&
+					item.created_at >= minCreatedAt &&
+					(item.index_status === 'committed' ||
+						item.index_status === 'indexing' ||
+						item.index_status === 'index_degraded' ||
+						item.index_status == null) &&
+					Boolean(this.probeEmbeds[item.id])
+			)
+			.sort((a, b) => b.created_at - a.created_at)
+			.slice(0, limit)
+			.map((item) => ({
+				closetItemId: item.id,
+				category: item.category,
+				label: item.label,
+				probeEmbed: this.probeEmbeds[item.id],
+				indexStatus: item.index_status ?? null,
+				createdAt: item.created_at,
+			}));
+	}
+
 	async createOutfit(
 		userId: string,
 		imageUrl: string,
@@ -1205,6 +1269,7 @@ function createHarness(options: {
 		color: string;
 		pattern: string;
 		styleTags: string[];
+		probeEmbed?: ClosetItemMatch['probe_embed'];
 	}): Promise<ClosetItem> {
 		if (this.options.d1Error) throw this.options.d1Error;
 		const id = params.id?.trim() || `item-${this.items.length + 1}`;
@@ -1227,6 +1292,9 @@ function createHarness(options: {
 			index_attempts: 0,
 		};
 		this.items.push(item);
+		if (params.probeEmbed) {
+			this.probeEmbeds[id] = params.probeEmbed;
+		}
 		return item;
 	}
 

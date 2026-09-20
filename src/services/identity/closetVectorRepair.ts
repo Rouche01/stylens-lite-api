@@ -31,6 +31,7 @@ export type ClosetVectorRepairDecision =
 export type ClosetVectorRepairStore = Pick<
 	ClosetDB,
 	| 'getClosetItemSummary'
+	| 'getClosetItemProbeEmbed'
 	| 'stampVectorIndexedAt'
 	| 'stampVectorIndexedAtMany'
 	| 'setClosetIndexStatus'
@@ -242,6 +243,9 @@ async function preparedForRepair(
 	closetItemId: string,
 	match: ClosetItemMatchWithOutfit | null
 ): Promise<PreparedClosetCrop> {
+	const itemProbe = await closet.getClosetItemProbeEmbed(closetItemId);
+	const fromItem = preparedFromProbeEmbed(itemProbe, match?.outfit_image_key ?? '');
+	if (fromItem) return fromItem;
 	const fromProbe = match ? preparedFromProbeEmbed(match.probe_embed, match.outfit_image_key) : null;
 	if (fromProbe) return fromProbe;
 	if (match) {

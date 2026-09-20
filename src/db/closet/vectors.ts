@@ -1,5 +1,9 @@
-import type { ClosetIndexStatus, ClosetItemMatchWithOutfit } from './types';
-import { CLOSET_MATCH_GET_COLUMNS, parseClosetIndexStatus } from './types';
+import type { ClosetIndexStatus, ClosetItemMatchWithOutfit, ClosetMatchProbeEmbed } from './types';
+import {
+	CLOSET_MATCH_GET_COLUMNS,
+	parseClosetIndexStatus,
+	parseClosetMatchProbeEmbed,
+} from './types';
 import { parseJsonBox, parseMatchWithOutfit, type ClosetItemMatchRow } from './parse';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -133,6 +137,14 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 		 * User tiles still waiting on Vectorize (committed/indexing).
 		 * Excludes index_degraded — those already exhausted the gate budget.
 		 */
+		async getClosetItemProbeEmbed(itemId: string): Promise<ClosetMatchProbeEmbed | null> {
+			const row = await this.db
+				.prepare(`SELECT probe_embed FROM closet_items WHERE id = ?`)
+				.bind(itemId)
+				.first<{ probe_embed: string | null }>();
+			return parseClosetMatchProbeEmbed(row?.probe_embed);
+		}
+
 		async listPendingIndexClosetItemIdsForUser(userId: string, limit = 50): Promise<string[]> {
 			const result = await this.db
 				.prepare(
@@ -148,6 +160,72 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 				.bind(userId, limit)
 				.all<{ id: string }>();
 			return (result.results ?? []).map((row) => row.id).filter(Boolean);
+		}
+
+		/**
+		 * Recent unindexed / degraded tiles with stored probes for local identity scoring.
+		 */
+		async listRecentUnindexedProbes(
+			userId: string,
+			params?: { limit?: number; maxAgeMs?: number }
+		): Promise<
+			Array<{
+				closetItemId: string;
+				category: string;
+				label: string;
+				probeEmbed: ClosetMatchProbeEmbed;
+				indexStatus: ClosetIndexStatus | null;
+				createdAt: number;
+			}>
+		> {
+			const limit = params?.limit ?? 25;
+			const maxAgeMs = params?.maxAgeMs ?? 7 * 24 * 60 * 60 * 1000;
+			const minCreatedAt = Date.now() - maxAgeMs;
+			const result = await this.db
+				.prepare(
+					`
+					SELECT id, category, label, probe_embed, index_status, created_at
+					FROM closet_items
+					WHERE user_id = ?
+						AND vector_indexed_at IS NULL
+						AND COALESCE(index_status, 'committed') IN ('committed', 'indexing', 'index_degraded')
+						AND probe_embed IS NOT NULL
+						AND created_at >= ?
+					ORDER BY created_at DESC
+					LIMIT ?
+					`
+				)
+				.bind(userId, minCreatedAt, limit)
+				.all<{
+					id: string;
+					category: string;
+					label: string;
+					probe_embed: string;
+					index_status: string | null;
+					created_at: number;
+				}>();
+
+			const rows: Array<{
+				closetItemId: string;
+				category: string;
+				label: string;
+				probeEmbed: ClosetMatchProbeEmbed;
+				indexStatus: ClosetIndexStatus | null;
+				createdAt: number;
+			}> = [];
+			for (const row of result.results ?? []) {
+				const probeEmbed = parseClosetMatchProbeEmbed(row.probe_embed);
+				if (!probeEmbed) continue;
+				rows.push({
+					closetItemId: row.id,
+					category: row.category,
+					label: row.label,
+					probeEmbed,
+					indexStatus: parseClosetIndexStatus(row.index_status),
+					createdAt: row.created_at,
+				});
+			}
+			return rows;
 		}
 
 		async listClaimedNewMatchesWithoutItem(limit = 25): Promise<ClosetItemMatchWithOutfit[]> {

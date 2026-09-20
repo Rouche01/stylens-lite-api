@@ -1,5 +1,12 @@
-import type { ClosetItem, ClosetItemDetails, Outfit, OutfitLinkedItem } from './types';
+import type {
+	ClosetItem,
+	ClosetItemDetails,
+	ClosetMatchProbeEmbed,
+	Outfit,
+	OutfitLinkedItem,
+} from './types';
 import { closetTileAspectRatio, mapOutfitRow, normalizeImageDimensions } from './parse';
+import { serializeClosetMatchProbeEmbed } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Ctor = new (...args: any[]) => import('./base').ClosetDBBase;
@@ -93,19 +100,23 @@ export function WithClosetItems<TBase extends Ctor>(Base: TBase) {
 			color: string;
 			pattern: string;
 			styleTags: string[];
+			probeEmbed?: ClosetMatchProbeEmbed | null;
 		}): Promise<ClosetItem> {
 			const id = params.id?.trim() || crypto.randomUUID();
 			const now = Date.now();
 			const styleTagsJson = JSON.stringify(params.styleTags);
+			const probeEmbedJson = params.probeEmbed
+				? serializeClosetMatchProbeEmbed(params.probeEmbed)
+				: null;
 
 			await this.db
 				.prepare(
 					`
 					INSERT INTO closet_items (
 						id, user_id, label, category, subcategory, color, pattern, style_tags,
-						created_at, updated_at, vector_id, index_status, index_attempts
+						created_at, updated_at, vector_id, index_status, index_attempts, probe_embed
 					)
-					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'committed', 0)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'committed', 0, ?)
 					`
 				)
 				.bind(
@@ -119,7 +130,8 @@ export function WithClosetItems<TBase extends Ctor>(Base: TBase) {
 					styleTagsJson,
 					now,
 					now,
-					`item:${id}`
+					`item:${id}`,
+					probeEmbedJson
 				)
 				.run();
 

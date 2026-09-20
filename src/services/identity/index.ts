@@ -78,6 +78,13 @@ export {
 } from './searchableGate';
 export type { SearchableGateResult, SearchableGateWait } from './searchableGate';
 export {
+	UNINDEXED_PROBE_LIMIT,
+	UNINDEXED_PROBE_MAX_AGE_MS,
+	cosineSimilarity,
+	scoreUnindexedProbes,
+	mergeIdentityNeighbors,
+} from './unindexedFallback';
+export {
 	resolveClosetIndexStatus,
 	nextActionForIndexStatus,
 	resolveMatchLifecycle,

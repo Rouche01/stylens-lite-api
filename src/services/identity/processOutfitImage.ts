@@ -27,6 +27,12 @@ import {
 	SEARCHABLE_GATE_TIMEOUT_MS,
 	awaitPriorCreatesSearchable,
 } from './searchableGate';
+import {
+	UNINDEXED_PROBE_LIMIT,
+	UNINDEXED_PROBE_MAX_AGE_MS,
+	mergeIdentityNeighbors,
+	scoreUnindexedProbes,
+} from './unindexedFallback';
 import { createClosetMatchDigestScheduler } from './closetMatchDigest';
 import {
 	createClosetCatalogNotifier,
@@ -59,6 +65,7 @@ export type OutfitIdentityStore = Pick<
 	| 'setClosetIndexStatus'
 	| 'stampVectorIndexedAt'
 	| 'listPendingIndexClosetItemIdsForUser'
+	| 'listRecentUnindexedProbes'
 >;
 
 export type ClosetVectorRepairScheduler = {
@@ -474,7 +481,9 @@ export class OutfitIdentityProcessor {
 				userId: params.userId,
 				category: params.item.category,
 			});
-			return decideIdentityFromNeighbors(queried.neighbors);
+			const localNeighbors = await this.scoreLocalUnindexed(params.userId, prepared, params.item.category);
+			const neighbors = mergeIdentityNeighbors(queried.neighbors, localNeighbors);
+			return decideIdentityFromNeighbors(neighbors);
 		} catch (err) {
 			this.log.warn(
 				'outfit_identity_query_failed',
@@ -486,6 +495,23 @@ export class OutfitIdentityProcessor {
 				err
 			);
 			return { action: 'create', reason: 'identity_error' };
+		}
+	}
+
+	private async scoreLocalUnindexed(
+		userId: string,
+		prepared: PreparedClosetCrop,
+		category: string
+	): Promise<QueryClosetCropMatch[]> {
+		try {
+			const probes = await this.closet.listRecentUnindexedProbes(userId, {
+				limit: UNINDEXED_PROBE_LIMIT,
+				maxAgeMs: UNINDEXED_PROBE_MAX_AGE_MS,
+			});
+			return scoreUnindexedProbes({ prepared, probes, category });
+		} catch (err) {
+			this.log.warn('outfit_identity_unindexed_fallback_failed', { user_id: userId }, err);
+			return [];
 		}
 	}
 
@@ -513,6 +539,7 @@ export class OutfitIdentityProcessor {
 				color: params.item.color,
 				pattern: params.item.pattern,
 				styleTags: params.item.style_tags || [],
+				probeEmbed: closetMatchProbeFromPrepared(prepared),
 			});
 			await this.closet.linkClosetItemToOutfit({
 				outfitId: params.outfitId,
@@ -666,6 +693,7 @@ export class OutfitIdentityProcessor {
 				color: item.color,
 				pattern: item.pattern,
 				styleTags: item.style_tags || [],
+				probeEmbed: closetMatchProbeFromPrepared(prepared),
 			});
 		} catch (err) {
 			this.log.warn(
@@ -807,6 +835,7 @@ export class OutfitIdentityProcessor {
 				color: item.color,
 				pattern: item.pattern,
 				styleTags: item.style_tags || [],
+				probeEmbed: closetMatchProbeFromPrepared(prepared),
 			});
 		} catch (err) {
 			const created = await this.closet.getClosetItemSummary(closetItemId);
