@@ -624,11 +624,7 @@ export class OutfitIdentityProcessor {
 		const item = clothingItemFromMatch(match);
 		let prepared: PreparedClosetCrop;
 		try {
-			prepared = await this.identity.prepareClosetCrop({
-				imageKey: match.outfit_image_key,
-				boundingBox: match.bounding_box,
-				signal,
-			});
+			prepared = await this.preparedForResolve(match, signal);
 		} catch (err) {
 			this.log.warn(
 				'outfit_identity_resolve_embed_failed',

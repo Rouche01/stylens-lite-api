@@ -426,6 +426,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		]);
 		expect(harness.identity.upserts).toHaveLength(1);
 		expect(harness.identity.deletes).toHaveLength(0);
+		expect(harness.identity.prepares).toBe(0);
 		expect(harness.identity.queries).toBe(0);
 		expect(harness.identity.waits).toBe(0);
 		expect(harness.closet.lock).toBeNull();
@@ -472,6 +473,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(result.identity_status).toBe('created');
 		expect(result.closet_item_id).toBeTruthy();
 		expect(harness.closet.matches[0].status).toBe('new');
+		expect(harness.identity.prepares).toBe(0);
 		expect(harness.identity.queries).toBe(0);
 		expect(harness.identity.deletes).toHaveLength(0);
 		expect(harness.digestSchedules).toEqual([]);
@@ -490,6 +492,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 
 		expect(result.identity_status).toBe('failed');
 		expect(result.identity_reason).toBe('upsert_failed');
+		expect(harness.identity.prepares).toBe(0);
 		expect(harness.closet.matches[0].status).toBe('pending');
 		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1']);
 		expect(harness.catalogNotifies).toHaveLength(0);
@@ -507,6 +510,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 
 		expect(harness.identity.upserts).toHaveLength(1);
 		expect(harness.identity.deletes).toHaveLength(1);
+		expect(harness.identity.prepares).toBe(0);
 		expect(harness.identity.deletes[0]).toMatch(/^item:/);
 		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1']);
 		expect(harness.closet.matches[0].status).toBe('same');
@@ -566,6 +570,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(harness.closet.items.filter((item) => item.id !== 'c1')).toHaveLength(1);
 		expect(harness.closet.links).toHaveLength(1);
 		expect(harness.identity.upserts).toHaveLength(1);
+		expect(harness.identity.prepares).toBe(0);
 	});
 
 	it('finishes an incomplete new claim on the reserved closet item id', async () => {
@@ -629,6 +634,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(result.closet_item_id).toBe('winner-1');
 		expect(harness.identity.upserts).toHaveLength(1);
 		expect(harness.identity.deletes).toHaveLength(1);
+		expect(harness.identity.prepares).toBe(0);
 		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1', 'winner-1']);
 		expect(harness.closet.links).toEqual([
 			{
@@ -1060,7 +1066,7 @@ function seedPendingMatch(closet: MemoryCloset): ClosetItemMatch {
 		created_at: now,
 		resolved_at: null,
 		resolved_closet_item_id: null,
-		probe_embed: null,
+		probe_embed: closetMatchProbeFromPrepared(PREPARED),
 	};
 	closet.matches.push(match);
 	return match;
