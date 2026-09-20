@@ -33,6 +33,7 @@ export type ClosetVectorRepairStore = Pick<
 	| 'getClosetItemSummary'
 	| 'stampVectorIndexedAt'
 	| 'stampVectorIndexedAtMany'
+	| 'setClosetIndexStatus'
 	| 'listUnindexedClosetItemIds'
 	| 'listClaimedNewMatchesWithoutItem'
 	| 'getMatchWithOutfit'
@@ -110,6 +111,10 @@ export async function runClosetVectorRepair(params: {
 		return { action: 'ack', reason: 'already_stamped' };
 	}
 
+	await params.closet.setClosetIndexStatus(closetItemId, 'indexing', {
+		incrementAttempts: true,
+	});
+
 	const vectorId = closetItemVectorId(closetItemId);
 	const found = await params.identity.getVectorsByIds([vectorId]);
 	if (found.length > 0) {
@@ -133,6 +138,7 @@ export async function runClosetVectorRepair(params: {
 
 	const attempts = params.attempts ?? 1;
 	if (attempts >= VECTOR_REPAIR_MAX_ATTEMPTS) {
+		await params.closet.setClosetIndexStatus(closetItemId, 'index_degraded');
 		params.log.warn('closet_vector_repair_exhausted', {
 			closet_item_id: closetItemId,
 			attempts,

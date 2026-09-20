@@ -67,6 +67,10 @@ describe('runClosetVectorRepair', () => {
 
 		expect(decision).toEqual({ action: 'ack', reason: 'stamped' });
 		expect(harness.closet.stamps).toEqual(['new-1']);
+		expect(harness.closet.statusUpdates).toEqual([
+			{ itemId: 'new-1', status: 'indexing', incrementAttempts: true },
+		]);
+		expect(harness.closet.item.index_status).toBe('indexed');
 		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.identity.prepares).toBe(0);
 		expect(harness.identity.deletes).toHaveLength(0);
@@ -86,6 +90,7 @@ describe('runClosetVectorRepair', () => {
 
 		expect(decision).toEqual({ action: 'retry', delaySeconds: 2 });
 		expect(harness.closet.stamps).toEqual([]);
+		expect(harness.closet.item.index_status).toBe('indexing');
 		expect(harness.identity.upserts).toEqual([{ closetItemId: 'new-1' }]);
 		expect(harness.identity.prepares).toBe(0);
 		expect(harness.identity.deletes).toHaveLength(0);
@@ -142,6 +147,7 @@ describe('runClosetVectorRepair', () => {
 		});
 
 		expect(decision).toEqual({ action: 'ack', reason: 'exhausted' });
+		expect(harness.closet.item.index_status).toBe('index_degraded');
 		expect(harness.identity.deletes).toHaveLength(0);
 		expect(sent).toEqual([
 			{
@@ -288,10 +294,24 @@ function createRepairHarness(options: { visibleIds: string[]; staleProbe?: boole
 		},
 		stamps: [] as string[],
 		batchStamps: [] as string[][],
+		statusUpdates: [] as Array<{ itemId: string; status: string; incrementAttempts?: boolean }>,
 		unindexedIds: [] as string[],
 		orphans: [] as ClosetItemMatchWithOutfit[],
 		async getClosetItemSummary(itemId: string) {
 			return itemId === this.item.id ? this.item : null;
+		},
+		async setClosetIndexStatus(
+			itemId: string,
+			status: 'committed' | 'indexing' | 'index_degraded',
+			params?: { incrementAttempts?: boolean }
+		) {
+			this.statusUpdates.push({ itemId, status, incrementAttempts: params?.incrementAttempts });
+			if (itemId !== this.item.id || this.item.vector_indexed_at != null) return false;
+			this.item.index_status = status;
+			if (params?.incrementAttempts) {
+				this.item.index_attempts += 1;
+			}
+			return true;
 		},
 		async stampVectorIndexedAt(itemId: string) {
 			this.stamps.push(itemId);

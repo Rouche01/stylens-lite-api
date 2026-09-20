@@ -15,15 +15,13 @@ import { createRealtimeService } from '../realtime.svc';
 import {
 	createIdentityService,
 	IdentityService,
-	VECTOR_VISIBLE_POLL_MS,
-	VECTOR_VISIBLE_TIMEOUT_MS,
 	type PreparedClosetCrop,
 	type QueryClosetCropMatch,
 } from './identity.svc';
 import { isIdentityMatch } from './cropColor';
 import { closetItemVectorId } from './vectorize.store';
 import { closetMatchProbeFromPrepared, preparedFromProbeEmbed } from './probeEmbed';
-import type { ClosetVectorRepairJob } from './closetVectorRepair';
+import type { ClosetVectorBackfillJob, ClosetVectorRepairJob } from './closetVectorRepair';
 import { createClosetMatchDigestScheduler } from './closetMatchDigest';
 import {
 	createClosetCatalogNotifier,
@@ -34,11 +32,7 @@ import type { ClosetCatalogNotifyItem } from '../../utils/closet_browse';
 export type OutfitIdentityExtractor = Pick<OutfitExtractionService, 'extractOutfitItems'>;
 export type OutfitIdentityQueries = Pick<
 	IdentityService,
-	| 'prepareClosetCrop'
-	| 'queryPreparedCrop'
-	| 'upsertPreparedCrop'
-	| 'waitUntilVectorVisible'
-	| 'deleteVector'
+	'prepareClosetCrop' | 'queryPreparedCrop' | 'upsertPreparedCrop'
 >;
 export type OutfitIdentityStore = Pick<
 	ClosetDB,
@@ -57,10 +51,14 @@ export type OutfitIdentityStore = Pick<
 	| 'claimMatch'
 	| 'updatePendingMatch'
 	| 'touchMatchAsk'
+	| 'setClosetIndexStatus'
 >;
 
 export type ClosetVectorRepairScheduler = {
-	send(job: ClosetVectorRepairJob, options?: QueueSendOptions): Promise<unknown>;
+	send(
+		job: ClosetVectorRepairJob | ClosetVectorBackfillJob,
+		options?: QueueSendOptions
+	): Promise<unknown>;
 };
 
 export type ClosetMatchDigestScheduler = {
@@ -99,9 +97,6 @@ export type ResolveClosetMatchResult = {
 };
 
 export type IdentityWait = {
-	timeoutMs: number;
-	pollMs: number;
-	now: () => number;
 	sleep: (ms: number) => Promise<void>;
 };
 
@@ -172,9 +167,6 @@ export type ProcessOutfitImageResult = {
 };
 
 const DEFAULT_WAIT: IdentityWait = {
-	timeoutMs: VECTOR_VISIBLE_TIMEOUT_MS,
-	pollMs: VECTOR_VISIBLE_POLL_MS,
-	now: Date.now,
 	sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
 
@@ -488,76 +480,6 @@ export class OutfitIdentityProcessor {
 		decision: Extract<IdentityDecision, { action: 'create' }>
 	): Promise<ProcessedOutfitItem> {
 		const closetItemId = crypto.randomUUID();
-		const vectorId = closetItemVectorId(closetItemId);
-		try {
-			await this.identity.upsertPreparedCrop(prepared, {
-				userId: params.userId,
-				category: params.item.category,
-				closetItemId,
-			});
-		} catch (err) {
-			this.log.warn(
-				'outfit_identity_upsert_failed',
-				{ closet_item_id: closetItemId, outfit_id: params.outfitId, label: params.item.label },
-				err
-			);
-			return failedItem(params.item, 'upsert_failed', decision.identityScore);
-		}
-
-		const visible = await this.identity.waitUntilVectorVisible(vectorId, this.wait);
-		if (!visible) {
-			await this.identity.deleteVector(vectorId);
-			this.log.warn('outfit_identity_visibility_timeout', {
-				closet_item_id: closetItemId,
-				vector_id: vectorId,
-			});
-			return failedItem(params.item, 'visibility_timeout', decision.identityScore);
-		}
-
-		let commit: CommitDecision = { action: 'commit' };
-		try {
-			const requery = await this.identity.queryPreparedCrop(prepared, {
-				imageKey: params.imageKey,
-				boundingBox: params.item.bounding_box,
-				userId: params.userId,
-				category: params.item.category,
-			});
-			commit = decideCommitAfterRequery(
-				closetItemId,
-				requery.neighbors,
-				params.ignoreClosetItemIds
-			);
-		} catch (err) {
-			this.log.warn('outfit_identity_requery_failed', { closet_item_id: closetItemId }, err);
-		}
-
-		if (commit.action === 'ask') {
-			await this.identity.deleteVector(vectorId);
-			return this.persistAsk(params, commit, prepared);
-		}
-
-		if (commit.action === 'yield') {
-			await this.identity.deleteVector(vectorId);
-			const winner = await this.waitForClosetItem(commit.winnerId);
-			if (!winner) {
-				this.log.warn('outfit_identity_race_lost', {
-					closet_item_id: closetItemId,
-					winner_id: commit.winnerId,
-				});
-				return failedItem(params.item, 'race_lost', commit.identityScore);
-			}
-			return this.persistAsk(
-				params,
-				{
-					action: 'ask',
-					candidateClosetItemId: winner.id,
-					identityScore: commit.identityScore,
-					cosine: commit.cosine,
-					colorDistance: commit.colorDistance,
-				},
-				prepared
-			);
-		}
 
 		try {
 			const closetItem = await this.closet.createClosetItem({
@@ -577,6 +499,12 @@ export class OutfitIdentityProcessor {
 				confidence: extractionConfidence(params.item.confidence),
 				blurHash: prepared.crop_blur_hash,
 			});
+			await this.indexCommittedItem({
+				userId: params.userId,
+				closetItemId: closetItem.id,
+				category: params.item.category,
+				prepared,
+			});
 			this.log.info('outfit_identity_created', {
 				outfit_id: params.outfitId,
 				closet_item_id: closetItem.id,
@@ -594,7 +522,6 @@ export class OutfitIdentityProcessor {
 				identity_score: decision.identityScore ?? null,
 			};
 		} catch (err) {
-			await this.identity.deleteVector(vectorId);
 			this.log.warn(
 				'outfit_identity_d1_failed',
 				{ closet_item_id: closetItemId, outfit_id: params.outfitId },
@@ -602,6 +529,48 @@ export class OutfitIdentityProcessor {
 			);
 			return failedItem(params.item, 'd1_failed', decision.identityScore);
 		}
+	}
+
+	/**
+	 * Best-effort Vectorize write + queue index confirmation. Never rolls back D1.
+	 */
+	private async indexCommittedItem(params: {
+		userId: string;
+		closetItemId: string;
+		category: string;
+		prepared: PreparedClosetCrop;
+		matchId?: string;
+	}): Promise<void> {
+		await this.closet.setClosetIndexStatus(params.closetItemId, 'indexing', {
+			incrementAttempts: true,
+		});
+		try {
+			await this.identity.upsertPreparedCrop(params.prepared, {
+				userId: params.userId,
+				category: params.category,
+				closetItemId: params.closetItemId,
+			});
+		} catch (err) {
+			this.log.warn(
+				'outfit_identity_index_upsert_failed',
+				{ closet_item_id: params.closetItemId },
+				err
+			);
+		}
+
+		if (params.matchId) {
+			await this.enqueueVectorRepair({
+				kind: 'closet_vector_repair',
+				closetItemId: params.closetItemId,
+				matchId: params.matchId,
+				userId: params.userId,
+			});
+			return;
+		}
+		await this.enqueueVectorRepair({
+			kind: 'closet_vector_backfill',
+			closetItemId: params.closetItemId,
+		});
 	}
 
 	private async resolveSame(match: ClosetItemMatchWithOutfit): Promise<ResolveClosetMatchResult> {
@@ -649,36 +618,11 @@ export class OutfitIdentityProcessor {
 		}
 
 		const closetItemId = crypto.randomUUID();
-		const vectorId = closetItemVectorId(closetItemId);
-		try {
-			await this.identity.upsertPreparedCrop(prepared, {
-				userId: match.user_id,
-				category: item.category,
-				closetItemId,
-			});
-		} catch (err) {
-			this.log.warn(
-				'outfit_identity_resolve_upsert_failed',
-				{ match_id: match.id, closet_item_id: closetItemId },
-				err
-			);
-			return {
-				decision: 'new',
-				match_id: match.id,
-				closet_item_id: null,
-				candidate_closet_item_id: match.candidate_closet_item_id,
-				identity_status: 'failed',
-				identity_reason: 'upsert_failed',
-				identity_score: match.score,
-			};
-		}
-
 		const claimed = await this.closet.claimMatch(match.user_id, match.id, {
 			status: 'new',
 			closetItemId,
 		});
 		if (!claimed) {
-			await this.identity.deleteVector(vectorId);
 			const latest = await this.closet.getMatchWithOutfit(match.user_id, match.id);
 			if (!latest) throw new ClosetMatchNotFoundError(match.id);
 			return this.resumeResolvedMatch(latest, 'new', signal);
@@ -712,7 +656,15 @@ export class OutfitIdentityProcessor {
 			};
 		}
 
-		return this.completeResolvedNew(match, closetItemId, prepared.crop_blur_hash);
+		await this.indexCommittedItem({
+			userId: match.user_id,
+			closetItemId,
+			category: item.category,
+			prepared,
+			matchId: match.id,
+		});
+
+		return this.completeResolvedNew(match, closetItemId, prepared.crop_blur_hash, false);
 	}
 
 	private async resumeResolvedMatch(
@@ -817,29 +769,6 @@ export class OutfitIdentityProcessor {
 		}
 
 		try {
-			await this.identity.upsertPreparedCrop(prepared, {
-				userId: match.user_id,
-				category: item.category,
-				closetItemId,
-			});
-		} catch (err) {
-			this.log.warn(
-				'outfit_identity_resolve_upsert_failed',
-				{ match_id: match.id, closet_item_id: closetItemId },
-				err
-			);
-			return {
-				decision: 'new',
-				match_id: match.id,
-				closet_item_id: closetItemId,
-				candidate_closet_item_id: match.candidate_closet_item_id,
-				identity_status: 'failed',
-				identity_reason: 'upsert_failed',
-				identity_score: match.score,
-			};
-		}
-
-		try {
 			await this.closet.createClosetItem({
 				id: closetItemId,
 				userId: match.user_id,
@@ -870,7 +799,15 @@ export class OutfitIdentityProcessor {
 			}
 		}
 
-		return this.completeResolvedNew(match, closetItemId, prepared.crop_blur_hash);
+		await this.indexCommittedItem({
+			userId: match.user_id,
+			closetItemId,
+			category: item.category,
+			prepared,
+			matchId: match.id,
+		});
+
+		return this.completeResolvedNew(match, closetItemId, prepared.crop_blur_hash, false);
 	}
 
 	private async completeResolvedNew(
@@ -920,14 +857,20 @@ export class OutfitIdentityProcessor {
 		};
 	}
 
-	private async enqueueVectorRepair(job: ClosetVectorRepairJob): Promise<void> {
+	private async enqueueVectorRepair(
+		job: ClosetVectorRepairJob | ClosetVectorBackfillJob
+	): Promise<void> {
 		if (!this.repairQueue) return;
 		try {
 			await this.repairQueue.send(job);
 		} catch (err) {
 			this.log.warn(
 				'closet_vector_repair_enqueue_failed',
-				{ closet_item_id: job.closetItemId, match_id: job.matchId },
+				{
+					closet_item_id:
+						'closetItemId' in job ? job.closetItemId : undefined,
+					match_id: 'matchId' in job ? job.matchId : undefined,
+				},
 				err
 			);
 		}
@@ -1033,18 +976,6 @@ export class OutfitIdentityProcessor {
 				{ user_id: userId, outfit_id: outfitId },
 				err
 			);
-		}
-	}
-
-	private async waitForClosetItem(itemId: string): Promise<{ id: string } | null> {
-		const deadline = this.wait.now() + this.wait.timeoutMs;
-		for (;;) {
-			const item = await this.closet.getClosetItemSummary(itemId);
-			if (item) return item;
-			if (this.wait.now() >= deadline) return null;
-			const wait = Math.min(this.wait.pollMs, Math.max(0, deadline - this.wait.now()));
-			if (wait <= 0) return null;
-			await this.wait.sleep(wait);
 		}
 	}
 }
