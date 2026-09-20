@@ -14,6 +14,7 @@ import { createLogger } from './utils/logger.utils';
 import { apiError } from './utils/error';
 import { createPostHogSink } from './services/posthog.svc';
 import { runActivationD0Job } from './jobs/activation_d0';
+import { enqueueClosetVectorBackfillScan } from './services/identity/closetVectorRepair';
 import { dispatchQueue } from './queues';
 import type { ApiRequest } from './types';
 
@@ -90,6 +91,7 @@ export default {
 
 		try {
 			// Single lifecycle cron today; local probes may pass a different cron string.
+			await enqueueClosetVectorBackfillScan(env.CLOSET_IDENTITY_QUEUE, log);
 			await runActivationD0Job(env, ctx, log);
 		} catch (err) {
 			log.error('scheduled_handler_failed', { cron: controller.cron }, err);

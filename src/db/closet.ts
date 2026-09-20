@@ -612,6 +612,62 @@ export class ClosetDB {
 		return (result.meta.changes ?? 0) > 0;
 	}
 
+	async stampVectorIndexedAtMany(itemIds: readonly string[], atMs = Date.now()): Promise<number> {
+		const ids = [...new Set(itemIds.map((id) => id.trim()).filter(Boolean))];
+		if (ids.length === 0) return 0;
+		const statements = ids.map((id) =>
+			this.db
+				.prepare(
+					`
+					UPDATE closet_items
+					SET vector_indexed_at = ?, updated_at = ?
+					WHERE id = ? AND vector_indexed_at IS NULL
+					`
+				)
+				.bind(atMs, atMs, id)
+		);
+		const results = await this.db.batch(statements);
+		return results.reduce((total, result) => total + (result.meta?.changes ?? 0), 0);
+	}
+
+	async listUnindexedClosetItemIds(limit = 200): Promise<string[]> {
+		const result = await this.db
+			.prepare(
+				`
+				SELECT id FROM closet_items
+				WHERE vector_indexed_at IS NULL
+				ORDER BY created_at ASC
+				LIMIT ?
+				`
+			)
+			.bind(limit)
+			.all<{ id: string }>();
+		return (result.results ?? []).map((row) => row.id).filter(Boolean);
+	}
+
+	async listClaimedNewMatchesWithoutItem(limit = 25): Promise<ClosetItemMatchWithOutfit[]> {
+		const result = await this.db
+			.prepare(
+				`
+				SELECT
+					${CLOSET_MATCH_GET_COLUMNS},
+					o.image_key as outfit_image_key,
+					o.original_image_url as outfit_original_image_url
+				FROM closet_item_matches m
+				INNER JOIN outfits o ON o.id = m.outfit_id
+				LEFT JOIN closet_items ci ON ci.id = m.resolved_closet_item_id
+				WHERE m.status = 'new'
+					AND m.resolved_closet_item_id IS NOT NULL
+					AND ci.id IS NULL
+				ORDER BY m.resolved_at ASC
+				LIMIT ?
+				`
+			)
+			.bind(limit)
+			.all<ClosetItemMatchRow>();
+		return (result.results ?? []).map(parseMatchWithOutfit);
+	}
+
 	async getLatestWearImageForClosetItem(closetItemId: string): Promise<{
 		imageKey: string;
 		boundingBox: { x: number; y: number; width: number; height: number };

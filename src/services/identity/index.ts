@@ -62,6 +62,7 @@ export {
 	vectorRepairRetryDelaySeconds,
 	isClosetVectorRepairJob,
 	isClosetVectorBackfillJob,
+	enqueueClosetVectorBackfillScan,
 	runClosetVectorRepair,
 } from './closetVectorRepair';
 export type {

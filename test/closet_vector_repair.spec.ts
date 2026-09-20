@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ClosetItemMatchWithOutfit } from '../src/db/closet';
 import {
 	VECTOR_REPAIR_MAX_ATTEMPTS,
+	enqueueClosetVectorBackfillScan,
 	isClosetVectorBackfillJob,
 	isClosetVectorRepairJob,
 	runClosetVectorRepair,
@@ -133,18 +134,84 @@ describe('runClosetVectorRepair', () => {
 		]);
 	});
 
-	it('skips scan-mode backfill until the hourly sweep exists', async () => {
-		const harness = createRepairHarness({ visibleIds: [] });
+	it('stamps getByIds hits on scan and enqueues misses without embedding', async () => {
+		const harness = createRepairHarness({
+			visibleIds: [closetItemVectorId('hit-1'), closetItemVectorId('hit-2')],
+		});
+		harness.closet.unindexedIds = ['hit-1', 'miss-1', 'hit-2'];
+		const sent: unknown[] = [];
 
 		const decision = await runClosetVectorRepair({
 			job: { kind: 'closet_vector_backfill', mode: 'scan' },
 			closet: harness.closet,
 			identity: harness.identity,
 			log: silentLogger(),
+			queue: {
+				send: async (job) => {
+					sent.push(job);
+				},
+			},
 		});
 
-		expect(decision).toEqual({ action: 'ack', reason: 'scan_skipped' });
-		expect(harness.identity.getByIdsCalls).toEqual([]);
+		expect(decision).toEqual({ action: 'ack', reason: 'scanned' });
+		expect(harness.closet.batchStamps).toEqual([['hit-1', 'hit-2']]);
+		expect(sent).toEqual([{ kind: 'closet_vector_backfill', closetItemId: 'miss-1' }]);
+		expect(harness.identity.prepares).toBe(0);
+		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.identity.deletes).toHaveLength(0);
+	});
+
+	it('resumes claimed new matches that have no closet row', async () => {
+		const harness = createRepairHarness({ visibleIds: [] });
+		const orphan = {
+			id: 'match-orphan',
+			user_id: 'u1',
+			resolved_closet_item_id: 'reserved-1',
+		};
+		harness.closet.orphans = [orphan as never];
+		const resumed: string[] = [];
+
+		const decision = await runClosetVectorRepair({
+			job: { kind: 'closet_vector_backfill', mode: 'scan' },
+			closet: harness.closet,
+			identity: harness.identity,
+			log: silentLogger(),
+			resumeClaimedNew: async (match) => {
+				resumed.push(match.id);
+			},
+		});
+
+		expect(decision).toEqual({ action: 'ack', reason: 'scanned' });
+		expect(resumed).toEqual(['match-orphan']);
+		expect(harness.identity.prepares).toBe(0);
+	});
+});
+
+describe('enqueueClosetVectorBackfillScan', () => {
+	it('sends a scan job and swallows send failures', async () => {
+		const sent: unknown[] = [];
+		expect(
+			await enqueueClosetVectorBackfillScan(
+				{
+					send: async (job) => {
+						sent.push(job);
+					},
+				},
+				silentLogger()
+			)
+		).toBe(true);
+		expect(sent).toEqual([{ kind: 'closet_vector_backfill', mode: 'scan' }]);
+
+		expect(
+			await enqueueClosetVectorBackfillScan(
+				{
+					send: async () => {
+						throw new Error('queue down');
+					},
+				},
+				silentLogger()
+			)
+		).toBe(false);
 	});
 });
 
@@ -185,6 +252,9 @@ function createRepairHarness(options: { visibleIds: string[] }) {
 			vector_indexed_at: null as number | null,
 		},
 		stamps: [] as string[],
+		batchStamps: [] as string[][],
+		unindexedIds: [] as string[],
+		orphans: [] as ClosetItemMatchWithOutfit[],
 		async getClosetItemSummary(itemId: string) {
 			return itemId === this.item.id ? this.item : null;
 		},
@@ -192,6 +262,16 @@ function createRepairHarness(options: { visibleIds: string[] }) {
 			this.stamps.push(itemId);
 			this.item.vector_indexed_at = Date.now();
 			return true;
+		},
+		async stampVectorIndexedAtMany(itemIds: readonly string[]) {
+			this.batchStamps.push([...itemIds]);
+			return itemIds.length;
+		},
+		async listUnindexedClosetItemIds() {
+			return this.unindexedIds;
+		},
+		async listClaimedNewMatchesWithoutItem() {
+			return this.orphans;
 		},
 		async getMatchWithOutfit() {
 			return match;

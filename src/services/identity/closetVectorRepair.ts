@@ -7,6 +7,9 @@ import type { PreparedClosetCrop } from './identity.svc';
 export const VECTOR_REPAIR_MAX_ATTEMPTS = 10;
 export const VECTOR_REPAIR_BACKFILL_DELAY_SECONDS = 60;
 export const VECTOR_REPAIR_RETRY_SECONDS = [2, 5, 15, 30, 60, 60, 60, 60, 60] as const;
+export const VECTOR_BACKFILL_SCAN_LIMIT = 200;
+export const VECTOR_BACKFILL_GET_BY_IDS_CHUNK = 100;
+export const VECTOR_BACKFILL_ORPHAN_MATCH_LIMIT = 25;
 
 export type ClosetVectorRepairJob = {
 	kind: 'closet_vector_repair';
@@ -22,13 +25,16 @@ export type ClosetVectorBackfillJob = {
 };
 
 export type ClosetVectorRepairDecision =
-	| { action: 'ack'; reason: 'stamped' | 'already_stamped' | 'missing_item' | 'invalid' | 'exhausted' | 'scan_skipped' }
+	| { action: 'ack'; reason: 'stamped' | 'already_stamped' | 'missing_item' | 'invalid' | 'exhausted' | 'scanned' }
 	| { action: 'retry'; delaySeconds: number };
 
 export type ClosetVectorRepairStore = Pick<
 	ClosetDB,
 	| 'getClosetItemSummary'
 	| 'stampVectorIndexedAt'
+	| 'stampVectorIndexedAtMany'
+	| 'listUnindexedClosetItemIds'
+	| 'listClaimedNewMatchesWithoutItem'
 	| 'getMatchWithOutfit'
 	| 'getMatchByResolvedClosetItemId'
 	| 'getLatestWearImageForClosetItem'
@@ -62,6 +68,20 @@ export function vectorRepairRetryDelaySeconds(attempts: number): number {
 	return VECTOR_REPAIR_RETRY_SECONDS[Math.min(index, VECTOR_REPAIR_RETRY_SECONDS.length - 1)] ?? 60;
 }
 
+export async function enqueueClosetVectorBackfillScan(
+	queue: Pick<Queue, 'send'>,
+	log: Logger
+): Promise<boolean> {
+	try {
+		await queue.send({ kind: 'closet_vector_backfill', mode: 'scan' } satisfies ClosetVectorBackfillJob);
+		log.info('closet_vector_backfill_scan_enqueued');
+		return true;
+	} catch (err) {
+		log.warn('closet_vector_backfill_scan_enqueue_failed', {}, err);
+		return false;
+	}
+}
+
 export async function runClosetVectorRepair(params: {
 	job: ClosetVectorRepairJob | ClosetVectorBackfillJob;
 	closet: ClosetVectorRepairStore;
@@ -69,10 +89,10 @@ export async function runClosetVectorRepair(params: {
 	log: Logger;
 	attempts?: number;
 	queue?: Pick<Queue, 'send'>;
+	resumeClaimedNew?: (match: ClosetItemMatchWithOutfit) => Promise<unknown>;
 }): Promise<ClosetVectorRepairDecision> {
 	if (isClosetVectorBackfillJob(params.job) && params.job.mode === 'scan') {
-		params.log.info('closet_vector_backfill_scan_skipped');
-		return { action: 'ack', reason: 'scan_skipped' };
+		return runClosetVectorBackfillScan(params);
 	}
 
 	const closetItemId =
@@ -131,6 +151,71 @@ export async function runClosetVectorRepair(params: {
 	}
 
 	return { action: 'retry', delaySeconds: vectorRepairRetryDelaySeconds(attempts) };
+}
+
+async function runClosetVectorBackfillScan(params: {
+	closet: ClosetVectorRepairStore;
+	identity: ClosetVectorRepairIdentity;
+	log: Logger;
+	queue?: Pick<Queue, 'send'>;
+	resumeClaimedNew?: (match: ClosetItemMatchWithOutfit) => Promise<unknown>;
+}): Promise<ClosetVectorRepairDecision> {
+	const itemIds = await params.closet.listUnindexedClosetItemIds(VECTOR_BACKFILL_SCAN_LIMIT);
+	let stamped = 0;
+	let enqueued = 0;
+	for (const chunk of chunkIds(itemIds, VECTOR_BACKFILL_GET_BY_IDS_CHUNK)) {
+		const vectorIds = chunk.map((id) => closetItemVectorId(id));
+		const found = vectorIds.length === 0 ? [] : await params.identity.getVectorsByIds(vectorIds);
+		const visible = new Set(found.map((row) => row.id));
+		const hits = chunk.filter((id) => visible.has(closetItemVectorId(id)));
+		const misses = chunk.filter((id) => !visible.has(closetItemVectorId(id)));
+		if (hits.length > 0) {
+			stamped += await params.closet.stampVectorIndexedAtMany(hits);
+		}
+		if (params.queue) {
+			for (const closetItemId of misses) {
+				try {
+					await params.queue.send({ kind: 'closet_vector_backfill', closetItemId } satisfies ClosetVectorBackfillJob);
+					enqueued += 1;
+				} catch (err) {
+					params.log.warn('closet_vector_backfill_enqueue_failed', { closet_item_id: closetItemId }, err);
+				}
+			}
+		}
+	}
+
+	const orphans = await params.closet.listClaimedNewMatchesWithoutItem(VECTOR_BACKFILL_ORPHAN_MATCH_LIMIT);
+	let resumed = 0;
+	for (const match of orphans) {
+		if (!params.resumeClaimedNew) break;
+		try {
+			await params.resumeClaimedNew(match);
+			resumed += 1;
+		} catch (err) {
+			params.log.warn(
+				'closet_vector_backfill_orphan_resume_failed',
+				{ match_id: match.id, closet_item_id: match.resolved_closet_item_id },
+				err
+			);
+		}
+	}
+
+	params.log.info('closet_vector_backfill_scanned', {
+		unindexed: itemIds.length,
+		stamped,
+		enqueued,
+		orphans: orphans.length,
+		resumed,
+	});
+	return { action: 'ack', reason: 'scanned' };
+}
+
+function chunkIds(ids: string[], size: number): string[][] {
+	const chunks: string[][] = [];
+	for (let i = 0; i < ids.length; i += size) {
+		chunks.push(ids.slice(i, i + size));
+	}
+	return chunks;
 }
 
 async function loadRepairMatch(

@@ -48,6 +48,7 @@ export async function handleClosetIdentityQueue(
 				message as Message<ClosetVectorRepairJob | ClosetVectorBackfillJob>,
 				closet,
 				identity,
+				processor,
 				env.CLOSET_IDENTITY_QUEUE,
 				log
 			);
@@ -97,6 +98,7 @@ async function handleVectorRepairMessage(
 	message: Message<ClosetVectorRepairJob | ClosetVectorBackfillJob>,
 	closet: ReturnType<typeof createClosetDB>,
 	identity: ReturnType<typeof createIdentityService>,
+	processor: ReturnType<typeof createOutfitIdentityProcessor>,
 	queue: Queue,
 	log: Logger
 ): Promise<void> {
@@ -108,6 +110,12 @@ async function handleVectorRepairMessage(
 			log,
 			attempts: message.attempts,
 			queue,
+			resumeClaimedNew: (match) =>
+				processor.resolveMatch({
+					userId: match.user_id,
+					matchId: match.id,
+					decision: 'new',
+				}),
 		});
 		if (decision.action === 'retry') {
 			message.retry({ delaySeconds: decision.delaySeconds });
