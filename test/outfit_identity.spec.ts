@@ -12,6 +12,7 @@ import {
 	ClosetMatchResolvedError,
 	OutfitIdentityProcessor,
 	candidateClosetItemId,
+	closetMatchProbeFromPrepared,
 	decideCommitAfterRequery,
 	decideIdentityFromNeighbors,
 	shouldQueryIdentity,
@@ -524,13 +525,129 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(harness.closet.matches[0].status).toBe('new');
 	});
 
-	it('rejects an already resolved match', async () => {
+	it('returns 200 when the same decision is posted again', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const match = seedPendingMatch(harness.closet);
+
+		await harness.processor.resolveMatch({ userId: 'u1', matchId: match.id, decision: 'same' });
+		const again = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'same',
+		});
+
+		expect(again).toMatchObject({
+			decision: 'same',
+			match_id: match.id,
+			closet_item_id: 'c1',
+			identity_status: 'created',
+		});
+		expect(harness.closet.links).toHaveLength(1);
+		expect(harness.closet.matches[0].status).toBe('same');
+	});
+
+	it('returns 200 with the same closet item when new is posted again', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const match = seedPendingMatch(harness.closet);
+
+		const first = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+		const again = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(again.identity_status).toBe('created');
+		expect(again.closet_item_id).toBe(first.closet_item_id);
+		expect(harness.closet.items.filter((item) => item.id !== 'c1')).toHaveLength(1);
+		expect(harness.closet.links).toHaveLength(1);
+		expect(harness.identity.upserts).toHaveLength(1);
+	});
+
+	it('finishes an incomplete new claim on the reserved closet item id', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const match = seedPendingMatch(harness.closet);
+		harness.closet.matches[0].status = 'new';
+		harness.closet.matches[0].resolved_at = Date.now();
+		harness.closet.matches[0].resolved_closet_item_id = 'reserved-1';
+		harness.closet.matches[0].probe_embed = closetMatchProbeFromPrepared(PREPARED);
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(result).toMatchObject({
+			decision: 'new',
+			closet_item_id: 'reserved-1',
+			identity_status: 'created',
+		});
+		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1', 'reserved-1']);
+		expect(harness.closet.links).toEqual([
+			{
+				outfitId: 'outfit-1',
+				closetItemId: 'reserved-1',
+				blurHash: 'LEHV6nWB2yk8pyo0adR*.7kCMdnj',
+				boundingBox: BOX,
+			},
+		]);
+		expect(harness.identity.upserts).toEqual([{ closetItemId: 'reserved-1' }]);
+		expect(harness.identity.prepares).toBe(0);
+		expect(harness.closet.matches[0].status).toBe('new');
+	});
+
+	it('returns 200 for the CAS-losing new tap when the winner was also new', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const match = seedPendingMatch(harness.closet);
+		harness.closet.items.push({
+			id: 'winner-1',
+			user_id: 'u1',
+			label: 'olive shirt',
+			category: 'top',
+			subcategory: 'shirt',
+			color: 'olive',
+			pattern: 'solid',
+			style_tags: [],
+			created_at: Date.now(),
+			updated_at: Date.now(),
+		});
+		harness.closet.stealClaimAs = 'new';
+		harness.closet.stealResolvedClosetItemId = 'winner-1';
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(result.identity_status).toBe('created');
+		expect(result.closet_item_id).toBe('winner-1');
+		expect(harness.identity.upserts).toHaveLength(1);
+		expect(harness.identity.deletes).toHaveLength(1);
+		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1', 'winner-1']);
+		expect(harness.closet.links).toEqual([
+			{
+				outfitId: 'outfit-1',
+				closetItemId: 'winner-1',
+				blurHash: null,
+				boundingBox: BOX,
+			},
+		]);
+	});
+
+	it('rejects the opposite decision after the match is resolved', async () => {
 		const harness = createHarness({ neighbors: [] });
 		const match = seedPendingMatch(harness.closet);
 		harness.closet.matches[0].status = 'same';
+		harness.closet.matches[0].resolved_closet_item_id = 'c1';
 
 		await expect(
-			harness.processor.resolveMatch({ userId: 'u1', matchId: match.id, decision: 'same' })
+			harness.processor.resolveMatch({ userId: 'u1', matchId: match.id, decision: 'new' })
 		).rejects.toBeInstanceOf(ClosetMatchResolvedError);
 	});
 
@@ -677,6 +794,7 @@ function createHarness(options: {
 	askTouches: string[] = [];
 	lock: { userId: string; jobId: string } | null = null;
 	stealClaimAs: 'same' | 'new' | null = null;
+	stealResolvedClosetItemId: string | null = null;
 
 	constructor(private options: { d1Error?: Error } = {}) {}
 
@@ -742,8 +860,11 @@ function createHarness(options: {
 		styleTags: string[];
 	}): Promise<ClosetItem> {
 		if (this.options.d1Error) throw this.options.d1Error;
+		const id = params.id?.trim() || `item-${this.items.length + 1}`;
+		const existing = this.items.find((row) => row.id === id);
+		if (existing) return existing;
 		const item: ClosetItem = {
-			id: params.id?.trim() || `item-${this.items.length + 1}`,
+			id,
 			user_id: params.userId,
 			label: params.label,
 			category: params.category,
@@ -789,7 +910,12 @@ function createHarness(options: {
 		if (this.stealClaimAs) {
 			match.status = this.stealClaimAs;
 			match.resolved_at = Date.now();
+			match.resolved_closet_item_id =
+				this.stealClaimAs === 'same'
+					? match.candidate_closet_item_id
+					: (this.stealResolvedClosetItemId ?? match.resolved_closet_item_id ?? crypto.randomUUID());
 			this.stealClaimAs = null;
+			this.stealResolvedClosetItemId = null;
 			return false;
 		}
 		match.status = params.status;
