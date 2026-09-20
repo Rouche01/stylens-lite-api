@@ -14,7 +14,7 @@ import { createLogger } from './utils/logger.utils';
 import { apiError } from './utils/error';
 import { createPostHogSink } from './services/posthog.svc';
 import { runActivationD0Job } from './jobs/activation_d0';
-import { enqueueClosetVectorBackfillScan } from './services/identity/closetVectorRepair';
+import { enqueueClosetVectorBackfillScan } from './services/identity/jobs/closetVectorRepair';
 import { dispatchQueue } from './queues';
 import type { ApiRequest } from './types';
 

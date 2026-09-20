@@ -1,4 +1,4 @@
-import { encodeBlurHash4x3 } from '../../utils/blurhash';
+import { encodeBlurHash4x3 } from '../../../utils/blurhash';
 
 /** Pixel color of the Florence crop — not Claude's color string. */
 

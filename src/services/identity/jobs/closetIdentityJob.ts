@@ -1,10 +1,11 @@
-import type { ClosetDB, ClosetIdentityJobRow } from '../../db/closet';
-import type { StyleEntryTag } from '../../db/types';
-import type { OutfitExtractionResponse } from '../../types';
-import type { Logger } from '../../utils/logger.utils';
-import type { MessageEntry, RemoteImage } from '../../utils/types';
-import { IdentityBusyError, type ProcessOutfitImageParams, type ProcessOutfitImageResult } from './processOutfitImage';
-import type { ClosetCatalogNotifyItem } from '../../utils/closet_browse';
+import type { ClosetDB, ClosetIdentityJobRow } from '../../../db/closet';
+import type { StyleEntryTag } from '../../../db/types';
+import type { OutfitExtractionResponse } from '../../../types';
+import type { Logger } from '../../../utils/logger.utils';
+import type { MessageEntry, RemoteImage } from '../../../utils/types';
+import { IdentityBusyError } from '../write/errors';
+import type { ProcessOutfitImageParams, ProcessOutfitImageResult } from '../write/types';
+import type { ClosetCatalogNotifyItem } from '../../../utils/closet_browse';
 
 export const IDENTITY_BUSY_RETRY_SECONDS = 30;
 export const IDENTITY_ERROR_RETRY_SECONDS = 15;

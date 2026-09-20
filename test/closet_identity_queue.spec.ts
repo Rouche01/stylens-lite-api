@@ -9,9 +9,9 @@ import {
 	enqueueClosetIdentityJobs,
 	runClosetIdentityJob,
 	type ClosetIdentityQueueJob,
-} from '../src/services/identity/closetIdentityJob';
-import { IdentityBusyError, type ProcessOutfitImageResult } from '../src/services/identity/processOutfitImage';
-import { notifyClosetCatalogIfChanged } from '../src/services/identity/closetCatalogBroadcast';
+} from '../src/services/identity/jobs/closetIdentityJob';
+import { IdentityBusyError, type ProcessOutfitImageResult } from '../src/services/identity/write/processOutfit';
+import { notifyClosetCatalogIfChanged } from '../src/services/identity/notify/catalogBroadcast';
 import { isAvatarGenerationQueue, isClosetIdentityQueue, isClosetMatchDigestQueue } from '../src/queues';
 import type { StyleEntryTag } from '../src/db/types';
 import type { MessageEntry, RemoteImage } from '../src/utils/types';

@@ -1,5 +1,5 @@
-import type { ClosetMatchProbeEmbed } from '../../db/closet';
-import type { PreparedClosetCrop } from './identity.svc';
+import type { ClosetMatchProbeEmbed } from '../../../db/closet';
+import type { PreparedClosetCrop } from './cropEncoder';
 import { IDENTITY_ENCODER, VECTORIZE_INDEX_DIMENSIONS } from './embed.types';
 
 /** Pin IDENTITY_ENCODER, not the embedder model name. Null if the vector is unusable. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { notifyClosetCatalogIfChanged } from '../src/services/identity/closetCatalogBroadcast';
+import { notifyClosetCatalogIfChanged } from '../src/services/identity/notify/catalogBroadcast';
 import type { Logger } from '../src/utils/logger.utils';
 
 describe('notifyClosetCatalogIfChanged', () => {

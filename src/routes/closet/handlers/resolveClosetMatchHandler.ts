@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import {
 	ClosetMatchNotFoundError,
 	ClosetMatchResolvedError,
-	createOutfitIdentityProcessor,
+	createOutfitIdentityService,
 } from 'services/identity';
 import { ApiRequest } from 'types';
 import { logRouteError } from 'utils/error';
@@ -34,7 +34,7 @@ const resolveClosetMatchHandler: RequestHandler<ApiRequest> = async (request) =>
 		const userIdOrError = await requireClosetUserId(request, body.userId);
 		if (isErrorResponse(userIdOrError)) return userIdOrError;
 
-		const result = await createOutfitIdentityProcessor(env, request.log).resolveMatch({
+		const result = await createOutfitIdentityService(env, request.log).resolveMatch({
 			userId: userIdOrError,
 			matchId,
 			decision,

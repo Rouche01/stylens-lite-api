@@ -7,7 +7,7 @@ import {
 	isClosetIdentitySettleJob,
 	runClosetIdentityProgress,
 	scheduleClosetIdentitySettle,
-} from '../src/services/identity/closetIdentityProgress';
+} from '../src/services/identity/notify/progress';
 import type { Logger } from '../src/utils/logger.utils';
 
 const NOW = 1_700_000_000_000;

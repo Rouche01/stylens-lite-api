@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { error, RequestHandler } from 'itty-router';
-import { createIdentityService } from 'services/identity';
+import { createOutfitIdentityService } from 'services/identity';
 import { logRouteError } from 'utils/error';
 import { ApiRequest } from 'types';
 import { identityRouteError, parseIdentityCrop, type IdentityCropBody } from './identityCropBody';
@@ -29,7 +29,7 @@ const queryClosetCropHandler: RequestHandler<ApiRequest> = async (request) => {
 			return error(400, parsed.error);
 		}
 
-		const identityService = createIdentityService(env, request.log);
+		const identityService = createOutfitIdentityService(env, request.log);
 		const result = await identityService.queryClosetCrop({
 			imageKey: parsed.imageKey,
 			boundingBox: parsed.boundingBox,

@@ -1,8 +1,8 @@
-import type { ClosetDB, ClosetItemMatchWithOutfit } from '../../db/closet';
-import type { Logger } from '../../utils/logger.utils';
-import { preparedFromProbeEmbed } from './probeEmbed';
-import { closetItemVectorId } from './vectorize.store';
-import type { PreparedClosetCrop } from './identity.svc';
+import type { ClosetDB, ClosetItemMatchWithOutfit } from '../../../db/closet';
+import type { Logger } from '../../../utils/logger.utils';
+import { preparedFromProbeEmbed } from '../encode/probeEmbed';
+import { closetItemVectorId } from '../encode/vectorize.store';
+import type { CropEncoder, PreparedClosetCrop } from '../encode/cropEncoder';
 
 export const VECTOR_REPAIR_MAX_ATTEMPTS = 10;
 export const VECTOR_REPAIR_BACKFILL_DELAY_SECONDS = 60;
@@ -42,16 +42,8 @@ export type ClosetVectorRepairStore = Pick<
 	| 'getLatestWearImageForClosetItem'
 >;
 
-export type ClosetVectorRepairIdentity = {
-	getVectorsByIds(ids: string[]): Promise<Array<{ id: string }>>;
-	upsertPreparedCrop(
-		prepared: PreparedClosetCrop,
-		params: { userId: string; category: string; closetItemId?: string }
-	): Promise<unknown>;
-	prepareClosetCrop(params: {
-		imageKey: string;
-		boundingBox: { x: number; y: number; width: number; height: number };
-	}): Promise<PreparedClosetCrop>;
+export type ClosetVectorRepairIdentity = Pick<CropEncoder, 'getVectorsByIds' | 'prepareClosetCrop'> & {
+	upsertPreparedCrop(...args: Parameters<CropEncoder['upsertPreparedCrop']>): Promise<unknown>;
 };
 
 export function isClosetVectorRepairJob(job: unknown): job is ClosetVectorRepairJob {

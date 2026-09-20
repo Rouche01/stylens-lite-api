@@ -1,8 +1,8 @@
 import {
 	closetCatalogNotifyFromProcessedItems,
 	type ClosetCatalogNotifyItem,
-} from '../../utils/closet_browse';
-import type { Logger } from '../../utils/logger.utils';
+} from '../../../utils/closet_browse';
+import type { Logger } from '../../../utils/logger.utils';
 
 export type ClosetCatalogUpdatedPayload = {
 	reason: 'identity';

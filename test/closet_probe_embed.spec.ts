@@ -6,10 +6,10 @@ import {
 	serializeClosetMatchProbeEmbed,
 	type ClosetMatchProbeEmbed,
 } from '../src/db/closet';
-import { closetMatchProbeFromPrepared, preparedFromProbeEmbed } from '../src/services/identity/processOutfitImage';
+import { closetMatchProbeFromPrepared, preparedFromProbeEmbed } from '../src/services/identity/encode/probeEmbed';
 import { pendingClosetMatchClientPayload } from '../src/routes/closet/handlers/pendingClosetMatchPayload';
-import { IDENTITY_ENCODER, VECTORIZE_INDEX_DIMENSIONS } from '../src/services/identity/embed.types';
-import type { PreparedClosetCrop } from '../src/services/identity';
+import { IDENTITY_ENCODER, VECTORIZE_INDEX_DIMENSIONS } from '../src/services/identity/encode/embed.types';
+import type { PreparedClosetCrop } from '../src/services/identity/encode/cropEncoder';
 
 const PROBE: ClosetMatchProbeEmbed = {
 	encoder: 'dinov3-cls-v1',

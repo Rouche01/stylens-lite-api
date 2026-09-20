@@ -3,7 +3,7 @@
  * One next action per status — resume helpers key off these instead of ad-hoc checks.
  */
 
-import type { ClosetIndexStatus } from '../../db/closet';
+import type { ClosetIndexStatus } from '../../../db/closet';
 
 export type { ClosetIndexStatus };
 

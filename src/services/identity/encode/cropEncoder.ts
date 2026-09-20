@@ -1,10 +1,10 @@
-import { signDownloadUrlForKey } from '../../utils/assets.utils';
-import { percentBoxToTrim, type PercentBox } from '../../utils/bounding_box';
-import { cropJpegWithTrim, orientImageJpeg } from '../../utils/cf_images.utils';
-import { getImageDimensions } from '../../utils/image.utils';
-import { Logger, createLogger } from '../../utils/logger.utils';
-import { createClosetDB } from '../../db';
-import { ClosetDB } from '../../db/closet';
+import { signDownloadUrlForKey } from '../../../utils/assets.utils';
+import { percentBoxToTrim, type PercentBox } from '../../../utils/bounding_box';
+import { cropJpegWithTrim, orientImageJpeg } from '../../../utils/cf_images.utils';
+import { getImageDimensions } from '../../../utils/image.utils';
+import { Logger, createLogger } from '../../../utils/logger.utils';
+import { createClosetDB } from '../../../db';
+import { ClosetDB } from '../../../db/closet';
 import {
 	IdentityEmbedError,
 	IDENTITY_ENCODER,
@@ -97,7 +97,7 @@ export const VECTOR_VISIBLE_POLL_MS = 500;
 
 const VECTOR_PREVIEW_LENGTH = 8;
 
-export class IdentityService {
+export class CropEncoder {
 	constructor(
 		private bucket: R2Bucket,
 		private images: ImagesBinding,
@@ -356,11 +356,11 @@ type IdentityEnv = Env & {
 	CLOSET_EMBED_PROVIDER?: string;
 };
 
-export const createIdentityService = (envBindings: Env, log?: Logger) => {
+export const createCropEncoder = (envBindings: Env, log?: Logger) => {
 	const env = envBindings as IdentityEnv;
-	const logger = (log ?? createLogger({ env: envBindings.ENV_NAME })).child({ service: 'identity' });
+	const logger = (log ?? createLogger({ env: envBindings.ENV_NAME })).child({ service: 'outfit_identity' });
 	const index = envBindings.CLOSET_ITEMS;
-	return new IdentityService(
+	return new CropEncoder(
 		envBindings.OUTFIT_PHOTOS_BUCKET,
 		envBindings.IMAGES,
 		createImageEmbedProvider(env),

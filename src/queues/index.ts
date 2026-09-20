@@ -3,7 +3,7 @@ import { createLogger } from '../utils/logger.utils';
 import { handleAvatarGenerationQueue } from './avatar';
 import { handleClosetIdentityQueue, type ClosetIdentityQueueMessage } from './closetIdentity';
 import { handleClosetMatchDigestQueue } from './closetMatchDigest';
-import type { ClosetMatchDigestJob } from '../services/identity/closetMatchDigest';
+import type { ClosetMatchDigestJob } from '../services/identity/notify/digest';
 import type { AvatarGenerationJob } from '../services/avatar';
 
 export function isClosetMatchDigestQueue(queueName: string): boolean {

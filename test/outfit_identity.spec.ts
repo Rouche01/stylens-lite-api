@@ -12,16 +12,18 @@ import {
 	ClosetMatchResolvedError,
 	IdentityBusyError,
 	OutfitIdentityProcessor,
+} from '../src/services/identity/write/processOutfit';
+import {
 	candidateClosetItemId,
-	closetMatchProbeFromPrepared,
 	decideCommitAfterRequery,
 	decideIdentityFromNeighbors,
 	shouldQueryIdentity,
-} from '../src/services/identity/processOutfitImage';
-import type { PreparedClosetCrop, QueryClosetCropMatch } from '../src/services/identity';
+} from '../src/services/identity/decide/policy';
+import { closetMatchProbeFromPrepared } from '../src/services/identity/encode/probeEmbed';
+import type { PreparedClosetCrop, QueryClosetCropMatch } from '../src/services/identity/encode/cropEncoder';
 import type { ClosetItem, ClosetItemMatch, ClosetItemMatchWithOutfit, Outfit } from '../src/db/closet';
 import type { Logger } from '../src/utils/logger.utils';
-import { closetItemVectorId } from '../src/services/identity/vectorize.store';
+import { closetItemVectorId } from '../src/services/identity/encode/vectorize.store';
 
 const BOX = { x: 20, y: 15, width: 40, height: 35 };
 

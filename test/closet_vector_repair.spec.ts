@@ -8,10 +8,10 @@ import {
 	runClosetVectorRepair,
 	vectorRepairRetryDelaySeconds,
 	type ClosetVectorRepairJob,
-} from '../src/services/identity/closetVectorRepair';
-import { closetMatchProbeFromPrepared } from '../src/services/identity/probeEmbed';
-import { closetItemVectorId } from '../src/services/identity/vectorize.store';
-import type { PreparedClosetCrop } from '../src/services/identity';
+} from '../src/services/identity/jobs/closetVectorRepair';
+import { closetMatchProbeFromPrepared } from '../src/services/identity/encode/probeEmbed';
+import { closetItemVectorId } from '../src/services/identity/encode/vectorize.store';
+import type { PreparedClosetCrop } from '../src/services/identity/encode/cropEncoder';
 import type { Logger } from '../src/utils/logger.utils';
 
 const PREPARED: PreparedClosetCrop = {

@@ -2,7 +2,7 @@ import { createClosetDB } from '../db';
 import {
 	runClosetMatchDigest,
 	type ClosetMatchDigestJob,
-} from '../services/identity/closetMatchDigest';
+} from '../services/identity/notify/digest';
 import { createPushService } from '../services/push.svc';
 import type { Logger } from '../utils/logger.utils';
 

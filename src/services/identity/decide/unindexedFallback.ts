@@ -1,9 +1,9 @@
-import type { ClosetMatchProbeEmbed } from '../../db/closet';
-import { cropColorDistance, identityScore } from './cropColor';
-import type { PreparedClosetCrop, QueryClosetCropMatch } from './identity.svc';
-import { closetItemVectorId } from './vectorize.store';
-import { resolveIdentitySlot } from './slot';
-import { IDENTITY_ENCODER, VECTORIZE_INDEX_DIMENSIONS } from './embed.types';
+import type { ClosetMatchProbeEmbed } from '../../../db/closet';
+import { cropColorDistance, identityScore } from '../encode/cropColor';
+import type { PreparedClosetCrop, QueryClosetCropMatch } from '../encode/cropEncoder';
+import { closetItemVectorId } from '../encode/vectorize.store';
+import { resolveIdentitySlot } from '../encode/slot';
+import { IDENTITY_ENCODER, VECTORIZE_INDEX_DIMENSIONS } from '../encode/embed.types';
 
 export const UNINDEXED_PROBE_LIMIT = 25;
 export const UNINDEXED_PROBE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;

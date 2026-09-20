@@ -7,8 +7,8 @@ import { StyleEntryTag } from '../db/types';
 import { createVoltMemService, isVoltMemWriteTag, type VoltMemService } from './voltmem.svc';
 import { createAvatarService, type AvatarService } from './avatar';
 import { ModelProvider, ModelUseCase } from './model_config.svc';
-import { enqueueClosetIdentityFromClassification } from './identity/closetIdentityJob';
-import { runClosetIdentityProgress } from './identity/closetIdentityProgress';
+import { enqueueClosetIdentityFromClassification } from './identity/jobs/closetIdentityJob';
+import { runClosetIdentityProgress } from './identity/notify/progress';
 import { createRealtimeService } from './realtime.svc';
 import { Logger, createLogger } from '../utils/logger.utils';
 

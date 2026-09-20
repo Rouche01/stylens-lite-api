@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { IDENTITY_ENCODER, VECTORIZE_INDEX_DIMENSIONS } from '../src/services/identity/embed.types';
-import type { PreparedClosetCrop } from '../src/services/identity';
+import { IDENTITY_ENCODER, VECTORIZE_INDEX_DIMENSIONS } from '../src/services/identity/encode/embed.types';
+import type { PreparedClosetCrop } from '../src/services/identity/encode/cropEncoder';
 import {
 	cosineSimilarity,
 	mergeIdentityNeighbors,
 	scoreUnindexedProbes,
-} from '../src/services/identity/unindexedFallback';
+} from '../src/services/identity/decide/unindexedFallback';
 import type { ClosetMatchProbeEmbed } from '../src/db/closet';
 
 const VECTOR = Array(VECTORIZE_INDEX_DIMENSIONS).fill(0);

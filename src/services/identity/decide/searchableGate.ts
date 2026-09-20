@@ -1,6 +1,6 @@
-import type { ClosetDB } from '../../db/closet';
-import type { Logger } from '../../utils/logger.utils';
-import { closetItemVectorId } from './vectorize.store';
+import type { ClosetDB } from '../../../db/closet';
+import type { Logger } from '../../../utils/logger.utils';
+import { closetItemVectorId } from '../encode/vectorize.store';
 
 /** Hold the writer until prior creates are searchable, then release or degrade. */
 export const SEARCHABLE_GATE_TIMEOUT_MS = 15_000;

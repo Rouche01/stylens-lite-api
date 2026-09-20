@@ -1,18 +1,19 @@
 import { describe, it, expect } from 'vitest';
+import { parseJinaEmbedding } from '../src/services/identity/encode/providers/jina.provider';
+import { parseDinoClsEmbedding, resolveDinoModel } from '../src/services/identity/encode/providers/replicate.provider';
 import {
-	parseJinaEmbedding,
-	parseDinoClsEmbedding,
 	VECTORIZE_INDEX_DIMENSIONS,
 	DEFAULT_DINO_EMBED_MODEL,
 	DEFAULT_DINO_EMBED_VERSION,
 	IDENTITY_ENCODER,
+} from '../src/services/identity/encode/embed.types';
+import {
 	rgbaToColorSignature,
 	cropColorDistance,
 	identityScore,
 	decodePngRgba,
-	resolveIdentitySlot,
-} from '../src/services/identity';
-import { resolveDinoModel } from '../src/services/identity/providers/replicate.provider';
+} from '../src/services/identity/encode/cropColor';
+import { resolveIdentitySlot } from '../src/services/identity/encode/slot';
 import {
 	assertEmbeddingDimensions,
 	buildClosetQueryFilter,
@@ -21,7 +22,7 @@ import {
 	closetItemVectorId,
 	ClosetVectorStore,
 	resolveClosetVectorId,
-} from '../src/services/identity/vectorize.store';
+} from '../src/services/identity/encode/vectorize.store';
 
 describe('parseDinoClsEmbedding', () => {
 	it('takes the CLS token from batched last_hidden_state', () => {

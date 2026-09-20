@@ -1,6 +1,6 @@
-import type { ClosetDB, ClosetIdentityJobCounts } from '../../db/closet';
-import { closetIdentityStatusPayload, identityJobsProcessing } from '../../db/closet';
-import type { Logger } from '../../utils/logger.utils';
+import type { ClosetDB, ClosetIdentityJobCounts } from '../../../db/closet';
+import { closetIdentityStatusPayload, identityJobsProcessing } from '../../../db/closet';
+import type { Logger } from '../../../utils/logger.utils';
 
 export const IDENTITY_PROGRESS_SETTLE_SECONDS = 20;
 

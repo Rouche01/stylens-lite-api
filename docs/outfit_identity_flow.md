@@ -3,7 +3,7 @@
 How an uploaded outfit photo becomes closet tiles, pending matches, and Vectorize vectors.
 
 **Entry:** classification tags outfit images → `CLOSET_IDENTITY_QUEUE` (`kind: closet_identity`).  
-**Core:** `OutfitIdentityProcessor.process` / `resolveMatch` in `src/services/identity/processOutfitImage.ts`.  
+**Core:** `OutfitIdentityService.process` / `resolveMatch` in `src/services/identity/outfitIdentity.svc.ts` (writer in `write/`).  
 **Repair:** `closet_vector_repair` + hourly `closet_vector_backfill` scan.  
 **No Durable Object** — one writer per user via queue + `identity_inflight`.
 

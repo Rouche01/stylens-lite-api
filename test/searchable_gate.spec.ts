@@ -3,8 +3,8 @@ import type { ClosetIndexStatus } from '../src/db/closet';
 import {
 	awaitPriorCreatesSearchable,
 	awaitSearchableOrDegrade,
-} from '../src/services/identity/searchableGate';
-import { closetItemVectorId } from '../src/services/identity/vectorize.store';
+} from '../src/services/identity/decide/searchableGate';
+import { closetItemVectorId } from '../src/services/identity/encode/vectorize.store';
 import type { Logger } from '../src/utils/logger.utils';
 
 describe('awaitSearchableOrDegrade', () => {

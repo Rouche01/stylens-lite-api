@@ -3,7 +3,7 @@ import {
 	closetMatchDigestNotification,
 	decideClosetMatchDigest,
 	runClosetMatchDigest,
-} from '../src/services/identity/closetMatchDigest';
+} from '../src/services/identity/notify/digest';
 import { isAvatarGenerationQueue, isClosetMatchDigestQueue } from '../src/queues';
 import type { Logger } from '../src/utils/logger.utils';
 

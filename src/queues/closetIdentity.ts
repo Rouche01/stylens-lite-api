@@ -2,22 +2,21 @@ import { createClosetDB } from '../db';
 import {
 	runClosetIdentityJob,
 	type ClosetIdentityQueueJob,
-} from '../services/identity/closetIdentityJob';
+} from '../services/identity/jobs/closetIdentityJob';
 import {
 	isClosetIdentitySettleJob,
 	runClosetIdentityProgress,
 	type ClosetIdentitySettleJob,
-} from '../services/identity/closetIdentityProgress';
+} from '../services/identity/notify/progress';
 import {
 	isClosetVectorBackfillJob,
 	isClosetVectorRepairJob,
 	runClosetVectorRepair,
 	type ClosetVectorBackfillJob,
 	type ClosetVectorRepairJob,
-} from '../services/identity/closetVectorRepair';
-import { createOutfitIdentityProcessor } from '../services/identity/processOutfitImage';
-import { createIdentityService } from '../services/identity/identity.svc';
-import { notifyClosetCatalogIfChanged } from '../services/identity/closetCatalogBroadcast';
+} from '../services/identity/jobs/closetVectorRepair';
+import { createOutfitIdentityService } from '../services/identity/outfitIdentity.svc';
+import { notifyClosetCatalogIfChanged } from '../services/identity/notify/catalogBroadcast';
 import { createRealtimeService } from '../services/realtime.svc';
 import type { Logger } from '../utils/logger.utils';
 
@@ -33,8 +32,7 @@ export async function handleClosetIdentityQueue(
 	log: Logger
 ): Promise<void> {
 	const closet = createClosetDB(env.GOSTYLENS_DB);
-	const processor = createOutfitIdentityProcessor(env, log);
-	const identity = createIdentityService(env, log);
+	const identity = createOutfitIdentityService(env, log);
 	const realtime = createRealtimeService();
 
 	for (const message of batch.messages) {
@@ -48,7 +46,6 @@ export async function handleClosetIdentityQueue(
 				message as Message<ClosetVectorRepairJob | ClosetVectorBackfillJob>,
 				closet,
 				identity,
-				processor,
 				env.CLOSET_IDENTITY_QUEUE,
 				log
 			);
@@ -58,7 +55,7 @@ export async function handleClosetIdentityQueue(
 		const decision = await runClosetIdentityJob({
 			job: message.body,
 			closet,
-			process: (params) => processor.process(params),
+			process: (params) => identity.process(params),
 			log,
 			attempts: message.attempts,
 			notifyCatalog: ({ userId, outfitId, items }) =>
@@ -97,8 +94,7 @@ export async function handleClosetIdentityQueue(
 async function handleVectorRepairMessage(
 	message: Message<ClosetVectorRepairJob | ClosetVectorBackfillJob>,
 	closet: ReturnType<typeof createClosetDB>,
-	identity: ReturnType<typeof createIdentityService>,
-	processor: ReturnType<typeof createOutfitIdentityProcessor>,
+	identity: ReturnType<typeof createOutfitIdentityService>,
 	queue: Queue,
 	log: Logger
 ): Promise<void> {
@@ -111,7 +107,7 @@ async function handleVectorRepairMessage(
 			attempts: message.attempts,
 			queue,
 			resumeClaimedNew: (match) =>
-				processor.resolveMatch({
+				identity.resolveMatch({
 					userId: match.user_id,
 					matchId: match.id,
 					decision: 'new',

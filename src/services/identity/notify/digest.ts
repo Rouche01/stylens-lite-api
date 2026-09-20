@@ -1,6 +1,6 @@
-import type { ClosetDB } from '../../db';
-import type { Logger } from '../../utils/logger.utils';
-import type { PushService } from '../push.svc';
+import type { ClosetDB } from '../../../db';
+import type { Logger } from '../../../utils/logger.utils';
+import type { PushService } from '../../push.svc';
 
 export const DIGEST_SETTLE_SECONDS = 600;
 

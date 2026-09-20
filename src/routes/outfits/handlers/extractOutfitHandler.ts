@@ -1,5 +1,5 @@
 import { error, RequestHandler } from 'itty-router';
-import { createOutfitIdentityProcessor, IdentityBusyError } from 'services/identity';
+import { createOutfitIdentityService, IdentityBusyError } from 'services/identity';
 import { getIsolatedItemUrl, signDownloadUrlForKey } from 'utils/assets.utils';
 import { createUsersDB } from 'db';
 import { env } from 'cloudflare:workers';
@@ -53,7 +53,7 @@ const extractOutfitHandler: RequestHandler<ApiRequest> = async (request) => {
 			// Fallback to imageUrl
 		}
 
-		const processed = await createOutfitIdentityProcessor(env, request.log).process({
+		const processed = await createOutfitIdentityService(env, request.log).process({
 			userId,
 			imageUrl,
 			imageKey,

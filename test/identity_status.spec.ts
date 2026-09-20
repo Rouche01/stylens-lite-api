@@ -4,7 +4,7 @@ import {
 	nextActionForMatchLifecycle,
 	resolveClosetIndexStatus,
 	resolveMatchLifecycle,
-} from '../src/services/identity/identityStatus';
+} from '../src/services/identity/decide/identityStatus';
 
 describe('closet index status', () => {
 	it('treats vector_indexed_at as indexed regardless of column', () => {

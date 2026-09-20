@@ -207,11 +207,19 @@ function ctxWaited(ctx: ExecutionContext): boolean {
 	return Boolean((ctx as ExecutionContext & { waited?: boolean }).waited);
 }
 
+function copyArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+	const copy = new ArrayBuffer(bytes.byteLength);
+	new Uint8Array(copy).set(bytes);
+	return copy;
+}
+
 function fakeJpeg(width = 200, height = 100): ArrayBuffer {
-	return new Uint8Array([
-		0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 0x08, (height >> 8) & 0xff, height & 0xff,
-		(width >> 8) & 0xff, width & 0xff, 0x00, 0xff, 0xd9,
-	]).buffer;
+	return copyArrayBuffer(
+		new Uint8Array([
+			0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 0x08, (height >> 8) & 0xff, height & 0xff,
+			(width >> 8) & 0xff, width & 0xff, 0x00, 0xff, 0xd9,
+		])
+	);
 }
 
 function stubImages() {
@@ -240,13 +248,19 @@ function stubImages() {
 		};
 		return handle;
 	};
+	const binding: ImagesBinding = {
+		input: () => transformer(),
+		info: async () => ({
+			format: 'image/jpeg',
+			fileSize: CROP_JPEG.byteLength,
+			width: 80,
+			height: 60,
+		}),
+		hosted: {} as HostedImagesBinding,
+	};
 	return {
 		calls,
-		binding: {
-			input: () => transformer(),
-			info: async () => ({ format: 'image/jpeg' as const }),
-			hosted: {} as HostedImagesBinding,
-		} as ImagesBinding,
+		binding,
 	};
 }
 
@@ -291,9 +305,9 @@ async function toArrayBuffer(value: R2PutValue): Promise<ArrayBuffer> {
 	if (value == null) return new ArrayBuffer(0);
 	if (value instanceof ArrayBuffer) return value.slice(0);
 	if (ArrayBuffer.isView(value)) {
-		return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+		return copyArrayBuffer(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
 	}
-	if (typeof value === 'string') return new TextEncoder().encode(value).buffer;
+	if (typeof value === 'string') return copyArrayBuffer(new TextEncoder().encode(value));
 	if (value instanceof Blob) return value.arrayBuffer();
 	return new Response(value).arrayBuffer();
 }
