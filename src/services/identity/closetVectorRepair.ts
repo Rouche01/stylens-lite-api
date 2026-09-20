@@ -1,0 +1,170 @@
+import type { ClosetDB, ClosetItemMatchWithOutfit } from '../../db/closet';
+import type { Logger } from '../../utils/logger.utils';
+import { preparedFromProbeEmbed } from './probeEmbed';
+import { closetItemVectorId } from './vectorize.store';
+import type { PreparedClosetCrop } from './identity.svc';
+
+export const VECTOR_REPAIR_MAX_ATTEMPTS = 10;
+export const VECTOR_REPAIR_BACKFILL_DELAY_SECONDS = 60;
+export const VECTOR_REPAIR_RETRY_SECONDS = [2, 5, 15, 30, 60, 60, 60, 60, 60] as const;
+
+export type ClosetVectorRepairJob = {
+	kind: 'closet_vector_repair';
+	closetItemId: string;
+	matchId: string;
+	userId: string;
+};
+
+export type ClosetVectorBackfillJob = {
+	kind: 'closet_vector_backfill';
+	closetItemId?: string;
+	mode?: 'scan';
+};
+
+export type ClosetVectorRepairDecision =
+	| { action: 'ack'; reason: 'stamped' | 'already_stamped' | 'missing_item' | 'invalid' | 'exhausted' | 'scan_skipped' }
+	| { action: 'retry'; delaySeconds: number };
+
+export type ClosetVectorRepairStore = Pick<
+	ClosetDB,
+	| 'getClosetItemSummary'
+	| 'stampVectorIndexedAt'
+	| 'getMatchWithOutfit'
+	| 'getMatchByResolvedClosetItemId'
+	| 'getLatestWearImageForClosetItem'
+>;
+
+export type ClosetVectorRepairIdentity = {
+	getVectorsByIds(ids: string[]): Promise<Array<{ id: string }>>;
+	upsertPreparedCrop(
+		prepared: PreparedClosetCrop,
+		params: { userId: string; category: string; closetItemId?: string }
+	): Promise<unknown>;
+	prepareClosetCrop(params: {
+		imageKey: string;
+		boundingBox: { x: number; y: number; width: number; height: number };
+	}): Promise<PreparedClosetCrop>;
+};
+
+export function isClosetVectorRepairJob(job: unknown): job is ClosetVectorRepairJob {
+	if (typeof job !== 'object' || job === null) return false;
+	const row = job as { kind?: unknown; closetItemId?: unknown };
+	return row.kind === 'closet_vector_repair' && typeof row.closetItemId === 'string';
+}
+
+export function isClosetVectorBackfillJob(job: unknown): job is ClosetVectorBackfillJob {
+	if (typeof job !== 'object' || job === null) return false;
+	return (job as { kind?: unknown }).kind === 'closet_vector_backfill';
+}
+
+export function vectorRepairRetryDelaySeconds(attempts: number): number {
+	const index = Math.max(0, attempts - 1);
+	return VECTOR_REPAIR_RETRY_SECONDS[Math.min(index, VECTOR_REPAIR_RETRY_SECONDS.length - 1)] ?? 60;
+}
+
+export async function runClosetVectorRepair(params: {
+	job: ClosetVectorRepairJob | ClosetVectorBackfillJob;
+	closet: ClosetVectorRepairStore;
+	identity: ClosetVectorRepairIdentity;
+	log: Logger;
+	attempts?: number;
+	queue?: Pick<Queue, 'send'>;
+}): Promise<ClosetVectorRepairDecision> {
+	if (isClosetVectorBackfillJob(params.job) && params.job.mode === 'scan') {
+		params.log.info('closet_vector_backfill_scan_skipped');
+		return { action: 'ack', reason: 'scan_skipped' };
+	}
+
+	const closetItemId =
+		(isClosetVectorRepairJob(params.job) ? params.job.closetItemId : params.job.closetItemId)?.trim() ?? '';
+	if (!closetItemId) {
+		params.log.warn('closet_vector_repair_invalid_job');
+		return { action: 'ack', reason: 'invalid' };
+	}
+
+	const item = await params.closet.getClosetItemSummary(closetItemId);
+	if (!item) {
+		return { action: 'ack', reason: 'missing_item' };
+	}
+	if (item.vector_indexed_at != null) {
+		return { action: 'ack', reason: 'already_stamped' };
+	}
+
+	const vectorId = closetItemVectorId(closetItemId);
+	const found = await params.identity.getVectorsByIds([vectorId]);
+	if (found.length > 0) {
+		await params.closet.stampVectorIndexedAt(closetItemId);
+		params.log.info('closet_vector_repair_stamped', { closet_item_id: closetItemId, vector_id: vectorId });
+		return { action: 'ack', reason: 'stamped' };
+	}
+
+	const match = await loadRepairMatch(params.closet, params.job, closetItemId);
+	try {
+		const prepared = await preparedForRepair(params.identity, params.closet, closetItemId, match);
+		await params.identity.upsertPreparedCrop(prepared, {
+			userId: item.user_id,
+			category: item.category,
+			closetItemId,
+		});
+		params.log.info('closet_vector_repair_reupserted', { closet_item_id: closetItemId, vector_id: vectorId });
+	} catch (err) {
+		params.log.warn('closet_vector_repair_reupsert_failed', { closet_item_id: closetItemId }, err);
+	}
+
+	const attempts = params.attempts ?? 1;
+	if (attempts >= VECTOR_REPAIR_MAX_ATTEMPTS) {
+		params.log.warn('closet_vector_repair_exhausted', {
+			closet_item_id: closetItemId,
+			attempts,
+		});
+		if (isClosetVectorRepairJob(params.job) && params.queue) {
+			try {
+				await params.queue.send(
+					{ kind: 'closet_vector_backfill', closetItemId } satisfies ClosetVectorBackfillJob,
+					{ delaySeconds: VECTOR_REPAIR_BACKFILL_DELAY_SECONDS }
+				);
+			} catch (err) {
+				params.log.warn('closet_vector_backfill_enqueue_failed', { closet_item_id: closetItemId }, err);
+			}
+		}
+		return { action: 'ack', reason: 'exhausted' };
+	}
+
+	return { action: 'retry', delaySeconds: vectorRepairRetryDelaySeconds(attempts) };
+}
+
+async function loadRepairMatch(
+	closet: ClosetVectorRepairStore,
+	job: ClosetVectorRepairJob | ClosetVectorBackfillJob,
+	closetItemId: string
+): Promise<ClosetItemMatchWithOutfit | null> {
+	if (isClosetVectorRepairJob(job) && job.matchId.trim() && job.userId.trim()) {
+		const match = await closet.getMatchWithOutfit(job.userId, job.matchId);
+		if (match) return match;
+	}
+	return closet.getMatchByResolvedClosetItemId(closetItemId);
+}
+
+async function preparedForRepair(
+	identity: ClosetVectorRepairIdentity,
+	closet: ClosetVectorRepairStore,
+	closetItemId: string,
+	match: ClosetItemMatchWithOutfit | null
+): Promise<PreparedClosetCrop> {
+	const fromProbe = match ? preparedFromProbeEmbed(match.probe_embed, match.outfit_image_key) : null;
+	if (fromProbe) return fromProbe;
+	if (match) {
+		return identity.prepareClosetCrop({
+			imageKey: match.outfit_image_key,
+			boundingBox: match.bounding_box,
+		});
+	}
+	const wear = await closet.getLatestWearImageForClosetItem(closetItemId);
+	if (!wear) {
+		throw new Error(`No probe or wear to re-upsert closet item ${closetItemId}`);
+	}
+	return identity.prepareClosetCrop({
+		imageKey: wear.imageKey,
+		boundingBox: wear.boundingBox,
+	});
+}

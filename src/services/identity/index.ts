@@ -20,6 +20,7 @@ export type {
 	ResolveClosetMatchParams,
 	ResolveClosetMatchResult,
 	ClosetMatchDigestScheduler,
+	ClosetVectorRepairScheduler,
 } from './processOutfitImage';
 export {
 	DIGEST_SETTLE_SECONDS,
@@ -55,6 +56,19 @@ export type {
 	ClosetIdentityProgressDecision,
 	ClosetIdentityRealtimePayload,
 } from './closetIdentityProgress';
+export {
+	VECTOR_REPAIR_MAX_ATTEMPTS,
+	VECTOR_REPAIR_BACKFILL_DELAY_SECONDS,
+	vectorRepairRetryDelaySeconds,
+	isClosetVectorRepairJob,
+	isClosetVectorBackfillJob,
+	runClosetVectorRepair,
+} from './closetVectorRepair';
+export type {
+	ClosetVectorRepairJob,
+	ClosetVectorBackfillJob,
+	ClosetVectorRepairDecision,
+} from './closetVectorRepair';
 export {
 	notifyClosetCatalogIfChanged,
 	createClosetCatalogNotifier,

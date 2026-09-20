@@ -21,6 +21,8 @@ export interface ClosetItem {
 	tile_aspect_ratio?: number;
 	/** 4×3 BlurHash of the latest garment crop. Omitted when not yet encoded. */
 	blur_hash?: string;
+	vector_id?: string | null;
+	vector_indexed_at?: number | null;
 }
 
 export interface Outfit {
@@ -567,12 +569,68 @@ export class ClosetDB {
 		}));
 	}
 
-	async getClosetItemSummary(itemId: string): Promise<{ id: string; label: string; category: string } | null> {
+	async getClosetItemSummary(itemId: string): Promise<{
+		id: string;
+		user_id: string;
+		label: string;
+		category: string;
+		vector_indexed_at: number | null;
+	} | null> {
 		const row = await this.db
-			.prepare(`SELECT id, label, category FROM closet_items WHERE id = ?`)
+			.prepare(
+				`SELECT id, user_id, label, category, vector_indexed_at FROM closet_items WHERE id = ?`
+			)
 			.bind(itemId)
-			.first<{ id: string; label: string; category: string }>();
-		return row ?? null;
+			.first<{
+				id: string;
+				user_id: string;
+				label: string;
+				category: string;
+				vector_indexed_at: number | null;
+			}>();
+		if (!row) return null;
+		return {
+			id: row.id,
+			user_id: row.user_id,
+			label: row.label,
+			category: row.category,
+			vector_indexed_at: row.vector_indexed_at ?? null,
+		};
+	}
+
+	async stampVectorIndexedAt(itemId: string, atMs = Date.now()): Promise<boolean> {
+		const result = await this.db
+			.prepare(
+				`
+				UPDATE closet_items
+				SET vector_indexed_at = ?, updated_at = ?
+				WHERE id = ? AND vector_indexed_at IS NULL
+				`
+			)
+			.bind(atMs, atMs, itemId)
+			.run();
+		return (result.meta.changes ?? 0) > 0;
+	}
+
+	async getLatestWearImageForClosetItem(closetItemId: string): Promise<{
+		imageKey: string;
+		boundingBox: { x: number; y: number; width: number; height: number };
+	} | null> {
+		const row = await this.db
+			.prepare(
+				`
+				SELECT o.image_key as image_key, oci.bounding_box as bounding_box
+				FROM outfit_clothing_items oci
+				JOIN outfits o ON o.id = oci.outfit_id
+				WHERE oci.closet_item_id = ?
+				ORDER BY oci.created_at DESC
+				LIMIT 1
+				`
+			)
+			.bind(closetItemId)
+			.first<{ image_key: string; bounding_box: string }>();
+		if (!row?.image_key?.trim() || !row.bounding_box) return null;
+		return { imageKey: row.image_key, boundingBox: parseJsonBox(row.bounding_box) };
 	}
 
 	/**
@@ -937,6 +995,27 @@ export class ClosetDB {
 				`
 			)
 			.bind(matchId, userId)
+			.first<ClosetItemMatchRow>();
+
+		return row ? parseMatchWithOutfit(row) : null;
+	}
+
+	async getMatchByResolvedClosetItemId(closetItemId: string): Promise<ClosetItemMatchWithOutfit | null> {
+		const row = await this.db
+			.prepare(
+				`
+				SELECT
+					${CLOSET_MATCH_GET_COLUMNS},
+					o.image_key as outfit_image_key,
+					o.original_image_url as outfit_original_image_url
+				FROM closet_item_matches m
+				INNER JOIN outfits o ON o.id = m.outfit_id
+				WHERE m.resolved_closet_item_id = ? AND m.status = 'new'
+				ORDER BY m.resolved_at DESC
+				LIMIT 1
+				`
+			)
+			.bind(closetItemId)
 			.first<ClosetItemMatchRow>();
 
 		return row ? parseMatchWithOutfit(row) : null;

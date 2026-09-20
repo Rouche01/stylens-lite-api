@@ -1,5 +1,5 @@
 import { createClosetDB, ClosetDB } from '../../db';
-import type { ClosetItemExtractSnapshot, ClosetItemMatchWithOutfit, ClosetMatchProbeEmbed } from '../../db/closet';
+import type { ClosetItemExtractSnapshot, ClosetItemMatchWithOutfit } from '../../db/closet';
 import {
 	ClothingItem,
 	ClothingItemCategory,
@@ -21,8 +21,9 @@ import {
 	type QueryClosetCropMatch,
 } from './identity.svc';
 import { isIdentityMatch } from './cropColor';
-import { IDENTITY_ENCODER, VECTORIZE_INDEX_DIMENSIONS } from './embed.types';
 import { closetItemVectorId } from './vectorize.store';
+import { closetMatchProbeFromPrepared, preparedFromProbeEmbed } from './probeEmbed';
+import type { ClosetVectorRepairJob } from './closetVectorRepair';
 import { createClosetMatchDigestScheduler } from './closetMatchDigest';
 import {
 	createClosetCatalogNotifier,
@@ -57,6 +58,10 @@ export type OutfitIdentityStore = Pick<
 	| 'updatePendingMatch'
 	| 'touchMatchAsk'
 >;
+
+export type ClosetVectorRepairScheduler = {
+	send(job: ClosetVectorRepairJob, options?: QueueSendOptions): Promise<unknown>;
+};
 
 export type ClosetMatchDigestScheduler = {
 	schedule(userId: string): Promise<void>;
@@ -285,7 +290,8 @@ export class OutfitIdentityProcessor {
 		private log: Logger,
 		private wait: IdentityWait = DEFAULT_WAIT,
 		private digest?: ClosetMatchDigestScheduler,
-		private catalog?: ClosetCatalogNotifier
+		private catalog?: ClosetCatalogNotifier,
+		private repairQueue?: ClosetVectorRepairScheduler
 	) {}
 
 	async process(params: ProcessOutfitImageParams): Promise<ProcessOutfitImageResult | null> {
@@ -776,7 +782,8 @@ export class OutfitIdentityProcessor {
 			return this.completeResolvedNew(
 				match,
 				closetItemId,
-				await this.closet.getLatestItemBlurHash(closetItemId)
+				await this.closet.getLatestItemBlurHash(closetItemId),
+				existing.vector_indexed_at == null
 			);
 		}
 
@@ -869,7 +876,8 @@ export class OutfitIdentityProcessor {
 	private async completeResolvedNew(
 		match: ClosetItemMatchWithOutfit,
 		closetItemId: string,
-		blurHash: string | null
+		blurHash: string | null,
+		enqueueRepair = true
 	): Promise<ResolveClosetMatchResult> {
 		const item = clothingItemFromMatch(match);
 		await this.closet.linkClosetItemToOutfit({
@@ -893,6 +901,14 @@ export class OutfitIdentityProcessor {
 				subcategory: item.subcategory,
 			},
 		]);
+		if (enqueueRepair) {
+			await this.enqueueVectorRepair({
+				kind: 'closet_vector_repair',
+				closetItemId,
+				matchId: match.id,
+				userId: match.user_id,
+			});
+		}
 		return {
 			decision: 'new',
 			match_id: match.id,
@@ -904,11 +920,24 @@ export class OutfitIdentityProcessor {
 		};
 	}
 
+	private async enqueueVectorRepair(job: ClosetVectorRepairJob): Promise<void> {
+		if (!this.repairQueue) return;
+		try {
+			await this.repairQueue.send(job);
+		} catch (err) {
+			this.log.warn(
+				'closet_vector_repair_enqueue_failed',
+				{ closet_item_id: job.closetItemId, match_id: job.matchId },
+				err
+			);
+		}
+	}
+
 	private async preparedForResolve(
 		match: ClosetItemMatchWithOutfit,
 		signal?: AbortSignal
 	): Promise<PreparedClosetCrop> {
-		const fromProbe = preparedFromProbeEmbed(match);
+		const fromProbe = preparedFromProbeEmbed(match.probe_embed, match.outfit_image_key);
 		if (fromProbe) return fromProbe;
 		return this.identity.prepareClosetCrop({
 			imageKey: match.outfit_image_key,
@@ -1029,7 +1058,8 @@ export const createOutfitIdentityProcessor = (envBindings: Env, log?: Logger) =>
 		logger,
 		DEFAULT_WAIT,
 		createClosetMatchDigestScheduler(envBindings, logger),
-		createClosetCatalogNotifier(createRealtimeService(), logger)
+		createClosetCatalogNotifier(createRealtimeService(), logger),
+		envBindings.CLOSET_IDENTITY_QUEUE
 	);
 };
 
@@ -1075,46 +1105,7 @@ function extractSnapshot(item: ClothingItem): ClosetItemExtractSnapshot {
 	};
 }
 
-/** Pin IDENTITY_ENCODER, not the embedder model name. Null if the vector is unusable. */
-export function closetMatchProbeFromPrepared(prepared: PreparedClosetCrop): ClosetMatchProbeEmbed | null {
-	if (!Array.isArray(prepared.vector) || prepared.vector.length === 0) {
-		return null;
-	}
-	if (prepared.vector.length !== prepared.dimensions) {
-		return null;
-	}
-	return {
-		encoder: IDENTITY_ENCODER,
-		dimensions: prepared.dimensions,
-		vector: prepared.vector,
-		crop_color: prepared.crop_color,
-		crop_blur_hash: prepared.crop_blur_hash,
-	};
-}
-
-/** Hydrate a current-encoder probe; null if missing or stale (caller falls back to prepareClosetCrop). */
-function preparedFromProbeEmbed(match: ClosetItemMatchWithOutfit): PreparedClosetCrop | null {
-	const probe = match.probe_embed;
-	if (!probe) return null;
-	if (probe.encoder !== IDENTITY_ENCODER) return null;
-	if (probe.dimensions !== VECTORIZE_INDEX_DIMENSIONS) return null;
-	if (probe.vector.length !== probe.dimensions) return null;
-	return {
-		model: IDENTITY_ENCODER,
-		dimensions: probe.dimensions,
-		index_dimensions: VECTORIZE_INDEX_DIMENSIONS,
-		matches_index: true,
-		vector_preview: probe.vector.slice(0, 8),
-		crop_image_key: '',
-		crop_image_url: '',
-		crop_width: 0,
-		crop_height: 0,
-		source_image_key: match.outfit_image_key,
-		crop_color: probe.crop_color,
-		crop_blur_hash: probe.crop_blur_hash,
-		vector: probe.vector,
-	};
-}
+export { closetMatchProbeFromPrepared, preparedFromProbeEmbed } from './probeEmbed';
 
 function extractionConfidence(confidence: ClothingItem['confidence']): 'high' | 'medium' | 'low' {
 	if (confidence === ExtractionConfidence.HIGH) return 'high';

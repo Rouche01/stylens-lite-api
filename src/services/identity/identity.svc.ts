@@ -237,6 +237,11 @@ export class IdentityService {
 		}
 	}
 
+	async getVectorsByIds(ids: string[]): Promise<Array<{ id: string }>> {
+		if (ids.length === 0) return [];
+		return this.requireVectors().getByIds(ids);
+	}
+
 	async deleteVector(vectorId: string): Promise<void> {
 		try {
 			await this.requireVectors().deleteByIds([vectorId]);
