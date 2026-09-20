@@ -8,7 +8,7 @@ const CROP_JPEG = fakeJpeg(80, 60);
 const ORIENTED_JPEG = fakeJpeg(200, 100);
 
 describe('isolate write-through', () => {
-	it('streams a derived hit and skips Images', async () => {
+	it('returns a buffered derived hit and skips Images', async () => {
 		const derivedKey = await tileDerivedKey({ x: '10', y: '20', w: '30', h: '40' });
 		const bucket = memoryBucket();
 		await bucket.put(derivedKey, CROP_JPEG, { httpMetadata: { contentType: 'image/jpeg' } });
@@ -25,6 +25,7 @@ describe('isolate write-through', () => {
 		expect(response.status).toBe(200);
 		expect(response.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
 		expect(response.headers.get('content-type')).toBe('image/jpeg');
+		expect(response.headers.get('content-length')).toBe(String(CROP_JPEG.byteLength));
 		expect(await response.arrayBuffer()).toEqual(CROP_JPEG);
 		expect(images.calls).toEqual([]);
 		expect(bucket.puts.filter((key) => key === derivedKey)).toHaveLength(1);

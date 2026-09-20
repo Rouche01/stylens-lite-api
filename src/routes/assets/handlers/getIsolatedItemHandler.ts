@@ -5,6 +5,7 @@ import { CATALOG_BOX_PAD, closetTilePad, percentBoxToTrim } from 'utils/bounding
 import { getImageDimensions } from 'utils/image.utils';
 import { orientImageJpeg } from 'utils/cf_images.utils';
 import { parseIsolateCutout, parseIsolatePad, parseIsolateWidth } from 'utils/assets.utils';
+import { getR2ObjectBytes, r2BytesResponse } from 'utils/r2.utils';
 import {
 	isolateDerivedKey,
 	isolateOrientedKey,
@@ -30,7 +31,7 @@ const CACHE_CONTROL_IMMUTABLE = 'public, max-age=31536000, immutable';
  * Optional `width` scales the crop down (fit: scale-down) before the rest of the pipeline.
  *
  * Write-through: first miss runs the live transform and stores the derived object
- * (and an oriented original) in R2. Repeat GETs stream the derived object.
+ * (and an oriented original) in R2. Repeat GETs return the derived bytes with Content-Length.
  */
 export async function serveIsolatedItem(request: ApiRequest, deps: IsolateServeDeps): Promise<Response> {
 	try {
@@ -81,7 +82,7 @@ export async function serveIsolatedItem(request: ApiRequest, deps: IsolateServeD
 			return error(400, 'Invalid key');
 		}
 
-		const derivedHit = await deps.bucket.get(derivedKey);
+		const derivedHit = await getR2ObjectBytes(deps.bucket, derivedKey);
 		if (derivedHit) {
 			const headers = new Headers();
 			derivedHit.writeHttpMetadata(headers);
@@ -89,7 +90,7 @@ export async function serveIsolatedItem(request: ApiRequest, deps: IsolateServeD
 				headers.set('Content-Type', cutout ? 'image/png' : 'image/jpeg');
 			}
 			headers.set('Cache-Control', CACHE_CONTROL_IMMUTABLE);
-			return new Response(derivedHit.body, { headers });
+			return r2BytesResponse(derivedHit.bytes, headers);
 		}
 
 		const { orientedBytes, putOriented } = await loadOrientedOriginal(
@@ -141,12 +142,11 @@ export async function serveIsolatedItem(request: ApiRequest, deps: IsolateServeD
 		}
 		await schedulePuts(deps.waitUntil, Promise.all(puts));
 
-		return new Response(derivedBytes, {
-			headers: {
-				'Content-Type': contentType,
-				'Cache-Control': CACHE_CONTROL_IMMUTABLE,
-			},
+		const missHeaders = new Headers({
+			'Content-Type': contentType,
+			'Cache-Control': CACHE_CONTROL_IMMUTABLE,
 		});
+		return r2BytesResponse(derivedBytes, missHeaders);
 	} catch (err) {
 		request.log.error('isolate_outfit_item_failed', {}, err);
 		return error(500, 'Internal Server Error');
@@ -158,17 +158,17 @@ async function loadOrientedOriginal(
 	sourceKey: string,
 	orientedKey: string,
 ): Promise<{ orientedBytes: ArrayBuffer | null; putOriented: boolean }> {
-	const cached = await deps.bucket.get(orientedKey);
+	const cached = await getR2ObjectBytes(deps.bucket, orientedKey);
 	if (cached) {
-		return { orientedBytes: await cached.arrayBuffer(), putOriented: false };
+		return { orientedBytes: cached.bytes, putOriented: false };
 	}
 
-	const source = await deps.bucket.get(sourceKey);
+	const source = await getR2ObjectBytes(deps.bucket, sourceKey);
 	if (!source) {
 		return { orientedBytes: null, putOriented: false };
 	}
 
-	const orientedBytes = await orientImageJpeg(deps.images, await source.arrayBuffer());
+	const orientedBytes = await orientImageJpeg(deps.images, source.bytes);
 	return { orientedBytes, putOriented: true };
 }
 

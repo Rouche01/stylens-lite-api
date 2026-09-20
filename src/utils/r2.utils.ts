@@ -1,6 +1,74 @@
 import { env } from 'cloudflare:workers';
 import { createLogger, Logger, serializeError } from './logger.utils';
 
+const DEFAULT_R2_GET_ATTEMPTS = 3;
+const DEFAULT_R2_GET_DELAY_MS = 80;
+/** Do not stack another get after wrangler has already hung (~38s in local remote R2). */
+const R2_RETRY_BUDGET_MS = 12_000;
+
+export type R2ObjectBytes = {
+	key: string;
+	bytes: ArrayBuffer;
+	httpEtag: string;
+	httpMetadata?: R2HTTPMetadata;
+	writeHttpMetadata: (headers: Headers) => void;
+};
+
+/** Wrangler remote R2 + tunnels often throw on get/body, not a clean 404. */
+export function isTransientR2Error(err: unknown): boolean {
+	const message = err instanceof Error ? `${err.name} ${err.message}` : String(err);
+	return /unspecified error|network|timeout|abort|econnreset|reset|internal|temporarily|fetch failed|connection|overloaded|hung|429|502|503|504/i.test(
+		message,
+	);
+}
+
+/**
+ * `get` + `arrayBuffer` with short retries. Buffering (instead of piping `object.body`)
+ * lets the Worker send a complete body with Content-Length, which ngrok/Flutter Image
+ * loads tolerate better than a chunked remote-R2 stream.
+ *
+ * Do not share a get queue or in-flight map across isolate requests: Workers cancel
+ * promises resolved from another request context ("code had hung").
+ */
+export async function getR2ObjectBytes(
+	bucket: R2Bucket,
+	key: string,
+	options: { attempts?: number; delayMs?: number } = {},
+): Promise<R2ObjectBytes | null> {
+	const attempts = options.attempts ?? DEFAULT_R2_GET_ATTEMPTS;
+	const delayMs = options.delayMs ?? DEFAULT_R2_GET_DELAY_MS;
+	let lastErr: unknown;
+
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		const started = Date.now();
+		try {
+			const object = await bucket.get(key);
+			if (!object) return null;
+			const bytes = await object.arrayBuffer();
+			return {
+				key: object.key,
+				bytes,
+				httpEtag: object.httpEtag,
+				httpMetadata: object.httpMetadata,
+				writeHttpMetadata: (headers) => object.writeHttpMetadata(headers),
+			};
+		} catch (err) {
+			lastErr = err;
+			const hung = Date.now() - started >= R2_RETRY_BUDGET_MS;
+			if (attempt === attempts || hung || !isTransientR2Error(err)) throw err;
+			await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+		}
+	}
+
+	throw lastErr;
+}
+
+/** Buffered image/asset response so proxies see Content-Length instead of a chunked stream. */
+export function r2BytesResponse(bytes: ArrayBuffer, headers: Headers): Response {
+	headers.set('Content-Length', String(bytes.byteLength));
+	return new Response(bytes, { headers });
+}
+
 /**
  * Error thrown when an image upload does not complete within the expected timeframe.
  */
