@@ -1,4 +1,6 @@
 import { env } from 'cloudflare:workers';
+import { FeatureFlags } from '../config/featureFlags';
+import { isFeatureFlagEnabledForUserId } from './featureFlagGate.svc';
 
 export class RealtimeService {
 	constructor(
@@ -14,19 +16,19 @@ export class RealtimeService {
 		const res = await fetch(`${this.svcUrl}/realtime/v1/api/broadcast`, {
 			method: 'POST',
 			headers: {
-				'Authorization': `Bearer ${this.svcRoleKey}`,
-				'apikey': this.svcRoleKey,
-				'Content-Type': 'application/json'
+				Authorization: `Bearer ${this.svcRoleKey}`,
+				apikey: this.svcRoleKey,
+				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify({
 				messages: [
 					{
 						topic,
 						event,
-						payload
-					}
-				]
-			})
+						payload,
+					},
+				],
+			}),
 		});
 
 		if (!res.ok) {
@@ -41,13 +43,14 @@ export class RealtimeService {
 	async notifyLimitChanged(userId: string, hasReachedLimit: boolean) {
 		await this.broadcast(`user-limits:${userId}`, 'limit_updated', {
 			userId,
-			hasReachedLimit
+			hasReachedLimit,
 		});
 	}
 
 	/**
 	 * Batch closet-identity progress. Only started (idle → in-flight) and settled
 	 * (in-flight stayed 0 after the quiet window) — never per photo.
+	 * Skipped when closet-browse is off for this user.
 	 */
 	async notifyClosetIdentityUpdated(
 		userId: string,
@@ -59,11 +62,13 @@ export class RealtimeService {
 			phase: 'started' | 'settled';
 		}
 	) {
+		if (!(await isFeatureFlagEnabledForUserId(FeatureFlags.closetBrowse, userId))) return;
 		await this.broadcast(`closet-identity:${userId}`, 'closet_identity_updated', payload);
 	}
 
 	/**
 	 * Catalog mutation ping. Separate from progress — the client still loads tiles from GET.
+	 * Skipped when closet-browse is off for this user.
 	 */
 	async notifyClosetCatalogUpdated(
 		userId: string,
@@ -73,6 +78,7 @@ export class RealtimeService {
 			closet_item_ids: string[];
 		}
 	) {
+		if (!(await isFeatureFlagEnabledForUserId(FeatureFlags.closetBrowse, userId))) return;
 		await this.broadcast(`closet-identity:${userId}`, 'closet_catalog_updated', payload);
 	}
 }

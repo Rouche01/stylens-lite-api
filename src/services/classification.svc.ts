@@ -11,9 +11,8 @@ import { enqueueClosetIdentityFromClassification } from './identity/jobs/closetI
 import { runClosetIdentityProgress } from './identity/notify/progress';
 import { createRealtimeService } from './realtime.svc';
 import { Logger, createLogger } from '../utils/logger.utils';
-import { evaluatePostHogFlags, isPostHogFlagEnabled } from './featureFlags.svc';
-import { createPostHogFlagClient } from './posthog.svc';
 import { FeatureFlags } from '../config/featureFlags';
+import { isFeatureFlagEnabledForAuthId } from './featureFlagGate.svc';
 
 export type ClosetIdentityEnqueue = {
 	enqueue(params: {
@@ -409,15 +408,7 @@ export const createClassificationService = (database: D1Database, env?: Env) => 
 			}
 		: null;
 	const closetBrowseEnabled: ClosetBrowseGate | null = env
-		? async (authId) => {
-				const client = createPostHogFlagClient(env);
-				try {
-					const flags = await evaluatePostHogFlags({ client, distinctId: authId });
-					return isPostHogFlagEnabled(flags, FeatureFlags.closetBrowse);
-				} finally {
-					await client?.shutdown();
-				}
-			}
+		? (authId) => isFeatureFlagEnabledForAuthId(FeatureFlags.closetBrowse, authId, env)
 		: null;
 	const log = createLogger({ env: env?.ENV_NAME ?? 'dev' }).child({ service: 'classification' });
 	return new ClassificationService(
