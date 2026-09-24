@@ -1,7 +1,11 @@
 import { error, RequestHandler } from 'itty-router';
 import { env } from 'cloudflare:workers';
 import { AuthRequest } from 'types';
-import { evaluatePostHogFlags, flagsForClient } from 'services/featureFlags.svc';
+import {
+	evaluatePostHogFlags,
+	flagsForClient,
+	resolveFeatureFlagSnapshot,
+} from 'services/featureFlags.svc';
 import { createPostHogFlagClient } from 'services/posthog.svc';
 
 const getFeaturesHandler: RequestHandler<AuthRequest> = async (request) => {
@@ -19,7 +23,12 @@ const getFeaturesHandler: RequestHandler<AuthRequest> = async (request) => {
 		const client = createPostHogFlagClient(env);
 		try {
 			const snapshot = await evaluatePostHogFlags({ client, distinctId: authId });
-			return new Response(JSON.stringify({ flags: flagsForClient(snapshot) }), {
+			const resolved = resolveFeatureFlagSnapshot({
+				flags: snapshot,
+				envName: env.ENV_NAME,
+				overridesRaw: env.FEATURE_FLAG_OVERRIDES,
+			});
+			return new Response(JSON.stringify({ flags: flagsForClient(resolved) }), {
 				headers: {
 					'Content-Type': 'application/json',
 					'Cache-Control': 'no-cache, no-store, must-revalidate',

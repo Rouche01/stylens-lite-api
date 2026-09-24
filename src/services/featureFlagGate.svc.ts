@@ -1,10 +1,16 @@
 import { env as defaultEnv } from 'cloudflare:workers';
 import { createUsersDB } from '../db';
-import { evaluatePostHogFlags, isPostHogFlagEnabled } from './featureFlags.svc';
+import {
+	evaluatePostHogFlags,
+	isPostHogFlagEnabled,
+	resolveFeatureFlagSnapshot,
+} from './featureFlags.svc';
 import { createPostHogFlagClient, type PostHogFlagEnv } from './posthog.svc';
 
 type FeatureFlagGateEnv = PostHogFlagEnv & {
 	GOSTYLENS_DB: D1Database;
+	ENV_NAME?: Env['ENV_NAME'];
+	FEATURE_FLAG_OVERRIDES?: string;
 };
 
 /** Evaluate a boolean PostHog flag for a distinct id (JWT sub). Fail closed. */
@@ -20,7 +26,12 @@ export async function isFeatureFlagEnabledForAuthId(
 	const client = createPostHogFlagClient(envBindings);
 	try {
 		const flags = await evaluatePostHogFlags({ client, distinctId });
-		return isPostHogFlagEnabled(flags, key);
+		const resolved = resolveFeatureFlagSnapshot({
+			flags,
+			envName: envBindings.ENV_NAME,
+			overridesRaw: envBindings.FEATURE_FLAG_OVERRIDES,
+		});
+		return isPostHogFlagEnabled(resolved, key);
 	} finally {
 		await client?.shutdown();
 	}

@@ -58,6 +58,55 @@ export function flagsForClient(flags: PostHogFlagSnapshot | null): Record<string
 	return out;
 }
 
+/** Build a snapshot from a flat flag map (used for dev overrides). */
+export function snapshotFromFlagMap(values: Record<string, boolean | string>): PostHogFlagSnapshot {
+	return {
+		keys: Object.keys(values),
+		isEnabled: (key) => values[key] === true,
+		getFlag: (key) => values[key],
+	};
+}
+
+/**
+ * Parse `FEATURE_FLAG_OVERRIDES` JSON (`{"closet-browse":true,"copy-test":"control"}`).
+ * Invalid JSON / non-object → empty map.
+ */
+export function parseFeatureFlagOverrides(raw: string | undefined): Record<string, boolean | string> {
+	if (!raw?.trim()) return {};
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+		const out: Record<string, boolean | string> = {};
+		for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+			const trimmed = key.trim();
+			if (!trimmed) continue;
+			if (typeof value === 'boolean' || typeof value === 'string') {
+				out[trimmed] = value;
+			}
+		}
+		return out;
+	} catch {
+		return {};
+	}
+}
+
+/**
+ * Dev-only: merge `FEATURE_FLAG_OVERRIDES` over PostHog evaluation.
+ * Staging/production ignore overrides even if the env var is set.
+ */
+export function resolveFeatureFlagSnapshot(params: {
+	flags: PostHogFlagSnapshot | null;
+	envName: Env['ENV_NAME'] | string | undefined;
+	overridesRaw?: string;
+}): PostHogFlagSnapshot | null {
+	if (params.envName !== 'dev') return params.flags;
+
+	const overrides = parseFeatureFlagOverrides(params.overridesRaw);
+	if (Object.keys(overrides).length === 0) return params.flags;
+
+	return snapshotFromFlagMap({ ...flagsForClient(params.flags), ...overrides });
+}
+
 function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => reject(new Error('posthog_flag_eval_timeout')), timeoutMs);

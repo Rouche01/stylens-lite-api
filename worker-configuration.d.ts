@@ -181,6 +181,8 @@ declare namespace Cloudflare {
 		JINA_API_KEY: string;
 		REPLICATE_API_TOKEN: string;
 		POSTHOG_PERSONAL_API_KEY: string;
+		/** Dev-only JSON map of flag overrides. Ignored unless ENV_NAME=dev. */
+		FEATURE_FLAG_OVERRIDES?: string;
 		CLOSET_ITEMS?: VectorizeIndex;
 		AI?: Ai;
 		CLOSET_EMBED_PROVIDER?: "dinov3";

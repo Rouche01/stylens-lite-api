@@ -5,6 +5,8 @@ import {
 	flagValue,
 	flagsForClient,
 	isPostHogFlagEnabled,
+	parseFeatureFlagOverrides,
+	resolveFeatureFlagSnapshot,
 	type PostHogFlagSnapshot,
 } from '../src/services/featureFlags.svc';
 
@@ -79,5 +81,54 @@ describe('flag readers', () => {
 			'other-flag': false,
 			'copy-test': 'variant-a',
 		});
+	});
+});
+
+describe('dev feature flag overrides', () => {
+	it('parses boolean and string overrides', () => {
+		expect(parseFeatureFlagOverrides('{"closet-browse":true,"copy-test":"control"}')).toEqual({
+			'closet-browse': true,
+			'copy-test': 'control',
+		});
+	});
+
+	it('returns empty for invalid JSON', () => {
+		expect(parseFeatureFlagOverrides('{')).toEqual({});
+		expect(parseFeatureFlagOverrides('[]')).toEqual({});
+		expect(parseFeatureFlagOverrides(undefined)).toEqual({});
+	});
+
+	it('merges overrides only when ENV_NAME is dev', () => {
+		const base = snapshot({ [FeatureFlags.closetBrowse]: false, 'copy-test': 'control' });
+		const raw = '{"closet-browse":true,"new-flag":"on"}';
+
+		const resolved = resolveFeatureFlagSnapshot({
+			flags: base,
+			envName: 'dev',
+			overridesRaw: raw,
+		});
+		expect(flagsForClient(resolved)).toEqual({
+			[FeatureFlags.closetBrowse]: true,
+			'copy-test': 'control',
+			'new-flag': 'on',
+		});
+
+		expect(
+			resolveFeatureFlagSnapshot({
+				flags: base,
+				envName: 'staging',
+				overridesRaw: raw,
+			})
+		).toBe(base);
+	});
+
+	it('applies overrides when PostHog evaluation returned null', () => {
+		const resolved = resolveFeatureFlagSnapshot({
+			flags: null,
+			envName: 'dev',
+			overridesRaw: '{"closet-browse":true}',
+		});
+		expect(isPostHogFlagEnabled(resolved, FeatureFlags.closetBrowse)).toBe(true);
+		expect(flagsForClient(resolved)).toEqual({ [FeatureFlags.closetBrowse]: true });
 	});
 });

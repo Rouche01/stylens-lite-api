@@ -57,6 +57,9 @@ POSTHOG_PROJECT_TOKEN=dummy
 # Local: paste the real key. Staging/prod: wrangler secret put POSTHOG_PERSONAL_API_KEY
 POSTHOG_PERSONAL_API_KEY=dummy
 POSTHOG_HOST=https://us.i.posthog.com
+# Dev-only JSON overrides merged over PostHog evaluation (GET /config/features + gates).
+# Ignored when ENV_NAME is staging/production. Example: force closet on locally.
+# FEATURE_FLAG_OVERRIDES={"closet-browse":true}
 
 # Marketing email (Resend). Auth OTP stays on MailerSend/Supabase — do not mix.
 # Sending-access API key only. Staging/prod: wrangler secret put RESEND_API_KEY
