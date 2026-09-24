@@ -1,5 +1,7 @@
 export type DailyStyleNudgeCandidate = {
 	user_id: string;
+	/** Resolved IANA zone (UTC when users.timezone is null). */
+	timezone: string;
 	last_notified_at: number | null;
 	ignore_streak: number;
 	effective_ignore_streak: number;
@@ -31,20 +33,39 @@ export class DailyStyleNudgeDB {
 	/**
 	 * Candidates for a single calendar day bucket (`dayStartMs` = local midnight).
 	 * Morning-hour filtering and per-timezone bucketing belong in the cron job.
+	 *
+	 * Optional `timezone` filters to one IANA zone (use `UTC` for null/blank users.timezone).
 	 */
 	async listCandidates(params: {
 		dayStartMs: number;
+		timezone?: string;
 		ignoreStreakCap?: number;
 		limit?: number;
 	}): Promise<DailyStyleNudgeCandidate[]> {
 		const dayStartMs = params.dayStartMs;
 		const ignoreStreakCap = params.ignoreStreakCap ?? DAILY_STYLE_NUDGE_IGNORE_STREAK_CAP;
 		const limit = params.limit ?? DAILY_STYLE_NUDGE_BATCH_LIMIT;
+		const timezoneFilter = params.timezone?.trim() || null;
+
+		const timezoneSelect = `COALESCE(NULLIF(TRIM(u.timezone), ''), 'UTC')`;
+		const timezoneClause =
+			timezoneFilter == null
+				? ''
+				: timezoneFilter === 'UTC'
+					? ` AND (${timezoneSelect} = 'UTC')`
+					: ` AND (${timezoneSelect} = ?)`;
+
+		const binds: (string | number)[] = [dayStartMs, dayStartMs, dayStartMs, ignoreStreakCap];
+		if (timezoneFilter != null && timezoneFilter !== 'UTC') {
+			binds.push(timezoneFilter);
+		}
+		binds.push(limit);
 
 		const result = await this.db
 			.prepare(
 				`SELECT
 					u.id AS user_id,
+					${timezoneSelect} AS timezone,
 					n.last_notified_at AS last_notified_at,
 					COALESCE(n.ignore_streak, 0) AS ignore_streak,
 					CASE
@@ -103,12 +124,14 @@ export class DailyStyleNudgeDB {
 				       ELSE COALESCE(n.ignore_streak, 0)
 				     END
 				   ) < ?
+				   ${timezoneClause}
 				 ORDER BY u.id ASC
 				 LIMIT ?`
 			)
-			.bind(dayStartMs, dayStartMs, dayStartMs, ignoreStreakCap, limit)
+			.bind(...binds)
 			.all<{
 				user_id: string;
+				timezone: string;
 				last_notified_at: number | null;
 				ignore_streak: number;
 				effective_ignore_streak: number;
@@ -117,6 +140,7 @@ export class DailyStyleNudgeDB {
 
 		return (result.results ?? []).map((row) => ({
 			user_id: row.user_id,
+			timezone: row.timezone || 'UTC',
 			last_notified_at: row.last_notified_at ?? null,
 			ignore_streak: row.ignore_streak ?? 0,
 			effective_ignore_streak: row.effective_ignore_streak ?? 0,

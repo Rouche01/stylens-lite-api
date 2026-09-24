@@ -30,6 +30,7 @@ export class UsersDB {
 			name: row.name,
 			gender: row.gender,
 			email: row.email,
+			timezone: row.timezone ?? null,
 			created_at: row.created_at,
 			updated_at: row.updated_at,
 			is_active: row.is_active,
@@ -148,7 +149,10 @@ export class UsersDB {
 		return result ? this.mapUserRow(result) : null;
 	}
 
-	async updateUser(id: string, updates: Partial<Pick<User, 'name' | 'gender' | 'email' | 'is_active'>>): Promise<User | null> {
+	async updateUser(
+		id: string,
+		updates: Partial<Pick<User, 'name' | 'gender' | 'email' | 'is_active' | 'timezone'>>
+	): Promise<User | null> {
 		const fields = [];
 		const values = [];
 		if (updates.name !== undefined) {
@@ -162,6 +166,10 @@ export class UsersDB {
 		if (updates.email !== undefined) {
 			fields.push('email = ?');
 			values.push(updates.email);
+		}
+		if (updates.timezone !== undefined) {
+			fields.push('timezone = ?');
+			values.push(updates.timezone);
 		}
 		if (updates.is_active !== undefined) {
 			fields.push('is_active = ?');

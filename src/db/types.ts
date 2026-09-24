@@ -72,6 +72,8 @@ export type User = {
 	name: string;
 	gender?: Gender;
 	email?: string;
+	/** IANA time zone (e.g. Europe/Amsterdam). Null/absent → treat as UTC. */
+	timezone?: string | null;
 	created_at: number;
 	updated_at: number;
 	is_active: 0 | 1;

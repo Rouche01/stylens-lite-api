@@ -15,6 +15,7 @@ const SETUP = [
   name TEXT NOT NULL,
   gender TEXT,
   email TEXT,
+  timezone TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER,
   is_active INTEGER DEFAULT 1

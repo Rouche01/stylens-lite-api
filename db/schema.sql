@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS users (
     gender IN ('male', 'female', 'non-binary', 'unspecified')
   ),                             -- Optional: enum
   email TEXT,                    -- Optional: for convenience
+  timezone TEXT,                 -- Optional IANA tz (e.g. Europe/Amsterdam); NULL → UTC
   created_at INTEGER NOT NULL,
   updated_at INTEGER,
   is_active INTEGER DEFAULT 1 CHECK(is_active IN (0, 1)),
