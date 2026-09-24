@@ -1,4 +1,5 @@
 import { PostHog } from 'posthog-node';
+import type { FlagDefinitionCacheData } from 'posthog-node';
 import type { LogContext, LogContextValue, LogLevel, LogSink } from 'utils/logger.utils';
 import {
 	createKvFlagDefinitionCacheReader,
@@ -23,6 +24,56 @@ function isConfiguredToken(token: string | undefined): token is string {
 /** Feature-flags secure API key (`phx_` personal or `phs_` project secret). */
 function isConfiguredSecureKey(key: string | undefined): key is string {
 	return Boolean(key && key !== 'dummy' && (key.startsWith('phx_') || key.startsWith('phs_')));
+}
+
+export type FlagDefinitionRefreshChecks = {
+	projectToken: boolean;
+	personalApiKey: boolean;
+	flagDefinitionsKv: boolean;
+};
+
+/** Compact view of definitions written to KV (not per-user evaluation). */
+export type RefreshedFlagValue = {
+	active: boolean;
+	deleted: boolean;
+	rolloutPercentage: number | null;
+	variants?: string[];
+};
+
+export type FlagDefinitionRefreshResult =
+	| {
+			refreshed: true;
+			checks: FlagDefinitionRefreshChecks;
+			flags: Record<string, RefreshedFlagValue>;
+	  }
+	| {
+			refreshed: false;
+			reason: string;
+			checks: FlagDefinitionRefreshChecks;
+	  };
+
+function summarizeCachedFlags(data: FlagDefinitionCacheData | undefined): Record<string, RefreshedFlagValue> {
+	const out: Record<string, RefreshedFlagValue> = {};
+	if (!data?.flags?.length) return out;
+
+	for (const flag of data.flags) {
+		const variants = flag.filters?.multivariate?.variants?.map((v) => v.key);
+		out[flag.key] = {
+			active: flag.active,
+			deleted: flag.deleted,
+			rolloutPercentage: flag.rollout_percentage,
+			...(variants?.length ? { variants } : {}),
+		};
+	}
+	return out;
+}
+
+function flagDefinitionRefreshChecks(env: PostHogFlagEnv): FlagDefinitionRefreshChecks {
+	return {
+		projectToken: isConfiguredToken(env.POSTHOG_PROJECT_TOKEN),
+		personalApiKey: isConfiguredSecureKey(env.POSTHOG_PERSONAL_API_KEY),
+		flagDefinitionsKv: Boolean(env.FLAG_DEFINITIONS),
+	};
 }
 
 function otlpAttribute(key: string, value: LogContextValue): { key: string; value: Record<string, unknown> } | null {
@@ -157,18 +208,43 @@ export function createPostHogFlagClient(
 	});
 }
 
-/** Cron: pull fresh definitions into KV when local evaluation is configured. */
-export async function refreshPostHogFlagDefinitions(env: PostHogFlagEnv): Promise<boolean> {
-	if (!isConfiguredSecureKey(env.POSTHOG_PERSONAL_API_KEY) || !env.FLAG_DEFINITIONS) {
-		return false;
+/** Cron / admin: pull fresh definitions into KV when local evaluation is configured. */
+export async function refreshPostHogFlagDefinitions(
+	env: PostHogFlagEnv
+): Promise<FlagDefinitionRefreshResult> {
+	const checks = flagDefinitionRefreshChecks(env);
+	const kv = env.FLAG_DEFINITIONS;
+	if (!checks.projectToken || !checks.personalApiKey || !kv) {
+		const missing: string[] = [];
+		if (!checks.projectToken) missing.push('POSTHOG_PROJECT_TOKEN (phc_...)');
+		if (!checks.personalApiKey) missing.push('POSTHOG_PERSONAL_API_KEY (phx_... or phs_...)');
+		if (!kv) {
+			missing.push('FLAG_DEFINITIONS KV binding (add kv_namespaces in wrangler.jsonc and restart wrangler)');
+		}
+		return {
+			refreshed: false,
+			reason: `Local evaluation is not configured. Missing: ${missing.join('; ')}.`,
+			checks,
+		};
 	}
 
 	const client = createPostHogFlagClient(env, { refreshDefinitions: true });
-	if (!client) return false;
+	if (!client) {
+		return {
+			refreshed: false,
+			reason: 'Failed to construct PostHog flag client.',
+			checks,
+		};
+	}
 
 	try {
 		await client.reloadFeatureFlags();
-		return true;
+		const cached = await createKvFlagDefinitionCacheReader(kv).getFlagDefinitions();
+		return {
+			refreshed: true,
+			checks,
+			flags: summarizeCachedFlags(cached),
+		};
 	} finally {
 		await client.shutdown();
 	}

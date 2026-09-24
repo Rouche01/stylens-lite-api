@@ -92,9 +92,14 @@ export default {
 		try {
 			// Single lifecycle cron today; local probes may pass a different cron string.
 			try {
-				const refreshed = await refreshPostHogFlagDefinitions(env);
-				if (refreshed) {
+				const refresh = await refreshPostHogFlagDefinitions(env);
+				if (refresh.refreshed) {
 					log.info('posthog_flag_definitions_refreshed');
+				} else {
+					log.debug('posthog_flag_definitions_refresh_skipped', {
+						reason: refresh.reason,
+						...refresh.checks,
+					});
 				}
 			} catch (err) {
 				log.warn('posthog_flag_definitions_refresh_failed', {}, err);
