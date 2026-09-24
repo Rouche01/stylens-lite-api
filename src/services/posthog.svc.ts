@@ -84,18 +84,27 @@ async function exportOtlpLog(params: {
 	}
 }
 
+export function createPostHogClient(env: PostHogEnv): PostHog | null {
+	const token = env.POSTHOG_PROJECT_TOKEN;
+	if (!isConfiguredToken(token)) {
+		return null;
+	}
+
+	return new PostHog(token, {
+		host: env.POSTHOG_HOST || DEFAULT_POSTHOG_HOST,
+		flushAt: 1,
+		flushInterval: 0,
+	});
+}
+
 export function createPostHogSink(env: PostHogEnv): LogSink | null {
-	if (!isConfiguredToken(env.POSTHOG_PROJECT_TOKEN)) {
+	const posthog = createPostHogClient(env);
+	if (!posthog || !isConfiguredToken(env.POSTHOG_PROJECT_TOKEN)) {
 		return null;
 	}
 
 	const token = env.POSTHOG_PROJECT_TOKEN;
 	const host = env.POSTHOG_HOST || DEFAULT_POSTHOG_HOST;
-	const posthog = new PostHog(token, {
-		host,
-		flushAt: 1,
-		flushInterval: 0,
-	});
 	const pending: Promise<unknown>[] = [];
 
 	const enqueue = (work: Promise<unknown>) => {
