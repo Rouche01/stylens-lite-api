@@ -53,6 +53,9 @@ VOLTMEM_API_KEY=dev-secret
 # PostHog (same project as Stylens). Use the Project API Key (phc_...), not a personal phx_ key.
 # Local: paste the real key. Staging/prod: wrangler secret put POSTHOG_PROJECT_TOKEN
 POSTHOG_PROJECT_TOKEN=dummy
+# Feature-flags secure API key for local evaluation (phx_... or phs_...). Never ship to the app.
+# Local: paste the real key. Staging/prod: wrangler secret put POSTHOG_PERSONAL_API_KEY
+POSTHOG_PERSONAL_API_KEY=dummy
 POSTHOG_HOST=https://us.i.posthog.com
 
 # Marketing email (Resend). Auth OTP stays on MailerSend/Supabase — do not mix.

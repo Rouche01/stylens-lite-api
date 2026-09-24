@@ -84,6 +84,14 @@
 	"images": {
 		"binding": "IMAGES"
 	},
+	// PostHog flag definitions for local evaluation (shared across isolates).
+	"kv_namespaces": [
+		{
+			"binding": "FLAG_DEFINITIONS",
+			"id": "__FLAG_DEFINITIONS_KV_ID__",
+			"preview_id": "__FLAG_DEFINITIONS_KV_PREVIEW_ID__"
+		}
+	],
 	// Closet item identity spike. DINOv3 CLS is 1024-d cosine. Do not reuse the 768-d CLIP index.
 	"vectorize": [
 		{
@@ -168,7 +176,13 @@
 			],
 			"images": {
 				"binding": "IMAGES"
-			}
+			},
+			"kv_namespaces": [
+				{
+					"binding": "FLAG_DEFINITIONS",
+					"id": "__FLAG_DEFINITIONS_KV_ID_STAGING__"
+				}
+			]
 		},
 		// ── Production environment ──────────────────────────────
 		"production": {
@@ -245,7 +259,13 @@
 			],
 			"images": {
 				"binding": "IMAGES"
-			}
+			},
+			"kv_namespaces": [
+				{
+					"binding": "FLAG_DEFINITIONS",
+					"id": "__FLAG_DEFINITIONS_KV_ID_PRODUCTION__"
+				}
+			]
 		}
 	}
 }

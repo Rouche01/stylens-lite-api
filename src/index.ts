@@ -12,7 +12,7 @@ import configRouter from './routes/config';
 import emailRouter from './routes/email';
 import { createLogger } from './utils/logger.utils';
 import { apiError } from './utils/error';
-import { createPostHogSink } from './services/posthog.svc';
+import { createPostHogSink, refreshPostHogFlagDefinitions } from './services/posthog.svc';
 import { runActivationD0Job } from './jobs/activation_d0';
 import { enqueueClosetVectorBackfillScan } from './services/identity/jobs/closetVectorRepair';
 import { dispatchQueue } from './queues';
@@ -91,6 +91,14 @@ export default {
 
 		try {
 			// Single lifecycle cron today; local probes may pass a different cron string.
+			try {
+				const refreshed = await refreshPostHogFlagDefinitions(env);
+				if (refreshed) {
+					log.info('posthog_flag_definitions_refreshed');
+				}
+			} catch (err) {
+				log.warn('posthog_flag_definitions_refresh_failed', {}, err);
+			}
 			await enqueueClosetVectorBackfillScan(env.CLOSET_IDENTITY_QUEUE, log);
 			await runActivationD0Job(env, ctx, log);
 		} catch (err) {

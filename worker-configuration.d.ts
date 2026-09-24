@@ -47,6 +47,8 @@ declare namespace Cloudflare {
 		VOLTMEM_API_KEY: string;
 		POSTHOG_PROJECT_TOKEN: string;
 		POSTHOG_HOST: string;
+		POSTHOG_PERSONAL_API_KEY?: string;
+		FLAG_DEFINITIONS?: KVNamespace;
 		EMAIL_PROVIDER: string;
 		EMAIL_FROM: string;
 		RESEND_API_KEY: string;
@@ -103,6 +105,8 @@ declare namespace Cloudflare {
 		VOLTMEM_API_KEY: string;
 		POSTHOG_PROJECT_TOKEN: string;
 		POSTHOG_HOST: string;
+		POSTHOG_PERSONAL_API_KEY?: string;
+		FLAG_DEFINITIONS?: KVNamespace;
 		EMAIL_PROVIDER: string;
 		EMAIL_FROM: string;
 		RESEND_API_KEY: string;
@@ -159,6 +163,8 @@ declare namespace Cloudflare {
 		VOLTMEM_API_KEY: string;
 		POSTHOG_PROJECT_TOKEN: string;
 		POSTHOG_HOST: string;
+		POSTHOG_PERSONAL_API_KEY?: string;
+		FLAG_DEFINITIONS?: KVNamespace;
 		EMAIL_PROVIDER: string;
 		EMAIL_FROM: string;
 		RESEND_API_KEY: string;
