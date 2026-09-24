@@ -37,11 +37,12 @@ export class StyleAnalysisService {
 	 */
 	async createSession(params: {
 		userId: string;
+		authId?: string;
 		messages: MessageEntry[];
 		title?: string;
 		ctx?: ExecutionContext;
 	}) {
-		const { userId, messages, title, ctx } = params;
+		const { userId, authId, messages, title, ctx } = params;
 		const limits = await this.getEffectiveLimits(userId);
 
 		// Check session count limit for the current period (trial window or UTC month)
@@ -62,6 +63,7 @@ export class StyleAnalysisService {
 			title,
 			messages,
 			userId,
+			authId,
 			ctx
 		});
 
@@ -126,10 +128,11 @@ export class StyleAnalysisService {
 	async addMessageToSession(params: {
 		sessionId: string;
 		userId: string;
+		authId?: string;
 		message: MessageEntry;
 		ctx?: ExecutionContext;
 	}) {
-		const { sessionId, userId, message, ctx } = params;
+		const { sessionId, userId, authId, message, ctx } = params;
 		const session = await this.styleAnalysisDB.getSession(sessionId, userId);
 		if (!session) {
 			throw new Error('NOT_FOUND: Session not found or access denied');
@@ -173,7 +176,8 @@ export class StyleAnalysisService {
 			ctx as ExecutionContext,
 			sessionId,
 			undefined,
-			userId
+			userId,
+			authId
 		);
 
 		return { sessionId, messageId: messageEntryId };
@@ -275,15 +279,16 @@ export class StyleAnalysisService {
 		title?: string;
 		messages: MessageEntry[];
 		userId: string;
+		authId?: string;
 		ctx?: ExecutionContext;
 	}) {
-		const { sessionId, messageIds, title, messages, userId, ctx } = params;
+		const { sessionId, messageIds, title, messages, userId, authId, ctx } = params;
 
 		if (!title) {
 			this.generateTitleInBackground({ sessionId, messages, ctx });
 		}
 
-		this.classifyMessagesInBackground({ sessionId, messageIds, messages, userId, ctx });
+		this.classifyMessagesInBackground({ sessionId, messageIds, messages, userId, authId, ctx });
 
 		// Sync the has_reached_limit flag in the background for UI consistency
 		this.syncSessionLimitFlagInBackground({ userId, ctx });
@@ -323,9 +328,10 @@ export class StyleAnalysisService {
 		messageIds: string[];
 		messages: MessageEntry[];
 		userId: string;
+		authId?: string;
 		ctx?: ExecutionContext;
 	}) {
-		const { sessionId, messageIds, messages, userId, ctx } = params;
+		const { sessionId, messageIds, messages, userId, authId, ctx } = params;
 
 		for (let i = 0; i < messages.length; i++) {
 			const message = messages[i];
@@ -340,7 +346,8 @@ export class StyleAnalysisService {
 				ctx as ExecutionContext,
 				sessionId,
 				previousMessage,
-				userId
+				userId,
+				authId
 			);
 		}
 	}

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { FeatureFlags } from '../src/config/featureFlags';
 import {
 	evaluatePostHogFlags,
 	flagValue,
@@ -17,7 +18,7 @@ function snapshot(values: Record<string, boolean | string>): PostHogFlagSnapshot
 
 describe('evaluatePostHogFlags', () => {
 	it('returns the snapshot when evaluation succeeds', async () => {
-		const flags = snapshot({ 'closet-browse': true, 'copy-test': 'control' });
+		const flags = snapshot({ [FeatureFlags.closetBrowse]: true, 'copy-test': 'control' });
 		const client = { evaluateFlags: vi.fn().mockResolvedValue(flags) };
 
 		await expect(
@@ -52,13 +53,13 @@ describe('evaluatePostHogFlags', () => {
 
 describe('flag readers', () => {
 	const flags = snapshot({
-		'closet-browse': true,
+		[FeatureFlags.closetBrowse]: true,
 		'other-flag': false,
 		'copy-test': 'variant-a',
 	});
 
 	it('reads booleans and variants', () => {
-		expect(isPostHogFlagEnabled(flags, 'closet-browse')).toBe(true);
+		expect(isPostHogFlagEnabled(flags, FeatureFlags.closetBrowse)).toBe(true);
 		expect(isPostHogFlagEnabled(flags, 'other-flag')).toBe(false);
 		expect(isPostHogFlagEnabled(flags, 'copy-test')).toBe(false);
 		expect(isPostHogFlagEnabled(flags, 'missing')).toBe(false);
@@ -67,14 +68,14 @@ describe('flag readers', () => {
 	});
 
 	it('fails closed when the snapshot is null', () => {
-		expect(isPostHogFlagEnabled(null, 'closet-browse')).toBe(false);
-		expect(flagValue(null, 'closet-browse')).toBeUndefined();
+		expect(isPostHogFlagEnabled(null, FeatureFlags.closetBrowse)).toBe(false);
+		expect(flagValue(null, FeatureFlags.closetBrowse)).toBeUndefined();
 		expect(flagsForClient(null)).toEqual({});
 	});
 
 	it('builds the client map from booleans and variant strings', () => {
 		expect(flagsForClient(flags)).toEqual({
-			'closet-browse': true,
+			[FeatureFlags.closetBrowse]: true,
 			'other-flag': false,
 			'copy-test': 'variant-a',
 		});

@@ -29,6 +29,7 @@ const addMessageToSessionHandler: RequestHandler<ProvisionedAuthRequest> = async
 		const result = await styleAnalysisService.addMessageToSession({
 			sessionId,
 			userId: request.user.dbId,
+			authId: request.user.authId,
 			message: body.message,
 			ctx
 		});

@@ -11,6 +11,9 @@ import { enqueueClosetIdentityFromClassification } from './identity/jobs/closetI
 import { runClosetIdentityProgress } from './identity/notify/progress';
 import { createRealtimeService } from './realtime.svc';
 import { Logger, createLogger } from '../utils/logger.utils';
+import { evaluatePostHogFlags, isPostHogFlagEnabled } from './featureFlags.svc';
+import { createPostHogFlagClient } from './posthog.svc';
+import { FeatureFlags } from '../config/featureFlags';
 
 export type ClosetIdentityEnqueue = {
 	enqueue(params: {
@@ -22,6 +25,27 @@ export type ClosetIdentityEnqueue = {
 	}): Promise<unknown>;
 };
 
+/** Resolves whether closet identity may be enqueued for this PostHog distinct id. */
+export type ClosetBrowseGate = (authId: string) => Promise<boolean>;
+
+export type ClosetIdentityEnqueueGateResult =
+	| { action: 'enqueue' }
+	| { action: 'skip'; reason: 'missing_auth_id' | 'flag_gate_unavailable' | 'closet_browse_off' };
+
+/** Fail-closed closet-browse check before identity enqueue. */
+export async function resolveClosetIdentityEnqueueGate(params: {
+	authId: string | undefined;
+	closetBrowseEnabled: ClosetBrowseGate | null;
+}): Promise<ClosetIdentityEnqueueGateResult> {
+	const distinctId = params.authId?.trim();
+	if (!distinctId) return { action: 'skip', reason: 'missing_auth_id' };
+	if (!params.closetBrowseEnabled) return { action: 'skip', reason: 'flag_gate_unavailable' };
+
+	const browseOn = await params.closetBrowseEnabled(distinctId);
+	if (!browseOn) return { action: 'skip', reason: 'closet_browse_off' };
+	return { action: 'enqueue' };
+}
+
 export class ClassificationService {
 	constructor(
 		private llmService: LLMService,
@@ -29,7 +53,8 @@ export class ClassificationService {
 		private voltmem: VoltMemService | null = null,
 		private avatarService: AvatarService | null = null,
 		private identityEnqueue: ClosetIdentityEnqueue | null = null,
-		private log: Logger = createLogger({ env: 'dev' })
+		private log: Logger = createLogger({ env: 'dev' }),
+		private closetBrowseEnabled: ClosetBrowseGate | null = null
 	) { }
 
 	/**
@@ -187,6 +212,7 @@ export class ClassificationService {
 	 * @param previousMessage - Pass the previous message for context. Pass `null` to explicitly indicate
 	 *   no previous message exists. Pass `undefined` (or omit) to resolve from DB automatically.
 	 * @param userId - D1 users.id used as VoltMem namespace for cross-session write-through.
+	 * @param authId - JWT sub / PostHog distinct id for closet-browse. Required to enqueue identity.
 	 */
 	async tagEntryInBackground(
 		entryId: string,
@@ -194,7 +220,8 @@ export class ClassificationService {
 		ctx: ExecutionContext,
 		sessionId?: string,
 		previousMessage?: MessageEntry | null,
-		userId?: string
+		userId?: string,
+		authId?: string
 	) {
 		ctx.waitUntil((async () => {
 			try {
@@ -216,7 +243,7 @@ export class ClassificationService {
 					await this.styleAnalysisDB.addEntryTags(entryId, tags);
 					await this.writeThroughVoltMem(userId, tags);
 					await this.maybeEnqueueAvatar(userId, message, tags);
-					await this.maybeEnqueueIdentity(userId, message, tags, sessionId, entryId);
+					await this.maybeEnqueueIdentity(userId, message, tags, sessionId, entryId, authId);
 				}
 			} catch (e) {
 				console.trace('Background classification failed:', e);
@@ -270,18 +297,40 @@ export class ClassificationService {
 	}
 
 	/**
-	 * Outfit-tagged photos enqueue extract+identity. Fail-open; never blocks classification.
+	 * Outfit-tagged photos enqueue extract+identity when closet-browse is on.
+	 * Fail-open for classification; fail-closed for the flag (default off).
 	 */
 	private async maybeEnqueueIdentity(
 		userId: string | undefined,
 		message: MessageEntry,
 		tags: StyleEntryTag[],
 		sessionId: string | undefined,
-		entryId: string
+		entryId: string,
+		authId?: string
 	) {
 		if (!userId || !this.identityEnqueue) return;
 
+		const hasOutfitImage = tags.some(
+			(tag) =>
+				tag.tag === 'session_state:primary_outfit_image' ||
+				tag.tag === 'session_state:alt_outfit_image'
+		);
+		if (!hasOutfitImage) return;
+
 		try {
+			const gate = await resolveClosetIdentityEnqueueGate({
+				authId,
+				closetBrowseEnabled: this.closetBrowseEnabled,
+			});
+			if (gate.action === 'skip') {
+				this.log.info('closet_identity_enqueue_skipped', {
+					user_id: userId,
+					entry_id: entryId,
+					reason: gate.reason,
+				});
+				return;
+			}
+
 			await this.identityEnqueue.enqueue({
 				userId,
 				message,
@@ -359,8 +408,27 @@ export const createClassificationService = (database: D1Database, env?: Env) => 
 				},
 			}
 		: null;
+	const closetBrowseEnabled: ClosetBrowseGate | null = env
+		? async (authId) => {
+				const client = createPostHogFlagClient(env);
+				try {
+					const flags = await evaluatePostHogFlags({ client, distinctId: authId });
+					return isPostHogFlagEnabled(flags, FeatureFlags.closetBrowse);
+				} finally {
+					await client?.shutdown();
+				}
+			}
+		: null;
 	const log = createLogger({ env: env?.ENV_NAME ?? 'dev' }).child({ service: 'classification' });
-	return new ClassificationService(llmService, styleAnalysisDB, voltmem, avatarService, identityEnqueue, log);
+	return new ClassificationService(
+		llmService,
+		styleAnalysisDB,
+		voltmem,
+		avatarService,
+		identityEnqueue,
+		log,
+		closetBrowseEnabled
+	);
 };
 
 function summarizeClassificationPayload(input: LLMProviderInput) {

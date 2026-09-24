@@ -31,6 +31,7 @@ const createSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 
 		const sessionResult = await styleAnalysisService.createSession({
 			userId: request.user.dbId,
+			authId: request.user.authId,
 			messages: body.messages,
 			title: body.title,
 			ctx

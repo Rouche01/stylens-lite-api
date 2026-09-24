@@ -95,3 +95,5 @@ JINA_API_KEY=
 # Catalog stand-in photos (SerpAPI Google Lens / Shopping). Staging/prod: wrangler secret put SERPAPI_API_KEY
 CATALOG_SEARCH_PROVIDER=serpapi
 SERPAPI_API_KEY=
+
+POSTHOG_PERSONAL_API_KEY=
