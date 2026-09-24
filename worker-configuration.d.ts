@@ -56,6 +56,7 @@ declare namespace Cloudflare {
 		EMAIL_SEND_ALLOWLIST: string;
 		EMAIL_APP_DEEP_LINK: string;
 		EMAIL_LIFECYCLE_CRON_ENABLED: string;
+		DAILY_STYLE_NUDGE_CRON_ENABLED: string;
 		SAM_SEGMENT_PROVIDER: string;
 		FAL_KEY: string;
 		CATALOG_SEARCH_PROVIDER: string;
@@ -115,6 +116,7 @@ declare namespace Cloudflare {
 		EMAIL_SEND_ALLOWLIST: string;
 		EMAIL_APP_DEEP_LINK: string;
 		EMAIL_LIFECYCLE_CRON_ENABLED: string;
+		DAILY_STYLE_NUDGE_CRON_ENABLED: string;
 		SAM_SEGMENT_PROVIDER: string;
 		FAL_KEY: string;
 		CATALOG_SEARCH_PROVIDER: string;
@@ -174,6 +176,7 @@ declare namespace Cloudflare {
 		EMAIL_SEND_ALLOWLIST: string;
 		EMAIL_APP_DEEP_LINK: string;
 		EMAIL_LIFECYCLE_CRON_ENABLED: string;
+		DAILY_STYLE_NUDGE_CRON_ENABLED: string;
 		SAM_SEGMENT_PROVIDER: string;
 		FAL_KEY: string;
 		CATALOG_SEARCH_PROVIDER: string;

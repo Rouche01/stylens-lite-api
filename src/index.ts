@@ -14,6 +14,7 @@ import { createLogger } from './utils/logger.utils';
 import { apiError } from './utils/error';
 import { createPostHogSink, refreshPostHogFlagDefinitions } from './services/posthog.svc';
 import { runActivationD0Job } from './jobs/activation_d0';
+import { runDailyStyleNudgeJob } from './jobs/daily_style_nudge';
 import { enqueueClosetVectorBackfillScan } from './services/identity/jobs/closetVectorRepair';
 import { dispatchQueue } from './queues';
 import type { ApiRequest } from './types';
@@ -106,6 +107,7 @@ export default {
 			}
 			await enqueueClosetVectorBackfillScan(env.CLOSET_IDENTITY_QUEUE, log);
 			await runActivationD0Job(env, ctx, log);
+			await runDailyStyleNudgeJob(env, ctx, log);
 		} catch (err) {
 			log.error('scheduled_handler_failed', { cron: controller.cron }, err);
 			throw err;

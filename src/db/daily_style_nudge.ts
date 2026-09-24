@@ -1,5 +1,6 @@
 export type DailyStyleNudgeCandidate = {
 	user_id: string;
+	email: string | null;
 	/** Resolved IANA zone (UTC when users.timezone is null). */
 	timezone: string;
 	last_notified_at: number | null;
@@ -29,6 +30,22 @@ export function effectiveIgnoreStreak(params: {
 
 export class DailyStyleNudgeDB {
 	constructor(private db: D1Database) {}
+
+	/** Distinct resolved timezones for active users with at least one push token. */
+	async listDistinctPushTimezones(): Promise<string[]> {
+		const timezoneSelect = `COALESCE(NULLIF(TRIM(u.timezone), ''), 'UTC')`;
+		const result = await this.db
+			.prepare(
+				`SELECT DISTINCT ${timezoneSelect} AS timezone
+				 FROM users u
+				 WHERE u.is_active = 1
+				   AND EXISTS (SELECT 1 FROM push_tokens pt WHERE pt.user_id = u.id)
+				 ORDER BY timezone ASC`
+			)
+			.all<{ timezone: string }>();
+		const zones = (result.results ?? []).map((r) => r.timezone || 'UTC');
+		return zones.length > 0 ? zones : ['UTC'];
+	}
 
 	/**
 	 * Candidates for a single calendar day bucket (`dayStartMs` = local midnight).
@@ -65,6 +82,7 @@ export class DailyStyleNudgeDB {
 			.prepare(
 				`SELECT
 					u.id AS user_id,
+					u.email AS email,
 					${timezoneSelect} AS timezone,
 					n.last_notified_at AS last_notified_at,
 					COALESCE(n.ignore_streak, 0) AS ignore_streak,
@@ -131,6 +149,7 @@ export class DailyStyleNudgeDB {
 			.bind(...binds)
 			.all<{
 				user_id: string;
+				email: string | null;
 				timezone: string;
 				last_notified_at: number | null;
 				ignore_streak: number;
@@ -140,6 +159,7 @@ export class DailyStyleNudgeDB {
 
 		return (result.results ?? []).map((row) => ({
 			user_id: row.user_id,
+			email: row.email ?? null,
 			timezone: row.timezone || 'UTC',
 			last_notified_at: row.last_notified_at ?? null,
 			ignore_streak: row.ignore_streak ?? 0,
