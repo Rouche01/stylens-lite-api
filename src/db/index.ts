@@ -11,6 +11,7 @@ import { ClosetDB } from './closet';
 import { PushTokensDB } from './push_tokens';
 import { StylistOpenersDB } from './stylist_openers';
 import { AvatarsDB } from './avatars';
+import { DailyStyleNudgeDB, createDailyStyleNudgeDB } from './daily_style_nudge';
 
 export const createStyleAnalysisDB = (db: D1Database): StyleAnalysisDB => {
 	return new StyleAnalysisDB(db);
@@ -40,7 +41,7 @@ export const createEmailSendsDB = (db: D1Database) => {
 	return new EmailSendsDB(db);
 };
 
-export { createEmailSegmentsDB };
+export { createEmailSegmentsDB, createDailyStyleNudgeDB };
 
 export const createInviteCodesDB = (db: D1Database) => {
 	return new InviteCodesDB(db);
@@ -74,5 +75,6 @@ export {
 	EmailSendsDB,
 	EmailSegmentsDB,
 	AvatarsDB,
+	DailyStyleNudgeDB,
 };
 export { closetIdentityStatusPayload, identityJobsProcessing } from './closet';

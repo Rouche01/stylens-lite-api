@@ -383,6 +383,15 @@ CREATE TABLE IF NOT EXISTS push_tokens (
 -- Index for fast token lookups/retrievals by user
 CREATE INDEX IF NOT EXISTS idx_push_tokens_user_id ON push_tokens(user_id);
 
+-- Per-user cadence for the daily style nudge push (once/day + ignore streak).
+CREATE TABLE IF NOT EXISTS daily_style_nudge_state (
+	user_id TEXT PRIMARY KEY,
+	last_notified_at INTEGER NOT NULL,
+	ignore_streak INTEGER NOT NULL DEFAULT 0,
+	updated_at INTEGER NOT NULL,
+	FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 
 -- Stylist opener message pool (admin-editable, versioned for client cache)
 CREATE TABLE IF NOT EXISTS stylist_opener_meta (
