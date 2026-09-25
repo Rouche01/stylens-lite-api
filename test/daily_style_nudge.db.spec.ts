@@ -222,6 +222,40 @@ describe('DailyStyleNudgeDB.listCandidates', () => {
 		expect(byId['u-reset'].effective_ignore_streak).toBe(0);
 	});
 
+	it('filters candidates by resolved timezone bucket', async () => {
+		const now = Date.UTC(2026, 8, 27, 8, 0, 0);
+		const dayStart = Date.UTC(2026, 8, 27, 0, 0, 0);
+		const yesterday = dayStart - DAY_MS / 2;
+
+		await seedUser({
+			id: 'u-ams',
+			authId: 'a-ams',
+			historyAts: [yesterday],
+			now,
+		});
+		await seedUser({
+			id: 'u-utc',
+			authId: 'a-utc',
+			historyAts: [yesterday],
+			now,
+		});
+		await env.GOSTYLENS_DB.prepare(`UPDATE users SET timezone = ? WHERE id = ?`)
+			.bind('Europe/Amsterdam', 'u-ams')
+			.run();
+		await env.GOSTYLENS_DB.prepare(`UPDATE users SET timezone = NULL WHERE id = ?`)
+			.bind('u-utc')
+			.run();
+
+		const db = createDailyStyleNudgeDB(env.GOSTYLENS_DB);
+		const ams = await db.listCandidates({ dayStartMs: dayStart, timezone: 'Europe/Amsterdam' });
+		const utc = await db.listCandidates({ dayStartMs: dayStart, timezone: 'UTC' });
+
+		expect(ams.map((r) => r.user_id)).toContain('u-ams');
+		expect(ams.map((r) => r.user_id)).not.toContain('u-utc');
+		expect(utc.map((r) => r.user_id)).toContain('u-utc');
+		expect(utc.map((r) => r.user_id)).not.toContain('u-ams');
+	});
+
 	it('markNotified upserts last_notified_at and ignore_streak', async () => {
 		const now = Date.UTC(2026, 8, 26, 8, 30, 0);
 		const dayStart = Date.UTC(2026, 8, 26, 0, 0, 0);

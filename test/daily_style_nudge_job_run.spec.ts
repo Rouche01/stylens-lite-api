@@ -92,4 +92,65 @@ describe('runDailyStyleNudgeJob', () => {
 			ignoreStreak: 1,
 		});
 	});
+
+	it('skips when no timezone is in the morning window', async () => {
+		const listDistinctPushTimezones = vi.fn().mockResolvedValue(['UTC']);
+		const listCandidates = vi.fn();
+		vi.mocked(createDailyStyleNudgeDB).mockReturnValue({
+			listDistinctPushTimezones,
+			listCandidates,
+			markNotified: vi.fn(),
+		} as never);
+
+		const env = {
+			ENV_NAME: 'staging',
+			DAILY_STYLE_NUDGE_CRON_ENABLED: 'true',
+			EMAIL_SEND_ALLOWLIST: '',
+			GOSTYLENS_DB: {},
+			FCM_SERVICE_ACCOUNT_JSON: '{}',
+		} as unknown as Env;
+
+		// 14:00 UTC → outside 08–09
+		const result = await runDailyStyleNudgeJob(
+			env,
+			{} as ExecutionContext,
+			undefined,
+			Date.UTC(2026, 8, 24, 14, 0, 0)
+		);
+
+		expect(result.timezones_checked).toBe(1);
+		expect(result.timezones_in_window).toBe(0);
+		expect(result.sent).toBe(0);
+		expect(listCandidates).not.toHaveBeenCalled();
+	});
+
+	it('sends nothing in dev when EMAIL_SEND_ALLOWLIST is empty', async () => {
+		const listDistinctPushTimezones = vi.fn().mockResolvedValue(['UTC']);
+		const listCandidates = vi.fn();
+		vi.mocked(createDailyStyleNudgeDB).mockReturnValue({
+			listDistinctPushTimezones,
+			listCandidates,
+			markNotified: vi.fn(),
+		} as never);
+
+		const env = {
+			ENV_NAME: 'dev',
+			DAILY_STYLE_NUDGE_CRON_ENABLED: 'true',
+			EMAIL_SEND_ALLOWLIST: '',
+			GOSTYLENS_DB: {},
+			FCM_SERVICE_ACCOUNT_JSON: '{}',
+		} as unknown as Env;
+
+		const result = await runDailyStyleNudgeJob(
+			env,
+			{} as ExecutionContext,
+			undefined,
+			Date.UTC(2026, 8, 24, 8, 0, 0)
+		);
+
+		expect(result.timezones_in_window).toBe(1);
+		expect(result.eligible).toBe(0);
+		expect(result.sent).toBe(0);
+		expect(listCandidates).not.toHaveBeenCalled();
+	});
 });
