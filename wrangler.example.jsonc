@@ -93,7 +93,8 @@
 			"preview_id": "__FLAG_DEFINITIONS_KV_PREVIEW_ID__"
 		}
 	],
-	// Closet item identity spike. DINOv3 CLS is 1024-d cosine. Do not reuse the 768-d CLIP index.
+	// Closet item identity. DINOv3 CLS is 1024-d cosine. Do not reuse the 768-d CLIP index.
+	// Local/dev remote index; live Worker uses stylens-closet-items-dinov3-live under env.staging.
 	"vectorize": [
 		{
 			"binding": "CLOSET_ITEMS",
@@ -101,6 +102,9 @@
 			"remote": true
 		}
 	],
+	"ai": {
+		"binding": "AI"
+	},
 	"env": {
 		// ── Staging environment ──────────────────────────────
 		"staging": {
@@ -182,9 +186,18 @@
 			"kv_namespaces": [
 				{
 					"binding": "FLAG_DEFINITIONS",
-					"id": "__FLAG_DEFINITIONS_KV_ID_STAGING__"
+					"id": "b862de34a5d4424daf5573a0c6684924"
 				}
-			]
+			],
+			"vectorize": [
+				{
+					"binding": "CLOSET_ITEMS",
+					"index_name": "stylens-closet-items-dinov3-live"
+				}
+			],
+			"ai": {
+				"binding": "AI"
+			}
 		},
 		// ── Production environment ──────────────────────────────
 		"production": {
