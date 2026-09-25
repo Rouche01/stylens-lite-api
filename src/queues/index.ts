@@ -6,16 +6,30 @@ import { handleClosetMatchDigestQueue } from './closetMatchDigest';
 import type { ClosetMatchDigestJob } from '../services/identity/notify/digest';
 import type { AvatarGenerationJob } from '../services/avatar';
 
+/** Bare queue names (local / top-level). Remote env uses `stylens-${name}`. */
+export const QUEUE_NAME = {
+	AVATAR_GENERATION: 'avatar-generation',
+	CLOSET_MATCH_DIGEST: 'closet-match-digest',
+	CLOSET_IDENTITY: 'closet-identity',
+} as const;
+
+export type QueueName = (typeof QUEUE_NAME)[keyof typeof QUEUE_NAME];
+
+/** Matches bare local names (`closet-identity`) and prefixed remote names (`stylens-closet-identity`). */
+function isNamedQueue(queueName: string, base: QueueName): boolean {
+	return queueName === base || queueName.endsWith(`-${base}`);
+}
+
 export function isClosetMatchDigestQueue(queueName: string): boolean {
-	return queueName === 'closet-match-digest' || queueName === 'closet-match-digest-staging';
+	return isNamedQueue(queueName, QUEUE_NAME.CLOSET_MATCH_DIGEST);
 }
 
 export function isAvatarGenerationQueue(queueName: string): boolean {
-	return queueName === 'avatar-generation' || queueName === 'avatar-generation-staging';
+	return isNamedQueue(queueName, QUEUE_NAME.AVATAR_GENERATION);
 }
 
 export function isClosetIdentityQueue(queueName: string): boolean {
-	return queueName === 'closet-identity' || queueName === 'closet-identity-staging';
+	return isNamedQueue(queueName, QUEUE_NAME.CLOSET_IDENTITY);
 }
 
 export async function dispatchQueue(

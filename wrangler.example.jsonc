@@ -133,30 +133,30 @@
 				"producers": [
 					{
 						"binding": "AVATAR_GENERATION_QUEUE",
-						"queue": "avatar-generation-staging"
+						"queue": "stylens-avatar-generation"
 					},
 					{
 						"binding": "CLOSET_MATCH_DIGEST_QUEUE",
-						"queue": "closet-match-digest-staging"
+						"queue": "stylens-closet-match-digest"
 					},
 					{
 						"binding": "CLOSET_IDENTITY_QUEUE",
-						"queue": "closet-identity-staging"
+						"queue": "stylens-closet-identity"
 					}
 				],
 				"consumers": [
 					{
-						"queue": "avatar-generation-staging",
+						"queue": "stylens-avatar-generation",
 						"max_batch_size": 1,
 						"max_retries": 2
 					},
 					{
-						"queue": "closet-match-digest-staging",
+						"queue": "stylens-closet-match-digest",
 						"max_batch_size": 1,
 						"max_retries": 5
 					},
 					{
-						"queue": "closet-identity-staging",
+						"queue": "stylens-closet-identity",
 						"max_batch_size": 1,
 						"max_retries": 25
 					}

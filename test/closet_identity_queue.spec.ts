@@ -12,7 +12,12 @@ import {
 } from '../src/services/identity/jobs/closetIdentityJob';
 import { IdentityBusyError, type ProcessOutfitImageResult } from '../src/services/identity/write/processOutfit';
 import { notifyClosetCatalogIfChanged } from '../src/services/identity/notify/catalogBroadcast';
-import { isAvatarGenerationQueue, isClosetIdentityQueue, isClosetMatchDigestQueue } from '../src/queues';
+import {
+	isAvatarGenerationQueue,
+	isClosetIdentityQueue,
+	isClosetMatchDigestQueue,
+	QUEUE_NAME,
+} from '../src/queues';
 import type { StyleEntryTag } from '../src/db/types';
 import type { MessageEntry, RemoteImage } from '../src/utils/types';
 import type { Logger } from '../src/utils/logger.utils';
@@ -22,11 +27,11 @@ const ALT: StyleEntryTag['tag'] = 'session_state:alt_outfit_image';
 
 describe('isClosetIdentityQueue', () => {
 	it('matches identity queue names', () => {
-		expect(isClosetIdentityQueue('closet-identity')).toBe(true);
-		expect(isClosetIdentityQueue('closet-identity-staging')).toBe(true);
-		expect(isClosetIdentityQueue('closet-match-digest')).toBe(false);
-		expect(isClosetMatchDigestQueue('closet-identity')).toBe(false);
-		expect(isAvatarGenerationQueue('closet-identity')).toBe(false);
+		expect(isClosetIdentityQueue(QUEUE_NAME.CLOSET_IDENTITY)).toBe(true);
+		expect(isClosetIdentityQueue(`stylens-${QUEUE_NAME.CLOSET_IDENTITY}`)).toBe(true);
+		expect(isClosetIdentityQueue(QUEUE_NAME.CLOSET_MATCH_DIGEST)).toBe(false);
+		expect(isClosetMatchDigestQueue(QUEUE_NAME.CLOSET_IDENTITY)).toBe(false);
+		expect(isAvatarGenerationQueue(QUEUE_NAME.CLOSET_IDENTITY)).toBe(false);
 	});
 });
 

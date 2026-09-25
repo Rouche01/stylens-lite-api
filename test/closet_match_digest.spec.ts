@@ -4,7 +4,7 @@ import {
 	decideClosetMatchDigest,
 	runClosetMatchDigest,
 } from '../src/services/identity/notify/digest';
-import { isAvatarGenerationQueue, isClosetMatchDigestQueue } from '../src/queues';
+import { isAvatarGenerationQueue, isClosetMatchDigestQueue, QUEUE_NAME } from '../src/queues';
 import type { Logger } from '../src/utils/logger.utils';
 
 const NOW = 1_700_000_000_000;
@@ -84,12 +84,12 @@ describe('decideClosetMatchDigest', () => {
 
 describe('isClosetMatchDigestQueue', () => {
 	it('matches digest queue names', () => {
-		expect(isClosetMatchDigestQueue('closet-match-digest')).toBe(true);
-		expect(isClosetMatchDigestQueue('closet-match-digest-staging')).toBe(true);
-		expect(isClosetMatchDigestQueue('avatar-generation')).toBe(false);
-		expect(isAvatarGenerationQueue('avatar-generation')).toBe(true);
-		expect(isAvatarGenerationQueue('avatar-generation-staging')).toBe(true);
-		expect(isAvatarGenerationQueue('closet-match-digest')).toBe(false);
+		expect(isClosetMatchDigestQueue(QUEUE_NAME.CLOSET_MATCH_DIGEST)).toBe(true);
+		expect(isClosetMatchDigestQueue(`stylens-${QUEUE_NAME.CLOSET_MATCH_DIGEST}`)).toBe(true);
+		expect(isClosetMatchDigestQueue(QUEUE_NAME.AVATAR_GENERATION)).toBe(false);
+		expect(isAvatarGenerationQueue(QUEUE_NAME.AVATAR_GENERATION)).toBe(true);
+		expect(isAvatarGenerationQueue(`stylens-${QUEUE_NAME.AVATAR_GENERATION}`)).toBe(true);
+		expect(isAvatarGenerationQueue(QUEUE_NAME.CLOSET_MATCH_DIGEST)).toBe(false);
 	});
 });
 
