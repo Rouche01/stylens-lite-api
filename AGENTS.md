@@ -1,10 +1,10 @@
-# AGENTS.md — StyleLens Lite API
+# AGENTS.md — GoStylens Lite API
 
 Guidance for AI coding agents working in this repository. Keep changes focused; prefer matching existing patterns over inventing new ones.
 
 ## What this is
 
-Cloudflare Workers API for **GoStylens / StyleLens**: style-analysis sessions, users, subscriptions, closet identity / catalog, avatars, push, and lifecycle email. Auth is Supabase JWT. Data: **D1** (SQL), **R2** (photos), **Vectorize** (closet embeddings), **KV** (PostHog flag defs), **Queues** (async jobs).
+Cloudflare Workers API for **GoStylens**: style-analysis sessions, users, subscriptions, closet identity / catalog, avatars, push, and lifecycle email. Auth is Supabase JWT. Data: **D1** (SQL), **R2** (photos), **Vectorize** (closet embeddings), **KV** (PostHog flag defs), **Queues** (async jobs).
 
 ## Stack
 
