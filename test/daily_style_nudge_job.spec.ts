@@ -25,13 +25,17 @@ describe('timezone morning window helpers', () => {
 		expect(start).toBe(zonedLocalToUtcMs(2026, 9, 24, 0, 0, 0, 'Europe/Amsterdam'));
 	});
 
-	it('detects morning window hours 8–9 local', () => {
-		// 2026-09-24 06:30 UTC = 08:30 Amsterdam (CEST)
-		const inWindow = Date.UTC(2026, 8, 24, 6, 30, 0);
+	it('detects morning window hours 10–11 local', () => {
+		// 2026-09-24 08:30 UTC = 10:30 Amsterdam (CEST)
+		const inWindow = Date.UTC(2026, 8, 24, 8, 30, 0);
 		expect(isLocalMorningWindow(inWindow, 'Europe/Amsterdam')).toBe(true);
 		expect(isLocalMorningWindow(inWindow, 'UTC')).toBe(false);
 
-		const utcMorning = Date.UTC(2026, 8, 24, 8, 15, 0);
+		// 2026-09-24 06:00 UTC = 08:00 Amsterdam — before the window
+		const tooEarly = Date.UTC(2026, 8, 24, 6, 0, 0);
+		expect(isLocalMorningWindow(tooEarly, 'Europe/Amsterdam')).toBe(false);
+
+		const utcMorning = Date.UTC(2026, 8, 24, 10, 15, 0);
 		expect(isLocalMorningWindow(utcMorning, 'UTC')).toBe(true);
 		expect(isLocalMorningWindow(utcMorning, 'Europe/Amsterdam')).toBe(false);
 	});

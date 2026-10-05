@@ -75,7 +75,7 @@ describe('runDailyStyleNudgeJob', () => {
 			FCM_SERVICE_ACCOUNT_JSON: '{}',
 		} as unknown as Env;
 
-		const nowMs = Date.UTC(2026, 8, 24, 8, 5, 0);
+		const nowMs = Date.UTC(2026, 8, 24, 10, 5, 0);
 		const result = await runDailyStyleNudgeJob(env, {} as ExecutionContext, undefined, nowMs);
 
 		expect(result.timezones_in_window).toBe(1);
@@ -110,7 +110,7 @@ describe('runDailyStyleNudgeJob', () => {
 			FCM_SERVICE_ACCOUNT_JSON: '{}',
 		} as unknown as Env;
 
-		// 14:00 UTC → outside 08–09
+		// 14:00 UTC → outside 10–11
 		const result = await runDailyStyleNudgeJob(
 			env,
 			{} as ExecutionContext,
@@ -145,7 +145,7 @@ describe('runDailyStyleNudgeJob', () => {
 			env,
 			{} as ExecutionContext,
 			undefined,
-			Date.UTC(2026, 8, 24, 8, 0, 0)
+			Date.UTC(2026, 8, 24, 10, 0, 0)
 		);
 
 		expect(result.timezones_in_window).toBe(1);

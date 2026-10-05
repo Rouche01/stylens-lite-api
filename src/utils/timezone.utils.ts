@@ -108,9 +108,9 @@ export function localDayStartMs(nowMs: number, timeZone: string): number {
 	return zonedLocalToUtcMs(year, month, day, 0, 0, 0, timeZone);
 }
 
-/** Inclusive local hours for the daily style nudge window (08:00–09:59). */
-export const DAILY_STYLE_NUDGE_MORNING_HOUR_START = 8;
-export const DAILY_STYLE_NUDGE_MORNING_HOUR_END = 9;
+/** Inclusive local hours for the daily style nudge window (10:00–11:59). */
+export const DAILY_STYLE_NUDGE_MORNING_HOUR_START = 10;
+export const DAILY_STYLE_NUDGE_MORNING_HOUR_END = 11;
 
 export function isLocalMorningWindow(
 	nowMs: number,
