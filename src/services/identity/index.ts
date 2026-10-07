@@ -12,3 +12,19 @@ export type {
 	ResolveClosetMatchResult,
 } from './write/types';
 export { IdentityEmbedError } from './encode/embed.types';
+export {
+	IDENTITY_RUN_ITEMS_LOG_CAP,
+	IdentityRunLogEvents,
+	identityRunChildContext,
+	identityRunCompletedLogContext,
+	joinImageKeysForLog,
+	mintIdentityRunId,
+	summarizeIdentityRunItems,
+} from './logging/runLogging';
+export type {
+	IdentityEnqueueSkipReason,
+	IdentityRunChildFields,
+	IdentityRunItemLogRow,
+	IdentityRunItemSummary,
+	IdentityRunLogEvent,
+} from './logging/runLogging';
