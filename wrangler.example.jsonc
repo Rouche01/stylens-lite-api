@@ -122,7 +122,7 @@
 				"EMAIL_API_BASE_URL": "https://api-staging.gostylens.app",
 				"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
 			"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
-			"DAILY_STYLE_NUDGE_CRON_ENABLED": "false",
+			"DAILY_STYLE_NUDGE_CRON_ENABLED": "true",
 			"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
 			"AVATAR_IMAGE_PROVIDER": "openai",
 			"SAM_SEGMENT_PROVIDER": "fal",
