@@ -5,6 +5,7 @@ import { createOutfitExtractionService } from '../../outfit_extraction.svc';
 import { createRealtimeService } from '../../realtime.svc';
 import type { CropEncoder, PreparedClosetCrop, QueryClosetCropMatch } from '../encode/cropEncoder';
 import { closetMatchProbeFromPrepared } from '../encode/probeEmbed';
+import { identityRunChildContext } from '../logging/runLogging';
 import {
 	decideIdentityFromNeighbors,
 	shouldQueryIdentity,
@@ -81,6 +82,7 @@ export class OutfitIdentityProcessor {
 	) {}
 
 	async process(params: ProcessOutfitImageParams): Promise<ProcessOutfitImageResult | null> {
+		const runLog = this.logForRun(params);
 		let extracted = params.cachedExtraction;
 		if (!extracted) {
 			extracted =
@@ -92,7 +94,7 @@ export class OutfitIdentityProcessor {
 				try {
 					await params.onExtracted?.(extracted);
 				} catch (err) {
-					this.log.warn('outfit_identity_cache_extract_failed', { image_key: params.imageKey }, err);
+					runLog.warn('outfit_identity_cache_extract_failed', { image_key: params.imageKey }, err);
 				}
 			}
 		}
@@ -120,7 +122,7 @@ export class OutfitIdentityProcessor {
 				closet: this.closet,
 				identity: this.identity,
 				wait: this.wait,
-				log: this.log,
+				log: runLog,
 			});
 
 			const items: ProcessedOutfitItem[] = [];
@@ -159,6 +161,19 @@ export class OutfitIdentityProcessor {
 	 */
 	async resolveMatch(params: ResolveClosetMatchParams): Promise<ResolveClosetMatchResult> {
 		return resolveClosetMatch(this.writeDeps(), params);
+	}
+
+	/** Child logger when `identityRunId` is set so process-scoped events inherit the correlation id. */
+	private logForRun(params: ProcessOutfitImageParams): Logger {
+		const identityRunId = params.identityRunId?.trim();
+		if (!identityRunId) return this.log;
+		return this.log.child(
+			identityRunChildContext({
+				identity_run_id: identityRunId,
+				user_id: params.userId,
+				image_key: params.imageKey,
+			})
+		);
 	}
 
 	private writeDeps(): OutfitIdentityWriteDeps {

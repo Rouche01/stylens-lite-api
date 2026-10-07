@@ -85,6 +85,8 @@ export type ProcessOutfitImageParams = {
 	signal?: AbortSignal;
 	cachedExtraction?: OutfitExtractionResponse;
 	onExtracted?: (extraction: OutfitExtractionResponse) => Promise<void>;
+	/** Correlates enqueue → process logs. Minted at enqueue or HTTP extract entry. */
+	identityRunId?: string;
 };
 
 export type ProcessedOutfitItem = ClothingItem & {

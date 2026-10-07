@@ -1,5 +1,12 @@
 import { error, RequestHandler } from 'itty-router';
-import { createOutfitIdentityService, IdentityBusyError } from 'services/identity';
+import {
+	createOutfitIdentityService,
+	IdentityBusyError,
+	IdentityRunLogEvents,
+	identityRunCompletedLogContext,
+	mintIdentityRunId,
+	summarizeIdentityRunItems,
+} from 'services/identity';
 import { getIsolatedItemUrl, signDownloadUrlForKey } from 'utils/assets.utils';
 import { createUsersDB } from 'db';
 import { env } from 'cloudflare:workers';
@@ -53,17 +60,30 @@ const extractOutfitHandler: RequestHandler<ApiRequest> = async (request) => {
 			// Fallback to imageUrl
 		}
 
+		const identityRunId = mintIdentityRunId();
 		const processed = await createOutfitIdentityService(env, request.log).process({
 			userId,
 			imageUrl,
 			imageKey,
+			identityRunId,
 			signal: request.signal,
 		});
 
 		if (!processed) {
-			request.log.warn('outfit_extraction_empty_result');
+			request.log.warn('outfit_extraction_empty_result', { identity_run_id: identityRunId });
 			return error(400, 'Failed to extract outfit items');
 		}
+
+		request.log.info(
+			IdentityRunLogEvents.JOB_COMPLETED,
+			identityRunCompletedLogContext({
+				identity_run_id: identityRunId,
+				user_id: userId,
+				image_key: imageKey,
+				outfit_id: processed.outfit_id,
+				summary: summarizeIdentityRunItems(processed.items),
+			})
+		);
 
 		const requestUrl = new URL(request.url);
 		const domain = requestUrl.host;

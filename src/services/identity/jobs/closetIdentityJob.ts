@@ -3,7 +3,13 @@ import type { StyleEntryTag } from '../../../db/types';
 import type { OutfitExtractionResponse } from '../../../types';
 import type { Logger } from '../../../utils/logger.utils';
 import type { MessageEntry, RemoteImage } from '../../../utils/types';
-import { IdentityRunLogEvents, mintIdentityRunId } from '../logging/runLogging';
+import {
+	IdentityRunLogEvents,
+	identityRunChildContext,
+	identityRunCompletedLogContext,
+	mintIdentityRunId,
+	summarizeIdentityRunItems,
+} from '../logging/runLogging';
 import { IdentityBusyError } from '../write/errors';
 import type { ProcessOutfitImageParams, ProcessOutfitImageResult } from '../write/types';
 import type { ClosetCatalogNotifyItem } from '../../../utils/closet_browse';
@@ -204,10 +210,13 @@ export async function runClosetIdentityJob(params: {
 	const userId = params.job.userId?.trim();
 	const imageKey = params.job.imageKey?.trim();
 	const imageUrl = params.job.imageUrl?.trim();
+	const sessionId = params.job.sessionId?.trim();
+	const entryId = params.job.entryId?.trim();
 	if (!userId || !imageKey || !imageUrl) {
 		params.log.warn('closet_identity_invalid_job', {
 			user_id: userId,
 			image_key: imageKey,
+			identity_run_id: params.job.identityRunId,
 		});
 		if (userId && imageKey) {
 			await params.closet.markIdentityJobStatus(userId, imageKey, 'failed');
@@ -215,6 +224,20 @@ export async function runClosetIdentityJob(params: {
 		}
 		return { action: 'ack', reason: 'invalid' };
 	}
+
+	const identityRunId = resolveIdentityRunId(params.job.identityRunId, params.log, {
+		user_id: userId,
+		image_key: imageKey,
+	});
+	const runLog = params.log.child(
+		identityRunChildContext({
+			identity_run_id: identityRunId,
+			user_id: userId,
+			image_key: imageKey,
+			session_id: sessionId,
+			entry_id: entryId,
+		})
+	);
 
 	const stored = await params.closet.getIdentityJob(userId, imageKey);
 	if (stored?.status === 'done') {
@@ -225,19 +248,26 @@ export async function runClosetIdentityJob(params: {
 	await params.closet.markIdentityJobStatus(userId, imageKey, 'running');
 	await params.closet.touchIdentityProgressActivity(userId);
 
+	runLog.info(IdentityRunLogEvents.JOB_STARTED, {
+		attempts,
+		session_id: sessionId,
+		entry_id: entryId,
+	});
+
 	try {
 		const result = await params.process({
 			userId,
 			imageKey,
 			imageUrl,
+			identityRunId,
 			cachedExtraction: parseCachedExtraction(stored),
 			onExtracted: async (extraction) => {
 				await params.closet.saveIdentityJobExtraction(userId, imageKey, JSON.stringify(extraction));
 			},
 		});
 		if (!result) {
-			params.log.warn('closet_identity_extract_empty', { user_id: userId, image_key: imageKey, attempts });
-			return failOrRetry(params, userId, imageKey, attempts, 'extract_empty');
+			runLog.warn('closet_identity_extract_empty', { attempts });
+			return failOrRetry(params, runLog, userId, imageKey, attempts, 'extract_empty', identityRunId);
 		}
 		await params.closet.markIdentityJobDone(userId, imageKey, result.outfit_id);
 		await params.closet.touchIdentityProgressActivity(userId);
@@ -248,26 +278,49 @@ export async function runClosetIdentityJob(params: {
 				items: result.items,
 			});
 		} catch (err) {
-			params.log.warn(
+			runLog.warn(
 				'closet_catalog_broadcast_failed',
-				{ user_id: userId, outfit_id: result.outfit_id },
+				{ outfit_id: result.outfit_id },
 				err
 			);
 		}
-		params.log.info('closet_identity_completed', {
-			user_id: userId,
-			image_key: imageKey,
-			outfit_id: result.outfit_id,
-		});
+		const summary = summarizeIdentityRunItems(result.items);
+		runLog.info(
+			IdentityRunLogEvents.JOB_COMPLETED,
+			identityRunCompletedLogContext({
+				identity_run_id: identityRunId,
+				user_id: userId,
+				image_key: imageKey,
+				outfit_id: result.outfit_id,
+				summary,
+				session_id: sessionId,
+				entry_id: entryId,
+			})
+		);
 		return { action: 'ack', reason: 'completed' };
 	} catch (err) {
 		if (isIdentityBusyError(err)) {
-			params.log.info('closet_identity_busy', { user_id: userId, image_key: imageKey, attempts });
-			return failOrRetry(params, userId, imageKey, attempts, 'busy');
+			runLog.info(IdentityRunLogEvents.JOB_BUSY, { attempts });
+			return failOrRetry(params, runLog, userId, imageKey, attempts, 'busy', identityRunId);
 		}
-		params.log.error('closet_identity_failed', { user_id: userId, image_key: imageKey, attempts }, err);
-		return failOrRetry(params, userId, imageKey, attempts, 'error');
+		runLog.error(IdentityRunLogEvents.JOB_FAILED, { attempts }, err);
+		return failOrRetry(params, runLog, userId, imageKey, attempts, 'error', identityRunId);
 	}
+}
+
+function resolveIdentityRunId(
+	fromJob: string | undefined,
+	log: Logger,
+	context: { user_id: string; image_key: string }
+): string {
+	const existing = fromJob?.trim();
+	if (existing) return existing;
+	const identityRunId = mintIdentityRunId();
+	log.info(IdentityRunLogEvents.RUN_ID_MINTED_AT_CONSUMER, {
+		...context,
+		identity_run_id: identityRunId,
+	});
+	return identityRunId;
 }
 
 async function failOrRetry(
@@ -275,19 +328,20 @@ async function failOrRetry(
 		closet: ClosetIdentityRunStore;
 		log: Logger;
 	},
+	runLog: Logger,
 	userId: string,
 	imageKey: string,
 	attempts: number,
-	reason: 'busy' | 'extract_empty' | 'error'
+	reason: 'busy' | 'extract_empty' | 'error',
+	identityRunId: string
 ): Promise<ClosetIdentityRunDecision> {
 	if (attempts >= IDENTITY_FAIL_AFTER_ATTEMPTS) {
 		await params.closet.markIdentityJobStatus(userId, imageKey, 'failed');
 		await params.closet.touchIdentityProgressActivity(userId);
-		params.log.warn('closet_identity_gave_up', {
-			user_id: userId,
-			image_key: imageKey,
+		runLog.warn(IdentityRunLogEvents.JOB_GAVE_UP, {
 			attempts,
 			reason,
+			identity_run_id: identityRunId,
 		});
 		return { action: 'ack', reason: 'failed' };
 	}

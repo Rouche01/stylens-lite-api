@@ -10,6 +10,7 @@ import {
 	runClosetIdentityJob,
 	type ClosetIdentityQueueJob,
 } from '../src/services/identity/jobs/closetIdentityJob';
+import { IdentityRunLogEvents } from '../src/services/identity/logging/runLogging';
 import { IdentityBusyError, type ProcessOutfitImageResult } from '../src/services/identity/write/processOutfit';
 import { notifyClosetCatalogIfChanged } from '../src/services/identity/notify/catalogBroadcast';
 import {
@@ -20,7 +21,7 @@ import {
 } from '../src/queues';
 import type { StyleEntryTag } from '../src/db/types';
 import type { MessageEntry, RemoteImage } from '../src/utils/types';
-import type { Logger } from '../src/utils/logger.utils';
+import type { LogContext, Logger } from '../src/utils/logger.utils';
 
 const PRIMARY: StyleEntryTag['tag'] = 'session_state:primary_outfit_image';
 const ALT: StyleEntryTag['tag'] = 'session_state:alt_outfit_image';
@@ -244,6 +245,91 @@ describe('runClosetIdentityJob', () => {
 		expect(closet.rows.get('u1|users/u1/a.jpg')?.extraction_json).toBeTruthy();
 		expect(closet.statusTrace).toEqual(['running']);
 		expect(closet.activityTouches).toBeGreaterThan(0);
+	});
+
+	it('propagates identityRunId into process and enriches the completed log', async () => {
+		const closet = memoryJobs();
+		closet.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'queued' }));
+		const { log, events } = capturingLogger();
+		let seenRunId: string | undefined;
+
+		const decision = await runClosetIdentityJob({
+			job: { ...queueJob(), identityRunId: 'run-fixed-1', sessionId: 's1', entryId: 'e1' },
+			closet,
+			process: async (params) => {
+				seenRunId = params.identityRunId;
+				return {
+					outfit_id: 'outfit-1',
+					image_key: params.imageKey,
+					extraction: { items: [] } as never,
+					items: [
+						catalogItem({
+							closet_item_id: 'c1',
+							identity_status: 'created',
+							category: 'top',
+							subcategory: 'shirt',
+						}),
+						catalogItem({
+							closet_item_id: null,
+							identity_status: 'ask',
+							category: 'bottom',
+							subcategory: 'pants',
+						}),
+					],
+				};
+			},
+			log,
+		});
+
+		expect(decision).toEqual({ action: 'ack', reason: 'completed' });
+		expect(seenRunId).toBe('run-fixed-1');
+		expect(events.some((e) => e.message === IdentityRunLogEvents.JOB_STARTED)).toBe(true);
+		const completed = events.find((e) => e.message === IdentityRunLogEvents.JOB_COMPLETED);
+		expect(completed?.context).toMatchObject({
+			identity_run_id: 'run-fixed-1',
+			user_id: 'u1',
+			image_key: 'users/u1/a.jpg',
+			outfit_id: 'outfit-1',
+			item_count: 2,
+			created: 1,
+			asked: 1,
+			failed: 0,
+			existing_crop: 0,
+			session_id: 's1',
+			entry_id: 'e1',
+		});
+		expect(typeof completed?.context?.items_json).toBe('string');
+		expect(events.some((e) => e.message === IdentityRunLogEvents.RUN_ID_MINTED_AT_CONSUMER)).toBe(false);
+	});
+
+	it('mints identity_run_id at the consumer when the queue payload omits it', async () => {
+		const closet = memoryJobs();
+		closet.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'queued' }));
+		const { log, events } = capturingLogger();
+		let seenRunId: string | undefined;
+
+		await runClosetIdentityJob({
+			job: queueJob(),
+			closet,
+			process: async (params) => {
+				seenRunId = params.identityRunId;
+				return {
+					outfit_id: 'outfit-1',
+					image_key: params.imageKey,
+					extraction: { items: [] } as never,
+					items: [],
+				};
+			},
+			log,
+		});
+
+		expect(seenRunId).toMatch(
+			/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+		);
+		const minted = events.find((e) => e.message === IdentityRunLogEvents.RUN_ID_MINTED_AT_CONSUMER);
+		expect(minted?.context?.identity_run_id).toBe(seenRunId);
+		const completed = events.find((e) => e.message === IdentityRunLogEvents.JOB_COMPLETED);
+		expect(completed?.context?.identity_run_id).toBe(seenRunId);
 	});
 
 	it('broadcasts catalog ids once after a completed job', async () => {
@@ -565,4 +651,26 @@ function silentLogger(): Logger {
 		},
 	};
 	return log;
+}
+
+function capturingLogger() {
+	const events: Array<{ level: string; message: string; context?: LogContext }> = [];
+	const make = (base: LogContext = {}): Logger => ({
+		debug(message, context) {
+			events.push({ level: 'debug', message, context: { ...base, ...context } });
+		},
+		info(message, context) {
+			events.push({ level: 'info', message, context: { ...base, ...context } });
+		},
+		warn(message, context) {
+			events.push({ level: 'warn', message, context: { ...base, ...context } });
+		},
+		error(message, context) {
+			events.push({ level: 'error', message, context: { ...base, ...context } });
+		},
+		child(context) {
+			return make({ ...base, ...context });
+		},
+	});
+	return { log: make(), events };
 }
