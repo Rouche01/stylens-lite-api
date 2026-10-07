@@ -8,6 +8,7 @@
 		"dev": "wrangler dev",
 		"dev:scheduled": "wrangler dev --test-scheduled",
 		"dev:remote": "wrangler dev --remote",
+		"identity:sink": "node scripts/identity-run-sink.mjs",
 		"start": "wrangler dev",
 		"test": "vitest",
 		"cf-typegen": "wrangler types",

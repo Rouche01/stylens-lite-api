@@ -28,4 +28,11 @@ export type {
 	IdentityRunItemSummary,
 	IdentityRunLogEvent,
 } from './logging/runLogging';
+export {
+	IDENTITY_RUN_SINK_DEFAULT_URL,
+	buildIdentityRunArtifact,
+	persistIdentityRunArtifact,
+	shouldPersistIdentityRunArtifact,
+} from './logging/runArtifact';
+export type { IdentityRunArtifact, IdentityRunArtifactSource } from './logging/runArtifact';
 export type { ClosetIdentityEnqueueResult, ClosetIdentityQueueJob } from './jobs/closetIdentityJob';

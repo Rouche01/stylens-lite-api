@@ -200,6 +200,28 @@ Vectorize is the ANN store. D1 remains source of truth for items, wears, cover, 
 - Log score histograms (high/mid/low counts) for a week of real extracts.
 - Tune thresholds; document the chosen numbers in this file.
 
+#### Run logging (for calibration)
+
+Identity runs emit correlated structured logs joined by `identity_run_id` (minted at enqueue or at the queue consumer / HTTP extract). Contract: `src/services/identity/logging/runLogging.ts`. Human review loop: `.cursor/plans/identity_calibration_review_ec9bb163.plan.md`.
+
+| Event | Use for calibration |
+| --- | --- |
+| `closet_identity_completed` | Per-photo summary: `created` / `asked` / `failed` / `existing_crop` counts + `items_json` (status, reason, `identity_score`, candidate / closet ids) |
+| `identity_vector_queried` | Top cosine / `identity_score` / color distance before decide |
+| `outfit_identity_ask` / `outfit_identity_created` | Per-item decision with score + reason (inherits `identity_run_id` via child logger) |
+| `closet_identity_enqueue_skipped` / `_result` | Gate / wiring misses vs actually queued photos |
+
+**Local review files (dev only):** when `ENV_NAME=dev`, completed runs POST to a localhost sink that writes one JSON file per run:
+
+```bash
+npm run identity:sink   # terminal A → .cursor/identity_runs/<identity_run_id>.json
+npm run dev             # terminal B
+```
+
+Workers cannot write the host disk, and local R2 is remote in this project — do not put run artifacts in the outfit photo bucket. Sink is fail-open if not running.
+
+Histogram `identity_score` (and create vs ask vs `below_threshold`) from a week of these events before changing match bands. Do not resurrect attribute-equality merge from logs.
+
 **Out of this plan:** outfit-level look embeddings; catalog/SKU retrieval; shoppable twin (Plan 1 Slice C); try-off (Plan 2); VoltMem.
 
 ---

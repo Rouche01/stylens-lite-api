@@ -3,6 +3,7 @@ import type { StyleEntryTag } from '../../../db/types';
 import type { OutfitExtractionResponse } from '../../../types';
 import type { Logger } from '../../../utils/logger.utils';
 import type { MessageEntry, RemoteImage } from '../../../utils/types';
+import { buildIdentityRunArtifact, type IdentityRunArtifact } from '../logging/runArtifact';
 import {
 	IdentityRunLogEvents,
 	identityRunChildContext,
@@ -206,6 +207,9 @@ export async function runClosetIdentityJob(params: {
 		outfitId: string;
 		items: readonly ClosetCatalogNotifyItem[];
 	}) => Promise<unknown>;
+	/** Optional local-review hook (e.g. persist JSON artifact when ENV_NAME=dev). Fail-open. */
+	onRunCompleted?: (artifact: IdentityRunArtifact) => Promise<unknown>;
+	envName?: string;
 }): Promise<ClosetIdentityRunDecision> {
 	const userId = params.job.userId?.trim();
 	const imageKey = params.job.imageKey?.trim();
@@ -297,6 +301,28 @@ export async function runClosetIdentityJob(params: {
 				entry_id: entryId,
 			})
 		);
+		if (params.onRunCompleted) {
+			try {
+				await params.onRunCompleted(
+					buildIdentityRunArtifact({
+						identity_run_id: identityRunId,
+						envName: params.envName ?? 'dev',
+						source: 'queue',
+						user_id: userId,
+						image_key: imageKey,
+						outfit_id: result.outfit_id,
+						summary,
+						session_id: sessionId,
+						entry_id: entryId,
+					})
+				);
+			} catch (err) {
+				runLog.debug('identity_run_artifact_hook_failed', {
+					identity_run_id: identityRunId,
+					error_message: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
 		return { action: 'ack', reason: 'completed' };
 	} catch (err) {
 		if (isIdentityBusyError(err)) {

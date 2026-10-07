@@ -7,6 +7,10 @@ import {
 	mintIdentityRunId,
 	summarizeIdentityRunItems,
 } from 'services/identity';
+import {
+	buildIdentityRunArtifact,
+	persistIdentityRunArtifact,
+} from 'services/identity/logging/runArtifact';
 import { getIsolatedItemUrl, signDownloadUrlForKey } from 'utils/assets.utils';
 import { createUsersDB } from 'db';
 import { env } from 'cloudflare:workers';
@@ -74,6 +78,7 @@ const extractOutfitHandler: RequestHandler<ApiRequest> = async (request) => {
 			return error(400, 'Failed to extract outfit items');
 		}
 
+		const summary = summarizeIdentityRunItems(processed.items);
 		request.log.info(
 			IdentityRunLogEvents.JOB_COMPLETED,
 			identityRunCompletedLogContext({
@@ -81,9 +86,22 @@ const extractOutfitHandler: RequestHandler<ApiRequest> = async (request) => {
 				user_id: userId,
 				image_key: imageKey,
 				outfit_id: processed.outfit_id,
-				summary: summarizeIdentityRunItems(processed.items),
+				summary,
 			})
 		);
+		await persistIdentityRunArtifact({
+			envName: env.ENV_NAME,
+			log: request.log,
+			artifact: buildIdentityRunArtifact({
+				identity_run_id: identityRunId,
+				envName: env.ENV_NAME,
+				source: 'extract',
+				user_id: userId,
+				image_key: imageKey,
+				outfit_id: processed.outfit_id,
+				summary,
+			}),
+		});
 
 		const requestUrl = new URL(request.url);
 		const domain = requestUrl.host;

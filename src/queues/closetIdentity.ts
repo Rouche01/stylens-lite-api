@@ -16,6 +16,7 @@ import {
 	type ClosetVectorRepairJob,
 } from '../services/identity/jobs/closetVectorRepair';
 import { createOutfitIdentityService } from '../services/identity/outfitIdentity.svc';
+import { persistIdentityRunArtifact } from '../services/identity/logging/runArtifact';
 import { notifyClosetCatalogIfChanged } from '../services/identity/notify/catalogBroadcast';
 import { createRealtimeService } from '../services/realtime.svc';
 import type { Logger } from '../utils/logger.utils';
@@ -58,6 +59,13 @@ export async function handleClosetIdentityQueue(
 			process: (params) => identity.process(params),
 			log,
 			attempts: message.attempts,
+			envName: env.ENV_NAME,
+			onRunCompleted: (artifact) =>
+				persistIdentityRunArtifact({
+					envName: env.ENV_NAME,
+					artifact,
+					log,
+				}),
 			notifyCatalog: ({ userId, outfitId, items }) =>
 				notifyClosetCatalogIfChanged({
 					userId,
