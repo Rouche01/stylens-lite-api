@@ -36,6 +36,8 @@ export type EmbedClosetCropParams = {
 	imageKey: string;
 	boundingBox: PercentBox;
 	signal?: AbortSignal;
+	/** Optional child logger (e.g. with identity_run_id) for this embed/query. */
+	log?: Logger;
 };
 
 export type EmbedClosetCropResult = {
@@ -132,7 +134,7 @@ export class CropEncoder {
 
 	async upsertPreparedCrop(
 		embedded: PreparedClosetCrop,
-		params: { id?: string; userId: string; category: string; closetItemId?: string }
+		params: { id?: string; userId: string; category: string; closetItemId?: string; log?: Logger }
 	): Promise<UpsertClosetCropResult> {
 		const closetItemId = params.closetItemId?.trim();
 		const vectorId = resolveClosetVectorId({
@@ -146,7 +148,8 @@ export class CropEncoder {
 			color: embedded.crop_color ? colorSignatureToMetadata(embedded.crop_color) : undefined,
 		});
 		const mutation = await this.requireVectors().upsert(vectorId, embedded.vector, metadata);
-		this.log.info('identity_vector_upserted', {
+		const log = params.log ?? this.log;
+		log.info('identity_vector_upserted', {
 			vector_id: vectorId,
 			user_id: metadata.user_id,
 			slot: metadata.slot,
@@ -182,7 +185,8 @@ export class CropEncoder {
 			(a, b) => b.identity_score - a.identity_score
 		);
 		const matches = neighbors.filter((match) => isIdentityMatch(match.identity_score));
-		this.log.info('identity_vector_queried', {
+		const log = params.log ?? this.log;
+		log.info('identity_vector_queried', {
 			match_count: matches.length,
 			neighbor_count: queried.count,
 			top_score: neighbors[0]?.score,
@@ -282,7 +286,7 @@ export class CropEncoder {
 
 	private async embedCrop(params: EmbedClosetCropParams): Promise<EmbeddedCrop> {
 		const { imageKey, boundingBox, signal } = params;
-		const log = this.log.child({ image_key: imageKey, provider: this.embedder.name });
+		const log = (params.log ?? this.log).child({ image_key: imageKey, provider: this.embedder.name });
 
 		const object = await getR2Object(this.bucket, imageKey);
 		if (!object?.body) {

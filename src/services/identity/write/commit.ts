@@ -49,6 +49,7 @@ export async function commitNewItem(
 			outfit_id: params.outfitId,
 			closet_item_id: closetItem.id,
 			reason: decision.reason,
+			identity_score: decision.identityScore ?? null,
 			label: params.item.label,
 		});
 		return {
@@ -97,6 +98,7 @@ export async function indexCommittedItem(
 				userId: params.userId,
 				category: params.category,
 				closetItemId: params.closetItemId,
+				log: deps.log,
 			});
 		} catch (err) {
 			deps.log.warn(

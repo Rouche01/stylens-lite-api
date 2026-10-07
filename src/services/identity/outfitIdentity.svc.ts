@@ -46,7 +46,7 @@ export class OutfitIdentityService {
 
 	async upsertPreparedCrop(
 		embedded: PreparedClosetCrop,
-		params: { id?: string; userId: string; category: string; closetItemId?: string }
+		params: { id?: string; userId: string; category: string; closetItemId?: string; log?: Logger }
 	): Promise<UpsertClosetCropResult> {
 		return this.encode.upsertPreparedCrop(embedded, params);
 	}

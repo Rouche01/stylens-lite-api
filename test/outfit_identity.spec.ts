@@ -22,7 +22,7 @@ import {
 import { closetMatchProbeFromPrepared } from '../src/services/identity/encode/probeEmbed';
 import type { PreparedClosetCrop, QueryClosetCropMatch } from '../src/services/identity/encode/cropEncoder';
 import type { ClosetItem, ClosetItemMatch, ClosetItemMatchWithOutfit, Outfit } from '../src/db/closet';
-import type { Logger } from '../src/utils/logger.utils';
+import type { LogContext, Logger } from '../src/utils/logger.utils';
 import { closetItemVectorId } from '../src/services/identity/encode/vectorize.store';
 
 const BOX = { x: 20, y: 15, width: 40, height: 35 };
@@ -191,6 +191,36 @@ describe('OutfitIdentityProcessor', () => {
 		expect(harness.catalogNotifies).toEqual([]);
 		expect(harness.closet.outfits[0].image_width).toBe(1000);
 		expect(harness.closet.outfits[0].image_height).toBe(1500);
+	});
+
+	it('includes identity_run_id on per-item decision logs and encode query params', async () => {
+		const { log, events } = capturingLogger();
+		const queryLogs: Array<Logger | undefined> = [];
+		const harness = createHarness({
+			neighbors: [neighbor({ identity_score: 0.77 })],
+			log,
+		});
+		const originalQuery = harness.identity.queryPreparedCrop;
+		harness.identity.queryPreparedCrop = async (prepared, params = {}) => {
+			queryLogs.push(params.log);
+			return originalQuery(prepared, params);
+		};
+
+		await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/test.jpg',
+			identityRunId: 'run-breadcrumbs-1',
+		});
+
+		expect(queryLogs[0]).toBeTruthy();
+		const ask = events.find((e) => e.message === 'outfit_identity_ask');
+		expect(ask?.context).toMatchObject({
+			identity_run_id: 'run-breadcrumbs-1',
+			user_id: 'u1',
+			image_key: 'users/u1/test.jpg',
+			identity_score: 0.77,
+		});
 	});
 
 	it('backfills image dimensions on an existing outfit without size', async () => {
@@ -1110,6 +1140,7 @@ function createHarness(options: {
 	visible?: boolean;
 	repairError?: Error;
 	prepareError?: Error;
+	log?: Logger;
 }) {
 	const items = options.items ?? [clothingItem()];
 	const extraction: OutfitExtractionResponse = {
@@ -1132,7 +1163,10 @@ function createHarness(options: {
 			if (options.prepareError) throw options.prepareError;
 			return PREPARED;
 		},
-		queryPreparedCrop: async () => {
+		queryPreparedCrop: async (
+			_prepared: PreparedClosetCrop,
+			_params: { log?: Logger } = {}
+		) => {
 			identity.queries += 1;
 			if (identity.queries === 1 && options.queryError) throw options.queryError;
 			const neighbors =
@@ -1141,7 +1175,10 @@ function createHarness(options: {
 					: (options.requeryNeighbors ?? options.neighbors ?? []);
 			return queryResult(neighbors);
 		},
-		upsertPreparedCrop: async (_embedded: PreparedClosetCrop, params: { closetItemId?: string }) => {
+		upsertPreparedCrop: async (
+			_embedded: PreparedClosetCrop,
+			params: { closetItemId?: string; log?: Logger }
+		) => {
 			identity.upserts.push({ closetItemId: params.closetItemId });
 			if (options.upsertError && (!options.upsertFailOnce || identity.upserts.length === 1)) {
 				throw options.upsertError;
@@ -1166,7 +1203,7 @@ function createHarness(options: {
 		{ extractOutfitItems: async () => extraction },
 		identity as never,
 		closet,
-		silentLogger(),
+		options.log ?? silentLogger(),
 		{ timeoutMs: 0, pollMs: 0, now: Date.now, sleep: async () => {} },
 		{
 			schedule: async (userId) => {
@@ -1576,4 +1613,26 @@ function silentLogger(): Logger {
 		},
 	};
 	return log;
+}
+
+function capturingLogger() {
+	const events: Array<{ level: string; message: string; context?: LogContext }> = [];
+	const make = (base: LogContext = {}): Logger => ({
+		debug(message, context) {
+			events.push({ level: 'debug', message, context: { ...base, ...context } });
+		},
+		info(message, context) {
+			events.push({ level: 'info', message, context: { ...base, ...context } });
+		},
+		warn(message, context) {
+			events.push({ level: 'warn', message, context: { ...base, ...context } });
+		},
+		error(message, context) {
+			events.push({ level: 'error', message, context: { ...base, ...context } });
+		},
+		child(context) {
+			return make({ ...base, ...context });
+		},
+	});
+	return { log: make(), events };
 }

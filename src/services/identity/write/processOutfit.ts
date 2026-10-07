@@ -128,18 +128,21 @@ export class OutfitIdentityProcessor {
 			const items: ProcessedOutfitItem[] = [];
 			for (const item of extracted.items) {
 				items.push(
-					await this.processItem({
-						userId: params.userId,
-						imageKey: params.imageKey,
-						outfitId: outfit.id,
-						item,
-						signal: params.signal,
-					})
+					await this.processItem(
+						{
+							userId: params.userId,
+							imageKey: params.imageKey,
+							outfitId: outfit.id,
+							item,
+							signal: params.signal,
+						},
+						runLog
+					)
 				);
 			}
 
 			if (items.some((item) => item.identity_status === 'ask')) {
-				await this.scheduleDigest(params.userId);
+				await this.scheduleDigest(params.userId, runLog);
 			}
 
 			return {
@@ -176,11 +179,11 @@ export class OutfitIdentityProcessor {
 		);
 	}
 
-	private writeDeps(): OutfitIdentityWriteDeps {
+	private writeDeps(log: Logger = this.log): OutfitIdentityWriteDeps {
 		return {
 			identity: this.identity,
 			closet: this.closet,
-			log: this.log,
+			log,
 			catalog: this.catalog,
 			repairQueue: this.repairQueue,
 		};
@@ -196,13 +199,16 @@ export class OutfitIdentityProcessor {
 		return false;
 	}
 
-	private async processItem(params: {
-		userId: string;
-		imageKey: string;
-		outfitId: string;
-		item: ClothingItem;
-		signal?: AbortSignal;
-	}): Promise<ProcessedOutfitItem> {
+	private async processItem(
+		params: {
+			userId: string;
+			imageKey: string;
+			outfitId: string;
+			item: ClothingItem;
+			signal?: AbortSignal;
+		},
+		log: Logger
+	): Promise<ProcessedOutfitItem> {
 		const existing = await this.closet.findClosetItemForPhotoCrop(
 			params.userId,
 			params.imageKey,
@@ -216,7 +222,7 @@ export class OutfitIdentityProcessor {
 				confidence: extractionConfidence(params.item.confidence),
 				blurHash: await this.closet.getLatestItemBlurHash(existing.id),
 			});
-			this.log.info('outfit_identity_existing_crop', {
+			log.info('outfit_identity_existing_crop', {
 				outfit_id: params.outfitId,
 				closet_item_id: existing.id,
 				label: params.item.label,
@@ -239,9 +245,10 @@ export class OutfitIdentityProcessor {
 				imageKey: params.imageKey,
 				boundingBox: params.item.bounding_box,
 				signal: params.signal,
+				log,
 			});
 		} catch (err) {
-			this.log.warn(
+			log.warn(
 				'outfit_identity_embed_failed',
 				{ image_key: params.imageKey, label: params.item.label },
 				err
@@ -249,12 +256,12 @@ export class OutfitIdentityProcessor {
 			return failedItem(params.item, 'embed_failed');
 		}
 
-		const decision = await this.decideItem(params, prepared);
+		const decision = await this.decideItem(params, prepared, log);
 		if (decision.action === 'ask') {
-			return this.persistAsk(params, decision, prepared);
+			return this.persistAsk(params, decision, prepared, log);
 		}
 
-		return commitNewItem(this.writeDeps(), params, prepared, decision);
+		return commitNewItem(this.writeDeps(log), params, prepared, decision);
 	}
 
 	private async decideItem(
@@ -263,7 +270,8 @@ export class OutfitIdentityProcessor {
 			imageKey: string;
 			item: ClothingItem;
 		},
-		prepared: PreparedClosetCrop
+		prepared: PreparedClosetCrop,
+		log: Logger
 	): Promise<IdentityDecision> {
 		if (!shouldQueryIdentity(params.item)) {
 			return { action: 'create', reason: 'skip_query' };
@@ -274,12 +282,18 @@ export class OutfitIdentityProcessor {
 				boundingBox: params.item.bounding_box,
 				userId: params.userId,
 				category: params.item.category,
+				log,
 			});
-			const localNeighbors = await this.scoreLocalUnindexed(params.userId, prepared, params.item.category);
+			const localNeighbors = await this.scoreLocalUnindexed(
+				params.userId,
+				prepared,
+				params.item.category,
+				log
+			);
 			const neighbors = mergeIdentityNeighbors(queried.neighbors, localNeighbors);
 			return decideIdentityFromNeighbors(neighbors);
 		} catch (err) {
-			this.log.warn(
+			log.warn(
 				'outfit_identity_query_failed',
 				{
 					image_key: params.imageKey,
@@ -295,7 +309,8 @@ export class OutfitIdentityProcessor {
 	private async scoreLocalUnindexed(
 		userId: string,
 		prepared: PreparedClosetCrop,
-		category: string
+		category: string,
+		log: Logger
 	): Promise<QueryClosetCropMatch[]> {
 		try {
 			const probes = await this.closet.listRecentUnindexedProbes(userId, {
@@ -304,7 +319,7 @@ export class OutfitIdentityProcessor {
 			});
 			return scoreUnindexedProbes({ prepared, probes, category });
 		} catch (err) {
-			this.log.warn('outfit_identity_unindexed_fallback_failed', { user_id: userId }, err);
+			log.warn('outfit_identity_unindexed_fallback_failed', { user_id: userId }, err);
 			return [];
 		}
 	}
@@ -317,7 +332,8 @@ export class OutfitIdentityProcessor {
 			replaceMatchId?: string;
 		},
 		decision: Extract<IdentityDecision, { action: 'ask' }>,
-		prepared: PreparedClosetCrop
+		prepared: PreparedClosetCrop,
+		log: Logger
 	): Promise<ProcessedOutfitItem> {
 		const probeEmbed = closetMatchProbeFromPrepared(prepared);
 		let matchId = params.replaceMatchId;
@@ -351,14 +367,16 @@ export class OutfitIdentityProcessor {
 		try {
 			await this.closet.touchMatchAsk(params.userId);
 		} catch (err) {
-			this.log.warn('closet_match_touch_ask_failed', { user_id: params.userId, match_id: matchId }, err);
+			log.warn('closet_match_touch_ask_failed', { user_id: params.userId, match_id: matchId }, err);
 		}
 
-		this.log.info('outfit_identity_ask', {
+		log.info('outfit_identity_ask', {
 			outfit_id: params.outfitId,
 			match_id: matchId,
 			candidate_closet_item_id: decision.candidateClosetItemId,
 			identity_score: decision.identityScore,
+			cosine: decision.cosine,
+			color_distance: decision.colorDistance,
 			label: params.item.label,
 		});
 		return {
@@ -373,12 +391,12 @@ export class OutfitIdentityProcessor {
 		};
 	}
 
-	private async scheduleDigest(userId: string): Promise<void> {
+	private async scheduleDigest(userId: string, log: Logger = this.log): Promise<void> {
 		if (!this.digest) return;
 		try {
 			await this.digest.schedule(userId);
 		} catch (err) {
-			this.log.warn('closet_match_digest_enqueue_failed', { user_id: userId }, err);
+			log.warn('closet_match_digest_enqueue_failed', { user_id: userId }, err);
 		}
 	}
 }
