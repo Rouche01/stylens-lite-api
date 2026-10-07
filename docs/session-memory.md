@@ -27,7 +27,7 @@ Outfit **images** are never written to VoltMem. The model is told it has no pers
 Classification runs in the background after messages are saved (`ctx.waitUntil`), so it does not block create/add/stream.
 
 1. User creates a session or adds a message.
-2. `ClassificationService.tagEntryInBackground` classifies the message:
+2. `ClassificationService.postProcessEntryInBackground` classifies the message:
    - **Hand-rolled rules** first (image-only uploads → primary/alt outfit; replies to “What’s the occasion…” → occasion).
    - Otherwise an LLM classifier extracts tags (`CLASSIFICATION_SYSTEM_PROMPT`).
 3. Tags with a `summary` are stored on the message in D1 (`addEntryTags`).

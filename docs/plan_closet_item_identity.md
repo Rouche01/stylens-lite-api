@@ -121,7 +121,7 @@ Optional later: extra `wear:{id}` vectors per photo, query max-sim, still one cl
 
 Extract (Claude + Florence) stays the request path. Identity match runs **after** the HTTP response:
 
-- v1: `ctx.waitUntil` (same pattern as `ClassificationService.tagEntryInBackground` and `PushService.sendPushNotificationInBackground`).
+- v1: `ctx.waitUntil` (same pattern as `ClassificationService.postProcessEntryInBackground` and `PushService.sendPushNotificationInBackground`).
 - If waitUntil is too tight once CLIP is in: a Queue, same shape as `AVATAR_GENERATION_QUEUE`.
 
 Extract response may still use a **fast provisional** decision (create-new) and then reconcile in the background. Prefer: extract returns after D1 writes; identity job immediately rewrites the link + cover before the user opens the closet. If they open the closet first, they might see a duplicate for a few seconds; acceptable for v1 if the job is usually sub-2s. If not, hide items with `identity_status = pending` from the grid until the job finishes.

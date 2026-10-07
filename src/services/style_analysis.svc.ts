@@ -169,8 +169,8 @@ export class StyleAnalysisService {
 			remoteImage: message.remoteImage,
 			remoteImages: message.remoteImages,
 		});
-		// Trigger classification in the background (previous message resolved internally)
-		this.classificationService.tagEntryInBackground(
+		// Post-process in the background (previous message resolved internally)
+		this.classificationService.postProcessEntryInBackground(
 			messageEntryId,
 			message,
 			ctx as ExecutionContext,
@@ -340,7 +340,7 @@ export class StyleAnalysisService {
 			const previousMessage = i > 0 ? messages[i - 1] : null;
 			const messageId = messageIds[i];
 
-			this.classificationService.tagEntryInBackground(
+			this.classificationService.postProcessEntryInBackground(
 				messageId,
 				message,
 				ctx as ExecutionContext,

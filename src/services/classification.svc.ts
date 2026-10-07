@@ -207,13 +207,14 @@ export class ClassificationService {
 	}
 
 	/**
-	 * Runs classification in the background using ctx.waitUntil to avoid blocking the main response.
+	 * Post-processes a saved message entry in the background via ctx.waitUntil:
+	 * classify → persist tags → VoltMem write-through → maybe enqueue avatar / closet identity.
 	 * @param previousMessage - Pass the previous message for context. Pass `null` to explicitly indicate
 	 *   no previous message exists. Pass `undefined` (or omit) to resolve from DB automatically.
 	 * @param userId - D1 users.id used as VoltMem namespace for cross-session write-through.
 	 * @param authId - JWT sub / PostHog distinct id for closet-browse. Required to enqueue identity.
 	 */
-	async tagEntryInBackground(
+	async postProcessEntryInBackground(
 		entryId: string,
 		message: MessageEntry,
 		ctx: ExecutionContext,
