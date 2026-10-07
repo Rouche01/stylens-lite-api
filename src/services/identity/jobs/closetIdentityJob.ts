@@ -3,6 +3,7 @@ import type { StyleEntryTag } from '../../../db/types';
 import type { OutfitExtractionResponse } from '../../../types';
 import type { Logger } from '../../../utils/logger.utils';
 import type { MessageEntry, RemoteImage } from '../../../utils/types';
+import { IdentityRunLogEvents, mintIdentityRunId } from '../logging/runLogging';
 import { IdentityBusyError } from '../write/errors';
 import type { ProcessOutfitImageParams, ProcessOutfitImageResult } from '../write/types';
 import type { ClosetCatalogNotifyItem } from '../../../utils/closet_browse';
@@ -25,6 +26,15 @@ export type ClosetIdentityQueueJob = {
 	sessionId?: string;
 	entryId?: string;
 	source: 'session';
+	/** Correlates enqueue → consumer → process logs. Minted at enqueue; optional for older payloads. */
+	identityRunId?: string;
+};
+
+export type ClosetIdentityEnqueueResult = {
+	enqueued: number;
+	skipped: number;
+	identity_run_ids: string[];
+	image_keys: string[];
 };
 
 export type ClosetIdentityEnqueueStore = Pick<
@@ -89,7 +99,7 @@ export async function enqueueClosetIdentityJobs(params: {
 	entryId?: string;
 	source?: ClosetIdentityQueueJob['source'];
 	syncProgress?: (userId: string) => Promise<unknown>;
-}): Promise<{ enqueued: number; skipped: number }> {
+}): Promise<ClosetIdentityEnqueueResult> {
 	let skipped = 0;
 	const payloads: ClosetIdentityQueueJob[] = [];
 
@@ -122,6 +132,7 @@ export async function enqueueClosetIdentityJobs(params: {
 			sessionId: params.sessionId,
 			entryId: params.entryId,
 			source: 'session',
+			identityRunId: mintIdentityRunId(),
 		});
 	}
 
@@ -136,15 +147,21 @@ export async function enqueueClosetIdentityJobs(params: {
 
 	for (const payload of payloads) {
 		await params.queue.send(payload);
-		params.log.info('closet_identity_enqueued', {
+		params.log.info(IdentityRunLogEvents.ENQUEUED_IMAGE, {
 			user_id: params.userId,
 			image_key: payload.imageKey,
 			session_id: params.sessionId,
 			entry_id: params.entryId,
+			identity_run_id: payload.identityRunId,
 		});
 	}
 
-	return { enqueued: payloads.length, skipped };
+	return {
+		enqueued: payloads.length,
+		skipped,
+		identity_run_ids: payloads.map((p) => p.identityRunId!).filter(Boolean),
+		image_keys: payloads.map((p) => p.imageKey),
+	};
 }
 
 export async function enqueueClosetIdentityFromClassification(params: {
@@ -157,7 +174,7 @@ export async function enqueueClosetIdentityFromClassification(params: {
 	sessionId?: string;
 	entryId: string;
 	syncProgress?: (userId: string) => Promise<unknown>;
-}): Promise<{ enqueued: number; skipped: number }> {
+}): Promise<ClosetIdentityEnqueueResult> {
 	const images = collectOutfitIdentityImages(params.message, params.tags);
 	return enqueueClosetIdentityJobs({
 		queue: params.queue,

@@ -28,3 +28,4 @@ export type {
 	IdentityRunItemSummary,
 	IdentityRunLogEvent,
 } from './logging/runLogging';
+export type { ClosetIdentityEnqueueResult, ClosetIdentityQueueJob } from './jobs/closetIdentityJob';

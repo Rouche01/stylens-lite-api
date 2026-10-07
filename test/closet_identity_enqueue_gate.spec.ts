@@ -1,5 +1,52 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveClosetIdentityEnqueueGate } from '../src/services/classification.svc';
+import {
+	resolveClosetIdentityEnqueueGate,
+	resolveClosetIdentityEnqueuePrecheck,
+} from '../src/services/classification.svc';
+import type { StyleEntryTag } from '../src/db/types';
+
+describe('resolveClosetIdentityEnqueuePrecheck', () => {
+	const outfitTags: StyleEntryTag[] = [
+		{ tag: 'session_state:primary_outfit_image', payload: { summary: 'outfit' } },
+	];
+
+	it('skips when there is no outfit tag', () => {
+		expect(
+			resolveClosetIdentityEnqueuePrecheck({
+				userId: 'u1',
+				hasIdentityEnqueue: true,
+				tags: [{ tag: 'session_state:occasion', payload: { occasion: 'wedding' } }],
+			})
+		).toEqual({ action: 'skip', reason: 'no_outfit_tag' });
+	});
+
+	it('skips when user or enqueue wiring is missing', () => {
+		expect(
+			resolveClosetIdentityEnqueuePrecheck({
+				userId: undefined,
+				hasIdentityEnqueue: true,
+				tags: outfitTags,
+			})
+		).toEqual({ action: 'skip', reason: 'missing_user_or_enqueue' });
+		expect(
+			resolveClosetIdentityEnqueuePrecheck({
+				userId: 'u1',
+				hasIdentityEnqueue: false,
+				tags: outfitTags,
+			})
+		).toEqual({ action: 'skip', reason: 'missing_user_or_enqueue' });
+	});
+
+	it('continues when outfit-tagged and enqueue is wired', () => {
+		expect(
+			resolveClosetIdentityEnqueuePrecheck({
+				userId: '  u1  ',
+				hasIdentityEnqueue: true,
+				tags: outfitTags,
+			})
+		).toEqual({ action: 'continue' });
+	});
+});
 
 describe('resolveClosetIdentityEnqueueGate', () => {
 	it('skips when auth id is missing', async () => {

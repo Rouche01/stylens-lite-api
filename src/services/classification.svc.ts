@@ -7,7 +7,15 @@ import { StyleEntryTag } from '../db/types';
 import { createVoltMemService, isVoltMemWriteTag, type VoltMemService } from './voltmem.svc';
 import { createAvatarService, type AvatarService } from './avatar';
 import { ModelProvider, ModelUseCase } from './model_config.svc';
-import { enqueueClosetIdentityFromClassification } from './identity/jobs/closetIdentityJob';
+import {
+	enqueueClosetIdentityFromClassification,
+	type ClosetIdentityEnqueueResult,
+} from './identity/jobs/closetIdentityJob';
+import {
+	IdentityRunLogEvents,
+	joinImageKeysForLog,
+	type IdentityEnqueueSkipReason,
+} from './identity/logging/runLogging';
 import { runClosetIdentityProgress } from './identity/notify/progress';
 import { createRealtimeService } from './realtime.svc';
 import { Logger, createLogger } from '../utils/logger.utils';
@@ -21,7 +29,7 @@ export type ClosetIdentityEnqueue = {
 		tags: StyleEntryTag[];
 		sessionId?: string;
 		entryId: string;
-	}): Promise<unknown>;
+	}): Promise<ClosetIdentityEnqueueResult>;
 };
 
 /** Resolves whether closet identity may be enqueued for this PostHog distinct id. */
@@ -30,6 +38,29 @@ export type ClosetBrowseGate = (authId: string) => Promise<boolean>;
 export type ClosetIdentityEnqueueGateResult =
 	| { action: 'enqueue' }
 	| { action: 'skip'; reason: 'missing_auth_id' | 'flag_gate_unavailable' | 'closet_browse_off' };
+
+export type ClosetIdentityEnqueuePrecheckResult =
+	| { action: 'continue' }
+	| { action: 'skip'; reason: Extract<IdentityEnqueueSkipReason, 'no_outfit_tag' | 'missing_user_or_enqueue'> };
+
+const OUTFIT_IMAGE_TAGS = new Set<StyleEntryTag['tag']>([
+	'session_state:primary_outfit_image',
+	'session_state:alt_outfit_image',
+]);
+
+/** Local pre-gate skips before closet-browse (outfit tag + enqueue wiring). */
+export function resolveClosetIdentityEnqueuePrecheck(params: {
+	userId: string | undefined;
+	hasIdentityEnqueue: boolean;
+	tags: StyleEntryTag[];
+}): ClosetIdentityEnqueuePrecheckResult {
+	const hasOutfitTag = params.tags.some((tag) => OUTFIT_IMAGE_TAGS.has(tag.tag));
+	if (!hasOutfitTag) return { action: 'skip', reason: 'no_outfit_tag' };
+	if (!params.userId?.trim() || !params.hasIdentityEnqueue) {
+		return { action: 'skip', reason: 'missing_user_or_enqueue' };
+	}
+	return { action: 'continue' };
+}
 
 /** Fail-closed closet-browse check before identity enqueue. */
 export async function resolveClosetIdentityEnqueueGate(params: {
@@ -246,7 +277,11 @@ export class ClassificationService {
 					await this.maybeEnqueueIdentity(userId, message, tags, sessionId, entryId, authId);
 				}
 			} catch (e) {
-				console.trace('Background classification failed:', e);
+				this.log.warn(
+					'classification_postprocess_failed',
+					{ entry_id: entryId, session_id: sessionId, user_id: userId },
+					e
+				);
 			}
 		})());
 	}
@@ -292,7 +327,7 @@ export class ClassificationService {
 				imageUrl: image.url,
 			});
 		} catch (e) {
-			console.trace('Background avatar enqueue failed:', e);
+			this.log.warn('avatar_enqueue_failed', { user_id: userId }, e);
 		}
 	}
 
@@ -308,14 +343,30 @@ export class ClassificationService {
 		entryId: string,
 		authId?: string
 	) {
-		if (!userId || !this.identityEnqueue) return;
-
-		const hasOutfitImage = tags.some(
-			(tag) =>
-				tag.tag === 'session_state:primary_outfit_image' ||
-				tag.tag === 'session_state:alt_outfit_image'
-		);
-		if (!hasOutfitImage) return;
+		const precheck = resolveClosetIdentityEnqueuePrecheck({
+			userId,
+			hasIdentityEnqueue: Boolean(this.identityEnqueue),
+			tags,
+		});
+		if (precheck.action === 'skip') {
+			// no_outfit_tag is common on non-photo messages — debug only to avoid log noise.
+			if (precheck.reason === 'no_outfit_tag') {
+				this.log.debug(IdentityRunLogEvents.ENQUEUE_SKIPPED, {
+					entry_id: entryId,
+					session_id: sessionId,
+					user_id: userId,
+					reason: precheck.reason,
+				});
+			} else {
+				this.log.info(IdentityRunLogEvents.ENQUEUE_SKIPPED, {
+					entry_id: entryId,
+					session_id: sessionId,
+					user_id: userId,
+					reason: precheck.reason,
+				});
+			}
+			return;
+		}
 
 		try {
 			const gate = await resolveClosetIdentityEnqueueGate({
@@ -323,23 +374,37 @@ export class ClassificationService {
 				closetBrowseEnabled: this.closetBrowseEnabled,
 			});
 			if (gate.action === 'skip') {
-				this.log.info('closet_identity_enqueue_skipped', {
+				this.log.info(IdentityRunLogEvents.ENQUEUE_SKIPPED, {
 					user_id: userId,
 					entry_id: entryId,
+					session_id: sessionId,
 					reason: gate.reason,
 				});
 				return;
 			}
 
-			await this.identityEnqueue.enqueue({
-				userId,
+			const result = await this.identityEnqueue!.enqueue({
+				userId: userId!,
 				message,
 				tags,
 				sessionId,
 				entryId,
 			});
+			this.log.info(IdentityRunLogEvents.ENQUEUE_RESULT, {
+				user_id: userId,
+				entry_id: entryId,
+				session_id: sessionId,
+				enqueued: result.enqueued,
+				skipped: result.skipped,
+				image_keys: joinImageKeysForLog(result.image_keys),
+				identity_run_ids: joinImageKeysForLog(result.identity_run_ids),
+			});
 		} catch (e) {
-			console.trace('Background identity enqueue failed:', e);
+			this.log.warn(
+				IdentityRunLogEvents.ENQUEUE_FAILED,
+				{ user_id: userId, entry_id: entryId, session_id: sessionId },
+				e
+			);
 		}
 	}
 

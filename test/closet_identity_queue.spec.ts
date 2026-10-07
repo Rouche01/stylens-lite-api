@@ -98,9 +98,11 @@ describe('enqueueClosetIdentityJobs', () => {
 			},
 		});
 
-		expect(result).toEqual({ enqueued: 2, skipped: 0 });
+		expect(result).toMatchObject({ enqueued: 2, skipped: 0, image_keys: ['users/u1/a.jpg', 'users/u1/b.jpg'] });
+		expect(result.identity_run_ids).toHaveLength(2);
 		expect(queue.sent).toHaveLength(2);
 		expect(queue.sent.map((job) => job.imageKey)).toEqual(['users/u1/a.jpg', 'users/u1/b.jpg']);
+		expect(queue.sent.map((job) => job.identityRunId)).toEqual(result.identity_run_ids);
 		expect(closet.rows.size).toBe(2);
 		expect(closet.activityTouches).toBe(1);
 		expect(progressSyncs).toEqual(['u1']);
@@ -120,7 +122,7 @@ describe('enqueueClosetIdentityJobs', () => {
 			entryId: 'e1',
 		});
 
-		expect(result).toEqual({ enqueued: 0, skipped: 0 });
+		expect(result).toEqual({ enqueued: 0, skipped: 0, identity_run_ids: [], image_keys: [] });
 		expect(queue.sent).toHaveLength(0);
 		expect(closet.activityTouches).toBe(0);
 	});
@@ -143,7 +145,7 @@ describe('enqueueClosetIdentityJobs', () => {
 			},
 		});
 
-		expect(result).toEqual({ enqueued: 0, skipped: 1 });
+		expect(result).toEqual({ enqueued: 0, skipped: 1, identity_run_ids: [], image_keys: [] });
 		expect(queue.sent).toHaveLength(0);
 		expect(closet.activityTouches).toBe(0);
 		expect(progressSyncs).toHaveLength(0);
@@ -163,8 +165,10 @@ describe('enqueueClosetIdentityJobs', () => {
 			entryId: 'e1',
 		});
 
-		expect(result).toEqual({ enqueued: 1, skipped: 0 });
+		expect(result).toMatchObject({ enqueued: 1, skipped: 0, image_keys: ['users/u1/a.jpg'] });
+		expect(result.identity_run_ids).toHaveLength(1);
 		expect(queue.sent).toHaveLength(1);
+		expect(queue.sent[0]?.identityRunId).toBe(result.identity_run_ids[0]);
 		expect(closet.activityTouches).toBe(1);
 	});
 });

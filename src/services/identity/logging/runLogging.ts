@@ -25,6 +25,8 @@ export const IdentityRunLogEvents = {
 	ENQUEUE_SKIPPED: 'closet_identity_enqueue_skipped',
 	ENQUEUE_RESULT: 'closet_identity_enqueue_result',
 	ENQUEUE_FAILED: 'closet_identity_enqueue_failed',
+	/** Per-image queue send (existing). */
+	ENQUEUED_IMAGE: 'closet_identity_enqueued',
 	RUN_ID_MINTED_AT_CONSUMER: 'identity_run_id_minted_at_consumer',
 	JOB_STARTED: 'closet_identity_job_started',
 	JOB_COMPLETED: 'closet_identity_completed',
