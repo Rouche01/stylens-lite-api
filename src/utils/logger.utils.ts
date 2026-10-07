@@ -53,6 +53,8 @@ export const POSTHOG_INFO_LOG_MESSAGES = new Set([
 	'fcm_stale_token_deleted',
 	'voltmem_add_ok',
 	'voltmem_prompt_injection',
+	/** Pending-match resolve → free calibration sheet rows (see docs/identity_calibration_review.md). */
+	'identity_calibration_label',
 ]);
 
 export function shouldExportLogToPostHog(level: LogLevel, message: string): boolean {

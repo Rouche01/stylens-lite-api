@@ -2,6 +2,7 @@ import type { ClosetItemMatchWithOutfit } from '../../../db/closet';
 import type { ExtractionConfidence } from '../../../types';
 import { closetMatchProbeFromPrepared, preparedFromProbeEmbed } from '../encode/probeEmbed';
 import type { PreparedClosetCrop } from '../encode/cropEncoder';
+import { logResolveCalibrationLabel } from '../logging/calibrationLabel';
 import { indexCommittedItem } from './commit';
 import { ClosetMatchNotFoundError, ClosetMatchResolvedError } from './errors';
 import {
@@ -49,7 +50,9 @@ async function resolveSame(
 		return resumeResolvedMatch(deps, latest, 'same');
 	}
 
-	return finishResolvedSame(deps, match);
+	const result = await finishResolvedSame(deps, match);
+	logResolveCalibrationLabel(deps.log, { match, decision: 'same', result });
+	return result;
 }
 
 async function resolveNew(
@@ -127,7 +130,9 @@ async function resolveNew(
 		mode: 'enqueue',
 	});
 
-	return completeResolvedNew(deps, match, closetItemId, prepared.crop_blur_hash, false);
+	const result = await completeResolvedNew(deps, match, closetItemId, prepared.crop_blur_hash, false);
+	logResolveCalibrationLabel(deps.log, { match, decision: 'new', result });
+	return result;
 }
 
 async function resumeResolvedMatch(

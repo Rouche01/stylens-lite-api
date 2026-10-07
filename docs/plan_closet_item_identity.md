@@ -202,7 +202,7 @@ Vectorize is the ANN store. D1 remains source of truth for items, wears, cover, 
 
 #### Run logging (for calibration)
 
-Identity runs emit correlated structured logs joined by `identity_run_id` (minted at enqueue or at the queue consumer / HTTP extract). Contract: `src/services/identity/logging/runLogging.ts`. Human review loop: `.cursor/plans/identity_calibration_review_ec9bb163.plan.md`.
+Identity runs emit correlated structured logs joined by `identity_run_id` (minted at enqueue or at the queue consumer / HTTP extract). Contract: `src/services/identity/logging/runLogging.ts`. Human review protocol: [`docs/identity_calibration_review.md`](identity_calibration_review.md) (plan: `.cursor/plans/identity_calibration_review_ec9bb163.plan.md`).
 
 | Event | Use for calibration |
 | --- | --- |
