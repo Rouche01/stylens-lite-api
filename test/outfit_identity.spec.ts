@@ -53,6 +53,7 @@ describe('decideIdentityFromNeighbors', () => {
 			action: 'create',
 			reason: 'below_threshold',
 			identityScore: 0.24,
+			neighborClosetItemId: 'c1',
 		});
 	});
 
@@ -76,7 +77,12 @@ describe('decideIdentityFromNeighbors', () => {
 					identity_score: 0.8,
 				}),
 			])
-		).toEqual({ action: 'create', reason: 'missing_candidate', identityScore: 0.8 });
+		).toEqual({
+			action: 'create',
+			reason: 'missing_candidate',
+			identityScore: 0.8,
+			neighborClosetItemId: null,
+		});
 	});
 });
 
@@ -281,6 +287,7 @@ describe('OutfitIdentityProcessor', () => {
 		expect(result?.items[0].identity_status).toBe('created');
 		expect(result?.items[0].identity_reason).toBe('below_threshold');
 		expect(result?.items[0].identity_score).toBe(0.24);
+		expect(result?.items[0].candidate_closet_item_id).toBe('c1');
 		expect(harness.closet.matches).toHaveLength(0);
 		expect(harness.closet.items).toHaveLength(1);
 	});

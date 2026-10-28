@@ -414,6 +414,60 @@ button.chip.active-unclear {
 	word-break: break-all;
 }
 
+.system-identity-neighbor {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem 0.55rem;
+	align-items: baseline;
+	margin: 0.4rem 0 0;
+	font-size: 0.8rem;
+}
+
+.neighbor-link {
+	color: var(--ink);
+	font-weight: 600;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.neighbor-link:hover {
+	color: var(--ok);
+}
+
+.note-links,
+.photo-preview-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	margin: 0.45rem 0 0;
+}
+
+.photo-preview-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	padding: 0.35rem 0.65rem;
+	border-radius: 8px;
+	border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--line));
+	background: color-mix(in srgb, var(--ok) 10%, #fff);
+	color: var(--ink);
+	font-size: 0.78rem;
+	font-weight: 600;
+	text-decoration: none;
+	line-height: 1.2;
+}
+
+.photo-preview-btn:hover {
+	background: color-mix(in srgb, var(--ok) 22%, #fff);
+	border-color: var(--ok);
+}
+
+.muted.small,
+.small.muted {
+	font-size: 0.72rem;
+	color: var(--muted);
+}
+
 .pill {
 	display: inline-flex;
 	align-items: center;

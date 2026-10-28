@@ -18,7 +18,13 @@ export type IdentityCreateReason =
 	| 'existing_crop';
 
 export type IdentityDecision =
-	| { action: 'create'; reason: IdentityCreateReason; identityScore?: number | null }
+	| {
+			action: 'create';
+			reason: IdentityCreateReason;
+			identityScore?: number | null;
+			/** Nearest neighbor declined for ask (below_threshold / missing_candidate). */
+			neighborClosetItemId?: string | null;
+	  }
 	| {
 			action: 'ask';
 			candidateClosetItemId: string;
@@ -68,16 +74,26 @@ export function decideIdentityFromNeighbors(neighbors: QueryClosetCropMatch[]): 
 	if (!top) {
 		return { action: 'create', reason: 'no_neighbor' };
 	}
+	const neighborId = candidateClosetItemId(top);
 	if (!isIdentityMatch(top.identity_score)) {
-		return { action: 'create', reason: 'below_threshold', identityScore: top.identity_score };
+		return {
+			action: 'create',
+			reason: 'below_threshold',
+			identityScore: top.identity_score,
+			neighborClosetItemId: neighborId,
+		};
 	}
-	const candidateId = candidateClosetItemId(top);
-	if (!candidateId) {
-		return { action: 'create', reason: 'missing_candidate', identityScore: top.identity_score };
+	if (!neighborId) {
+		return {
+			action: 'create',
+			reason: 'missing_candidate',
+			identityScore: top.identity_score,
+			neighborClosetItemId: null,
+		};
 	}
 	return {
 		action: 'ask',
-		candidateClosetItemId: candidateId,
+		candidateClosetItemId: neighborId,
 		identityScore: top.identity_score,
 		cosine: top.score,
 		colorDistance: top.color_distance,

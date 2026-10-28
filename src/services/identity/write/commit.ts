@@ -50,6 +50,7 @@ export async function commitNewItem(
 			closet_item_id: closetItem.id,
 			reason: decision.reason,
 			identity_score: decision.identityScore ?? null,
+			candidate_closet_item_id: decision.neighborClosetItemId ?? null,
 			label: params.item.label,
 		});
 		return {
@@ -59,7 +60,8 @@ export async function commitNewItem(
 			identity_status: 'created',
 			identity_reason: decision.reason,
 			match_id: null,
-			candidate_closet_item_id: null,
+			// Nearest declined neighbor (eval / calibration); null when no neighbor.
+			candidate_closet_item_id: decision.neighborClosetItemId ?? null,
 			identity_score: decision.identityScore ?? null,
 		};
 	} catch (err) {

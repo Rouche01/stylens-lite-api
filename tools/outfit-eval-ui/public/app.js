@@ -37,6 +37,7 @@ const els = {
 	itemList: document.getElementById('itemList'),
 	missingItems: document.getElementById('missingItems'),
 	photoNotes: document.getElementById('photoNotes'),
+	photoNoteLinks: document.getElementById('photoNoteLinks'),
 };
 
 function okResults() {
@@ -122,6 +123,7 @@ async function init() {
 		const key = photoKey();
 		if (!key) return;
 		ensurePhotoLabels(key).notes = els.photoNotes.value;
+		renderPhotoNoteLinks(els.photoNotes.value);
 		markDirty();
 	});
 
@@ -279,6 +281,7 @@ function renderPhoto() {
 	const photoLabels = ensurePhotoLabels(key);
 	els.missingItems.value = photoLabels.missing_items || '';
 	els.photoNotes.value = photoLabels.notes || '';
+	renderPhotoNoteLinks(photoLabels.notes || '');
 
 	const nextSrc = `/photos/${encodeURIComponent(result.file)}`;
 	if (els.photo.getAttribute('src') !== nextSrc) {
@@ -315,7 +318,116 @@ function formatScore(score) {
 	return Number(score).toFixed(3);
 }
 
-function systemIdentityHtml(item) {
+/** First smoke photo that created / linked each closet item id (for neighbor preview). */
+function closetItemPhotoIndex() {
+	const map = new Map();
+	for (const result of okResults()) {
+		for (const item of result.items || []) {
+			const id = item.closet_item_id;
+			if (!id || map.has(id)) continue;
+			map.set(id, {
+				file: result.file,
+				label: item.label || null,
+				status: item.identity_status || null,
+			});
+		}
+	}
+	return map;
+}
+
+function neighborRef(item, indexByClosetId = closetItemPhotoIndex()) {
+	const neighborId = item.candidate_closet_item_id || null;
+	if (!neighborId) return null;
+	const hit = indexByClosetId.get(neighborId) || null;
+	return {
+		closetItemId: neighborId,
+		file: hit?.file || null,
+		label: hit?.label || null,
+		href: hit?.file ? `/photos/${encodeURIComponent(hit.file)}` : null,
+	};
+}
+
+function neighborPreviewHtml(ref) {
+	if (!ref) return '';
+	const who = ref.label ? `${ref.label} · ${shortId(ref.closetItemId)}` : shortId(ref.closetItemId);
+	if (ref.href && ref.file) {
+		return `
+			<p class="system-identity-neighbor">
+				<span class="chip-row-label" style="width:auto;margin:0">Compared to</span>
+				<a class="neighbor-link" href="${escapeAttr(ref.href)}" target="_blank" rel="noopener noreferrer" title="Open source photo in a new tab">
+					${escapeHtml(ref.file)} ↗
+				</a>
+				<span class="muted small mono">${escapeHtml(who)}</span>
+			</p>
+		`;
+	}
+	return `
+		<p class="system-identity-neighbor muted small">
+			Compared to closet ${escapeHtml(shortId(ref.closetItemId))} (source photo not in this smoke run)
+		</p>
+	`;
+}
+
+function smokePhotoFiles() {
+	return okResults().map((r) => r.file).filter(Boolean);
+}
+
+/** Map note tokens like IMG_3009 or IMG_0379.JPG → full fixture filename in this smoke. */
+function resolveMentionedPhotos(text) {
+	const raw = String(text || '');
+	const files = smokePhotoFiles();
+	if (!raw || !files.length) return [];
+
+	const byLower = new Map(files.map((f) => [f.toLowerCase(), f]));
+	const byStem = new Map();
+	for (const file of files) {
+		const stem = file.replace(/\.[^.]+$/, '');
+		const key = stem.toLowerCase();
+		if (!byStem.has(key)) byStem.set(key, file);
+	}
+
+	const tokens = [
+		...files.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+		...[...byStem.keys()].map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+	].sort((a, b) => b.length - a.length);
+
+	const re = new RegExp(`\\b(?:${tokens.join('|')})\\b`, 'gi');
+	const found = [];
+	const seen = new Set();
+	for (const match of raw.matchAll(re)) {
+		const token = match[0];
+		const file = byLower.get(token.toLowerCase()) || byStem.get(token.toLowerCase());
+		if (!file || seen.has(file)) continue;
+		seen.add(file);
+		found.push(file);
+	}
+	return found;
+}
+
+function photoPreviewButtonsHtml(files) {
+	if (!files.length) return '';
+	return `
+		<div class="photo-preview-row" role="group" aria-label="Referenced photos">
+			${files
+				.map(
+					(file) => `
+				<a class="photo-preview-btn" href="/photos/${encodeURIComponent(file)}" target="_blank" rel="noopener noreferrer">
+					Preview ${escapeHtml(file)} ↗
+				</a>`
+				)
+				.join('')}
+		</div>
+	`;
+}
+
+function renderPhotoNoteLinks(text) {
+	if (!els.photoNoteLinks) return;
+	const files = resolveMentionedPhotos(text);
+	els.photoNoteLinks.innerHTML = photoPreviewButtonsHtml(files);
+	els.photoNoteLinks.hidden = files.length === 0;
+}
+
+function systemIdentityHtml(item, neighbor = neighborRef(item)) {
 	const status = item.identity_status;
 	if (!status && item.identity_score == null && !item.identity_reason) {
 		return `
@@ -331,7 +443,9 @@ function systemIdentityHtml(item) {
 
 	const idParts = [
 		item.closet_item_id ? `closet ${shortId(item.closet_item_id)}` : null,
-		item.candidate_closet_item_id ? `candidate ${shortId(item.candidate_closet_item_id)}` : null,
+		item.candidate_closet_item_id
+			? `${status === 'ask' ? 'candidate' : 'nearest'} ${shortId(item.candidate_closet_item_id)}`
+			: null,
 		item.match_id ? `match ${shortId(item.match_id)}` : null,
 	].filter(Boolean);
 
@@ -343,6 +457,7 @@ function systemIdentityHtml(item) {
 				${score != null ? `<span class="pill pill-muted">score ${escapeHtml(score)}</span>` : ''}
 				${item.identity_reason ? `<span class="pill pill-muted">${escapeHtml(item.identity_reason)}</span>` : ''}
 			</p>
+			${neighborPreviewHtml(neighbor)}
 			${idParts.length ? `<p class="system-identity-ids mono">${escapeHtml(idParts.join(' · '))}</p>` : ''}
 		</div>
 	`;
@@ -354,9 +469,16 @@ function renderItems() {
 	if (!result) return;
 
 	const key = photoKey(result);
+	const indexByClosetId = closetItemPhotoIndex();
 	(result.items || []).forEach((item, index) => {
 		const label = itemLabel(key, index);
 		const color = COLORS[index % COLORS.length];
+		const neighbor = neighborRef(item, indexByClosetId);
+		const mentioned = resolveMentionedPhotos(label.notes || '');
+		// Also offer the system neighbor photo when notes don't name it.
+		if (neighbor?.file && !mentioned.includes(neighbor.file)) {
+			mentioned.push(neighbor.file);
+		}
 		const card = document.createElement('article');
 		card.className = 'item' + (index === state.activeItem ? ' active' : '');
 		card.dataset.index = String(index);
@@ -368,7 +490,7 @@ function renderItems() {
 					<p class="item-meta mono">${escapeHtml(item.category)}/${escapeHtml(item.subcategory)} · ${escapeHtml(item.color)} · ${escapeHtml(item.confidence)}</p>
 				</div>
 			</div>
-			${systemIdentityHtml(item)}
+			${systemIdentityHtml(item, neighbor)}
 			<div class="chips" data-group="extract">
 				<span class="chip-row-label">Extract</span>
 				<button type="button" class="chip ${label.extract_verdict === 'ok' ? 'active-ok' : ''}" data-field="extract_verdict" data-value="ok">ok</button>
@@ -388,7 +510,8 @@ function renderItems() {
 				<button type="button" class="chip ${label.expected_action === 'link' ? 'active-link' : ''}" data-field="expected_action" data-value="link">link</button>
 			</div>
 			<div class="notes">
-				<input type="text" data-field="notes" placeholder="Item note" value="${escapeAttr(label.notes || '')}" />
+				<input type="text" data-field="notes" placeholder="Item note — mention IMG_3009 to get preview buttons" value="${escapeAttr(label.notes || '')}" />
+				${photoPreviewButtonsHtml(mentioned)}
 			</div>
 		`;
 
@@ -419,6 +542,16 @@ function renderItems() {
 		const notesInput = card.querySelector('input[data-field="notes"]');
 		notesInput.addEventListener('input', () => {
 			itemLabel(key, index).notes = notesInput.value;
+			const files = resolveMentionedPhotos(notesInput.value);
+			if (neighbor?.file && !files.includes(neighbor.file)) files.push(neighbor.file);
+			const existing = card.querySelector('.photo-preview-row');
+			const html = photoPreviewButtonsHtml(files);
+			if (existing) {
+				if (html) existing.outerHTML = html;
+				else existing.remove();
+			} else if (html) {
+				notesInput.insertAdjacentHTML('afterend', html);
+			}
 			markDirty();
 		});
 
