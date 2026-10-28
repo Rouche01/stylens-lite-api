@@ -26,6 +26,7 @@ import {
 	clampTopK,
 	closetItemVectorId,
 	ClosetVectorStore,
+	randomUnitEmbedding,
 	resolveClosetVectorId,
 } from '../src/services/identity/encode/vectorize.store';
 
@@ -271,6 +272,37 @@ describe('ClosetVectorStore', () => {
 		await expect(store.getByIds(['item:c1'])).resolves.toEqual([{ id: 'item:c1', values: [0.1] }]);
 		await expect(store.deleteByIds(['item:c1'])).resolves.toEqual({ ids: ['item:c1'], count: 1 });
 		expect(deleted).toEqual([['item:c1']]);
+	});
+
+	it('sweeps deleteByUserId until a query round is empty', async () => {
+		const deleted: string[][] = [];
+		let queries = 0;
+		const index = {
+			query: async (_vector: number[], options?: VectorizeQueryOptions) => {
+				queries += 1;
+				expect(_vector).toHaveLength(VECTORIZE_INDEX_DIMENSIONS);
+				expect(options?.filter).toEqual({ user_id: 'u-eval' });
+				expect(options?.topK).toBe(100);
+				if (queries === 1) {
+					return {
+						count: 2,
+						matches: [
+							{ id: 'item:a', score: 0.1 },
+							{ id: 'item:b', score: 0.2 },
+						],
+					};
+				}
+				return { count: 0, matches: [] };
+			},
+			deleteByIds: async (ids: string[]) => {
+				deleted.push(ids);
+				return { ids, count: ids.length };
+			},
+		};
+		const store = new ClosetVectorStore(index as unknown as VectorizeIndex);
+		await expect(store.deleteByUserId('u-eval')).resolves.toEqual({ deleted: 2, failed: 0, rounds: 1 });
+		expect(deleted).toEqual([['item:a', 'item:b']]);
+		expect(randomUnitEmbedding()).toHaveLength(VECTORIZE_INDEX_DIMENSIONS);
 	});
 });
 

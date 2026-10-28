@@ -15,6 +15,7 @@ export type ResetEvalUserResult = {
 	closet_item_ids: number;
 	vectors_deleted: number;
 	vectors_failed: number;
+	vector_sweep_rounds: number;
 	d1: EvalUserClosetPurgeCounts;
 };
 
@@ -62,22 +63,43 @@ export async function resetEvalUserCloset(params: {
 	const closetItemIds = await params.closet.listClosetItemIdsForUser(userId);
 	let vectorsDeleted = 0;
 	let vectorsFailed = 0;
+	let vectorSweepRounds = 0;
 
 	const index = params.env.CLOSET_ITEMS;
-	if (index && closetItemIds.length > 0) {
+	if (index) {
 		const store = new ClosetVectorStore(index);
-		const vectorIds = closetItemIds.map((id) => closetItemVectorId(id));
-		for (let i = 0; i < vectorIds.length; i += VECTOR_DELETE_CHUNK) {
-			const chunk = vectorIds.slice(i, i + VECTOR_DELETE_CHUNK);
-			try {
-				await store.deleteByIds(chunk);
-				vectorsDeleted += chunk.length;
-			} catch (err) {
-				vectorsFailed += chunk.length;
-				log?.warn('eval_reset_vector_chunk_failed', { chunk_size: chunk.length }, err);
+
+		// Fast path: ids still known in D1.
+		if (closetItemIds.length > 0) {
+			const vectorIds = closetItemIds.map((id) => closetItemVectorId(id));
+			for (let i = 0; i < vectorIds.length; i += VECTOR_DELETE_CHUNK) {
+				const chunk = vectorIds.slice(i, i + VECTOR_DELETE_CHUNK);
+				try {
+					await store.deleteByIds(chunk);
+					vectorsDeleted += chunk.length;
+				} catch (err) {
+					vectorsFailed += chunk.length;
+					log?.warn('eval_reset_vector_chunk_failed', { chunk_size: chunk.length }, err);
+				}
 			}
 		}
-	} else if (closetItemIds.length > 0 && !index) {
+
+		// Catch orphans (and anything re-upserted / missing from D1 list).
+		try {
+			const sweep = await store.deleteByUserId(userId);
+			vectorsDeleted += sweep.deleted;
+			vectorsFailed += sweep.failed;
+			vectorSweepRounds = sweep.rounds;
+			log?.info('eval_reset_vector_sweep', {
+				deleted: sweep.deleted,
+				failed: sweep.failed,
+				rounds: sweep.rounds,
+			});
+		} catch (err) {
+			log?.warn('eval_reset_vector_sweep_failed', {}, err);
+			vectorsFailed += 1;
+		}
+	} else if (closetItemIds.length > 0) {
 		log?.warn('eval_reset_vectorize_unbound', { closet_item_count: closetItemIds.length });
 	}
 
@@ -86,6 +108,7 @@ export async function resetEvalUserCloset(params: {
 		closet_item_ids: closetItemIds.length,
 		vectors_deleted: vectorsDeleted,
 		vectors_failed: vectorsFailed,
+		vector_sweep_rounds: vectorSweepRounds,
 		d1_closet_items: d1.closet_items,
 		d1_outfits: d1.outfits,
 		d1_matches: d1.matches,
@@ -96,6 +119,7 @@ export async function resetEvalUserCloset(params: {
 		closet_item_ids: closetItemIds.length,
 		vectors_deleted: vectorsDeleted,
 		vectors_failed: vectorsFailed,
+		vector_sweep_rounds: vectorSweepRounds,
 		d1,
 	};
 }

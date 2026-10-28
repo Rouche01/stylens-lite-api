@@ -33,12 +33,25 @@ describe('assertEvalUserAllowed', () => {
 });
 
 describe('resetEvalUserCloset', () => {
-	it('deletes Vectorize ids then purges D1 for the allowlisted user', async () => {
+	it('deletes known Vectorize ids, sweeps orphans by user_id, then purges D1', async () => {
 		const deletedChunks: string[][] = [];
+		let queryCalls = 0;
+		const orphanPool = ['item:orphan-a', 'item:orphan-b'];
 		const index = {
 			deleteByIds: async (ids: string[]) => {
 				deletedChunks.push(ids);
 				return { ids, count: ids.length };
+			},
+			query: async (_vector: number[], options?: VectorizeQueryOptions) => {
+				queryCalls += 1;
+				expect(options?.filter).toEqual({ user_id: 'eval-1' });
+				if (queryCalls === 1) {
+					return {
+						count: orphanPool.length,
+						matches: orphanPool.map((id) => ({ id, score: 0.1 })),
+					};
+				}
+				return { count: 0, matches: [] };
 			},
 		};
 		const closet = {
@@ -59,15 +72,56 @@ describe('resetEvalUserCloset', () => {
 			userId: 'eval-1',
 		});
 
-		expect(deletedChunks).toEqual([[closetItemVectorId('c1'), closetItemVectorId('c2')]]);
+		expect(deletedChunks[0]).toEqual([closetItemVectorId('c1'), closetItemVectorId('c2')]);
+		expect(deletedChunks[1]).toEqual(orphanPool);
 		expect(closet.purgeUserClosetState).toHaveBeenCalledWith('eval-1');
 		expect(result).toMatchObject({
 			user_id: 'eval-1',
 			closet_item_ids: 2,
-			vectors_deleted: 2,
+			vectors_deleted: 4,
 			vectors_failed: 0,
+			vector_sweep_rounds: 1,
 			d1: { closet_items: 2, outfits: 1 },
 		});
+	});
+
+	it('sweeps Vectorize even when D1 already has no closet items', async () => {
+		const deletedChunks: string[][] = [];
+		let queryCalls = 0;
+		const index = {
+			deleteByIds: async (ids: string[]) => {
+				deletedChunks.push(ids);
+				return { ids, count: ids.length };
+			},
+			query: async () => {
+				queryCalls += 1;
+				if (queryCalls === 1) {
+					return { count: 1, matches: [{ id: 'item:stale', score: 0.2 }] };
+				}
+				return { count: 0, matches: [] };
+			},
+		};
+		const closet = {
+			listClosetItemIdsForUser: vi.fn(async () => []),
+			purgeUserClosetState: vi.fn(async () => ({
+				closet_items: 0,
+				outfits: 0,
+				matches: 0,
+				identity_jobs: 0,
+				identity_inflight: 0,
+				match_notify: 0,
+			})),
+		};
+
+		const result = await resetEvalUserCloset({
+			env: { EVAL_USER_ID: 'eval-1', CLOSET_ITEMS: index as unknown as VectorizeIndex },
+			closet: closet as never,
+			userId: 'eval-1',
+		});
+
+		expect(deletedChunks).toEqual([['item:stale']]);
+		expect(result.vectors_deleted).toBe(1);
+		expect(result.vector_sweep_rounds).toBe(1);
 	});
 
 	it('still purges D1 when Vectorize is unbound', async () => {
@@ -90,6 +144,7 @@ describe('resetEvalUserCloset', () => {
 		});
 
 		expect(result.vectors_deleted).toBe(0);
+		expect(result.vector_sweep_rounds).toBe(0);
 		expect(closet.purgeUserClosetState).toHaveBeenCalledOnce();
 	});
 });

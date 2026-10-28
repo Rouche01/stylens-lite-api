@@ -28,6 +28,26 @@ export type ClosetVectorUpsertResult = {
 const VECTOR_ID_MAX_BYTES = 64;
 const DEFAULT_TOP_K = 10;
 const MAX_TOP_K = 20;
+/** Eval reset sweep: pull as many filtered neighbors as Vectorize allows per round. */
+const USER_DELETE_TOP_K = 100;
+const USER_DELETE_MAX_ROUNDS = 50;
+
+export type DeleteByUserIdResult = {
+	deleted: number;
+	failed: number;
+	rounds: number;
+};
+
+/** Unit-ish probe for metadata-filtered sweeps (direction does not matter under a tight user filter). */
+export function randomUnitEmbedding(dimensions = VECTORIZE_INDEX_DIMENSIONS): number[] {
+	const values = Array.from({ length: dimensions }, () => Math.random() * 2 - 1);
+	const norm = Math.sqrt(values.reduce((sum, n) => sum + n * n, 0));
+	if (!Number.isFinite(norm) || norm === 0) {
+		values[0] = 1;
+		return values;
+	}
+	return values.map((n) => n / norm);
+}
 
 export function closetItemVectorId(closetItemId: string): string {
 	const trimmed = closetItemId.trim();
@@ -198,6 +218,52 @@ export class ClosetVectorStore {
 	async deleteByIds(ids: string[]): Promise<ClosetVectorUpsertResult> {
 		const result = await this.index.deleteByIds(ids);
 		return normalizeMutation(result);
+	}
+
+	/**
+	 * Delete every vector tagged with `user_id` (eval cycle wipe).
+	 * Loops query+delete so orphans not listed in D1 are removed too.
+	 */
+	async deleteByUserId(
+		userId: string,
+		options: { topK?: number; maxRounds?: number } = {}
+	): Promise<DeleteByUserIdResult> {
+		const trimmed = userId.trim();
+		if (!trimmed) {
+			throw new IdentityEmbedError('userId is required', 400);
+		}
+		const topK = Math.min(USER_DELETE_TOP_K, Math.max(1, Math.floor(options.topK ?? USER_DELETE_TOP_K)));
+		const maxRounds = Math.max(1, Math.floor(options.maxRounds ?? USER_DELETE_MAX_ROUNDS));
+		const filter = buildClosetQueryFilter({ userId: trimmed });
+		let deleted = 0;
+		let failed = 0;
+		let rounds = 0;
+
+		for (let round = 0; round < maxRounds; round++) {
+			const result = await this.index.query(randomUnitEmbedding(), {
+				topK,
+				returnMetadata: 'none',
+				filter,
+			});
+			const ids = [...new Set((result.matches || []).map((match) => match.id).filter(Boolean))];
+			if (ids.length === 0) {
+				rounds = round;
+				break;
+			}
+			rounds = round + 1;
+			try {
+				const mutation = await this.deleteByIds(ids);
+				deleted += mutation.count || ids.length;
+			} catch {
+				failed += ids.length;
+				break;
+			}
+			if (ids.length < topK) {
+				break;
+			}
+		}
+
+		return { deleted, failed, rounds };
 	}
 
 	async querySimilar(
