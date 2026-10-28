@@ -13,13 +13,36 @@ Enable closet browse if needed (`FEATURE_FLAG_OVERRIDES={"closet-browse":true}` 
 
 ### Fixture eval cycles (API extract)
 
-Use a **dedicated** `EVAL_USER_ID` in `.dev.vars` (never a real customer). Between cycles, wipe that user’s closet / outfits / matches / Vectorize vectors:
+End-to-end labeling against the **real** `POST /outfits/extract` path (not a side Claude client).
+
+**Env (`.dev.vars`)** — see `.dev.vars.example`:
+
+| Key | Purpose |
+| --- | --- |
+| `EVAL_USER_ID` | Dedicated sandbox user UUID. Never a real customer. Reset refuses any other id. |
+| `ADMIN_API_KEY` | Admin header for reset + extract |
+| `EVAL_API_BASE_URL` | Optional; default `http://127.0.0.1:8787` |
+
+**Cycle rules**
+
+- **Start of cycle:** wipe that user’s closet / outfits / matches / Vectorize vectors (`eval:reset`, also run automatically by `extract:smoke`).
+- **Within a cycle:** keep D1 + Vectorize as photos are processed so identity can `ask` / link against earlier fixtures.
+- **Next cycle:** reset again before a new batch.
 
 ```bash
-npm run eval:reset   # POST /closet/eval/reset — refuses any userId ≠ EVAL_USER_ID
+npm run dev
+# optional: npm run identity:sink
+
+npm run extract:smoke
+# or: npm run extract:smoke -- /path/to/outfits-set-v1 photo1.jpg photo2.jpg
+# debug only: npm run extract:smoke -- --no-reset
+
+npm run eval:ui   # http://127.0.0.1:8788 — boxes + system identity + your labels
 ```
 
-Within one cycle, keep D1 + Vectorize populated across all fixture photos so identity can ask/link. Reset only at the **start** of the next cycle.
+Smoke JSON lands in `tmp/extract_smoke/` (`source: "api_extract"`). Labels save to `tmp/extract_smoke/labels.json`.
+
+Manual wipe without a full smoke: `npm run eval:reset`.
 
 **Sheet (gitignored):** `.cursor/identity_calibration_reviews.local.md` — one row per extracted item. Do not commit signed URLs or raw images.
 
