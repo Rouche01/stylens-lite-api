@@ -124,7 +124,12 @@ export class CropEncoder {
 		const embedded = await this.embedCrop(params);
 		const linked = params.closetItemId?.trim()
 			? null
-			: await this.closet.findClosetItemForPhotoCrop(params.userId, params.imageKey, params.boundingBox);
+			: await this.closet.findClosetItemForPhotoCrop(
+					params.userId,
+					params.imageKey,
+					params.boundingBox,
+					params.category
+				);
 		const closetItemId = params.closetItemId?.trim() || linked?.id;
 		return this.upsertPreparedCrop(embedded, {
 			id: params.id,
@@ -174,7 +179,12 @@ export class CropEncoder {
 		params: QueryClosetCropParams
 	): Promise<QueryClosetCropResult> {
 		const probe = params.userId
-			? await this.closet.findClosetItemForPhotoCrop(params.userId, params.imageKey, params.boundingBox)
+			? await this.closet.findClosetItemForPhotoCrop(
+					params.userId,
+					params.imageKey,
+					params.boundingBox,
+					params.category
+				)
 			: null;
 		const slot = resolveIdentitySlot(params.category) ?? resolveIdentitySlot(probe?.category);
 		const queried = await this.requireVectors().querySimilar(embedded.vector, {

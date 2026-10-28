@@ -8,6 +8,7 @@ import { getImageDimensions } from '../utils/image.utils';
 import { arrayBufferToBase64, fetchImageAsArrayBuffer, signDownloadUrlForKey } from 'utils/assets.utils';
 import { orientImageJpeg } from 'utils/cf_images.utils';
 import { normalizeOutfitBoundingBox } from 'utils/bounding_box';
+import { extractBoxAreaPercent, isPlausibleExtractBox, sanitizeExtractedItems } from 'utils/extract_box_hygiene';
 import { FlorenceGroundingProvider, GroundingProvider } from './grounding';
 import { sam3PromptCandidates } from './segmentation/sam3_prompt';
 import { Logger, createLogger } from 'utils/logger.utils';
@@ -83,10 +84,18 @@ export class OutfitExtractionService {
 			});
 
 			const grounded = await this.groundItemBoxes(classified, orientedImageUrl, dimensions, signal, log);
+			const sanitized = sanitizeExtractedItems(grounded);
+			if (sanitized.length !== grounded.length) {
+				log.info('outfit_extraction_box_hygiene', {
+					before_count: grounded.length,
+					after_count: sanitized.length,
+					dropped: grounded.length - sanitized.length,
+				});
+			}
 
 			return {
-				items: grounded,
-				item_count: grounded.length,
+				items: sanitized,
+				item_count: sanitized.length,
 				image_url: imageUrl,
 				extracted_at: new Date().toISOString(),
 				image_dimensions: dimensions
@@ -118,12 +127,22 @@ export class OutfitExtractionService {
 							signal,
 						});
 						if (!hit) continue;
+						const groundedItem = { ...item, bounding_box: hit.box };
+						if (!isPlausibleExtractBox(groundedItem)) {
+							log.warn('outfit_box_grounding_rejected_size', {
+								label: item.label,
+								prompt_used: hit.promptUsed,
+								box_h: hit.box.height,
+								box_area: extractBoxAreaPercent(hit.box),
+							});
+							continue;
+						}
 						log.info('outfit_box_grounded', {
 							label: item.label,
 							prompt_used: hit.promptUsed,
 							score: hit.score ?? null,
 						});
-						return { ...item, bounding_box: hit.box };
+						return groundedItem;
 					} catch (err) {
 						log.warn('outfit_box_grounding_failed', { label: item.label, prompt }, err);
 					}

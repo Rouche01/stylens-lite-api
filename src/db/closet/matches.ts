@@ -13,12 +13,14 @@ type Ctor = new (...args: any[]) => import('./base').ClosetDBBase;
 export function WithClosetMatches<TBase extends Ctor>(Base: TBase) {
 	return class extends Base {
 		/**
-		 * Closet item on this outfit photo whose stored box overlaps the crop (highest IoU).
+		 * Closet item on this outfit photo with a near-identical crop (same category).
+		 * High IoU + category gate avoids collapsing jacket/sweater or socks/sneakers.
 		 */
 		async findClosetItemForPhotoCrop(
 			userId: string,
 			imageKey: string,
-			boundingBox: { x: number; y: number; width: number; height: number }
+			boundingBox: { x: number; y: number; width: number; height: number },
+			category?: string
 		): Promise<{ id: string; label: string; category: string; iou: number } | null> {
 			const result = await this.db
 				.prepare(
@@ -33,9 +35,13 @@ export function WithClosetMatches<TBase extends Ctor>(Base: TBase) {
 				.bind(userId, imageKey)
 				.all<{ id: string; label: string; category: string; bounding_box: string }>();
 
-			const minIou = 0.3;
+			const minIou = 0.85;
+			const wantCategory = category?.trim().toLowerCase();
 			let best: { id: string; label: string; category: string; iou: number } | null = null;
 			for (const row of result.results || []) {
+				if (wantCategory && row.category?.toLowerCase() !== wantCategory) {
+					continue;
+				}
 				let stored: { x: number; y: number; width: number; height: number };
 				try {
 					stored = JSON.parse(row.bounding_box);

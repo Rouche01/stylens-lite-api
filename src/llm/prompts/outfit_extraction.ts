@@ -36,6 +36,9 @@ Extraction Rules:
 - Bounding boxes MUST tightly wrap only that garment's visible pixels (sleeves, collar, hems, cuffs).
 - Do NOT include walls, floors, elevator panels, mirrors, phones, or empty space. The person may be off-center; measure percents against the full image, not the person crop.
 - One item per box. Overlapping layers (open shirt over a tee) get separate boxes; each box should cover that layer only, even if another garment shows through.
+- Under-layers peeking at the collar/hem get a small box on the visible fabric only — never a torso-tall box that also covers the outer sweater or pants.
+- Do not invent socks as a separate item when only the shoe is clearly visible; prefer footwear alone.
+- Bags, hats, and other worn accessories must be extracted when clearly visible (including crossbody bags).
 - Do not include items in the background or held objects unless they are accessories being worn (skip phones).
 - "confidence": "high" if clearly visible, "medium" if partially visible/obstructed, "low" if heavily obscured or uncertain.
 - If no outfit is visible, return { "items": [] }.

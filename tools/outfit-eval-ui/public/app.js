@@ -1,5 +1,9 @@
 const COLORS = ['#0f6b4c', '#1d4f91', '#9a4d14', '#6b2d6b', '#8f2d2d', '#0b6e6e'];
 
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 8;
+const ZOOM_STEP = 1.2;
+
 const state = {
 	smokeId: null,
 	smoke: null,
@@ -7,6 +11,8 @@ const state = {
 	activeItem: 0,
 	labels: { version: 1, updated_at: null, photos: {} },
 	dirty: false,
+	view: { scale: 1, x: 0, y: 0 },
+	pan: null,
 };
 
 const els = {
@@ -19,6 +25,12 @@ const els = {
 	photo: document.getElementById('photo'),
 	overlay: document.getElementById('overlay'),
 	previewEmpty: document.getElementById('previewEmpty'),
+	previewFrame: document.getElementById('previewFrame'),
+	previewViewport: document.getElementById('previewViewport'),
+	zoomIn: document.getElementById('zoomIn'),
+	zoomOut: document.getElementById('zoomOut'),
+	zoomReset: document.getElementById('zoomReset'),
+	zoomLevel: document.getElementById('zoomLevel'),
 	photoName: document.getElementById('photoName'),
 	panelTitle: document.getElementById('panelTitle'),
 	panelMeta: document.getElementById('panelMeta'),
@@ -116,9 +128,11 @@ async function init() {
 	window.addEventListener('keydown', onKey);
 	window.addEventListener('resize', () => drawOverlay());
 	els.photo.addEventListener('load', () => {
+		resetView();
 		drawOverlay();
 		renderItems();
 	});
+	bindPreviewInteractions();
 
 	await loadSmoke(smokeList.runs[0].id);
 }
@@ -141,6 +155,102 @@ function stepPhoto(delta) {
 	renderPhoto();
 }
 
+function clampZoom(scale) {
+	return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scale));
+}
+
+function applyView() {
+	const { scale, x, y } = state.view;
+	els.previewViewport.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+	els.zoomLevel.textContent = `${Math.round(scale * 100)}%`;
+}
+
+function resetView() {
+	state.view = { scale: 1, x: 0, y: 0 };
+	applyView();
+}
+
+function zoomAt(clientX, clientY, nextScale) {
+	const scale = clampZoom(nextScale);
+	if (scale === state.view.scale) {
+		applyView();
+		return;
+	}
+	const rect = els.previewFrame.getBoundingClientRect();
+	const mx = clientX - rect.left;
+	const my = clientY - rect.top;
+	const ratio = scale / state.view.scale;
+	state.view.x = mx - (mx - state.view.x) * ratio;
+	state.view.y = my - (my - state.view.y) * ratio;
+	state.view.scale = scale;
+	if (scale === ZOOM_MIN) {
+		state.view.x = 0;
+		state.view.y = 0;
+	}
+	applyView();
+}
+
+function zoomBy(factor) {
+	const rect = els.previewFrame.getBoundingClientRect();
+	zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, state.view.scale * factor);
+}
+
+function bindPreviewInteractions() {
+	els.zoomIn.addEventListener('click', () => zoomBy(ZOOM_STEP));
+	els.zoomOut.addEventListener('click', () => zoomBy(1 / ZOOM_STEP));
+	els.zoomReset.addEventListener('click', () => resetView());
+
+	els.previewFrame.addEventListener(
+		'wheel',
+		(ev) => {
+			if (!currentResult() || els.photo.hidden) return;
+			ev.preventDefault();
+			const factor = ev.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+			zoomAt(ev.clientX, ev.clientY, state.view.scale * factor);
+		},
+		{ passive: false }
+	);
+
+	els.previewFrame.addEventListener('dblclick', (ev) => {
+		if (!currentResult() || els.photo.hidden) return;
+		ev.preventDefault();
+		if (state.view.scale > ZOOM_MIN) {
+			resetView();
+		} else {
+			zoomAt(ev.clientX, ev.clientY, 2.5);
+		}
+	});
+
+	els.previewFrame.addEventListener('pointerdown', (ev) => {
+		if (!currentResult() || els.photo.hidden) return;
+		if (ev.button !== 0) return;
+		state.pan = {
+			pointerId: ev.pointerId,
+			startX: ev.clientX,
+			startY: ev.clientY,
+			originX: state.view.x,
+			originY: state.view.y,
+		};
+		els.previewFrame.classList.add('is-panning');
+		els.previewFrame.setPointerCapture(ev.pointerId);
+	});
+
+	els.previewFrame.addEventListener('pointermove', (ev) => {
+		if (!state.pan || state.pan.pointerId !== ev.pointerId) return;
+		state.view.x = state.pan.originX + (ev.clientX - state.pan.startX);
+		state.view.y = state.pan.originY + (ev.clientY - state.pan.startY);
+		applyView();
+	});
+
+	const endPan = (ev) => {
+		if (!state.pan || state.pan.pointerId !== ev.pointerId) return;
+		state.pan = null;
+		els.previewFrame.classList.remove('is-panning');
+	};
+	els.previewFrame.addEventListener('pointerup', endPan);
+	els.previewFrame.addEventListener('pointercancel', endPan);
+}
+
 function renderPhoto() {
 	const result = currentResult();
 	const n = okResults().length;
@@ -150,12 +260,15 @@ function renderPhoto() {
 		els.photo.hidden = true;
 		els.overlay.hidden = true;
 		els.previewEmpty.hidden = false;
+		els.previewFrame.classList.add('is-empty');
 		els.photoName.textContent = '';
 		els.itemList.innerHTML = '';
+		resetView();
 		return;
 	}
 
 	els.previewEmpty.hidden = true;
+	els.previewFrame.classList.remove('is-empty');
 	els.photo.hidden = false;
 	els.overlay.hidden = false;
 	els.photoName.textContent = result.file;
@@ -167,7 +280,14 @@ function renderPhoto() {
 	els.missingItems.value = photoLabels.missing_items || '';
 	els.photoNotes.value = photoLabels.notes || '';
 
-	els.photo.src = `/photos/${encodeURIComponent(result.file)}`;
+	const nextSrc = `/photos/${encodeURIComponent(result.file)}`;
+	if (els.photo.getAttribute('src') !== nextSrc) {
+		resetView();
+		els.photo.src = nextSrc;
+	} else {
+		resetView();
+		drawOverlay();
+	}
 	renderItems();
 }
 
@@ -316,15 +436,13 @@ function drawOverlay() {
 	const result = currentResult();
 	const img = els.photo;
 	const canvas = els.overlay;
-	if (!result || !img.naturalWidth) return;
+	if (!result || !img.naturalWidth || img.hidden) return;
 
-	const rect = img.getBoundingClientRect();
-	const w = Math.round(rect.width);
-	const h = Math.round(rect.height);
+	// Layout size (ignores parent zoom transform) so boxes stay aligned while zooming.
+	const w = Math.max(1, Math.round(img.clientWidth));
+	const h = Math.max(1, Math.round(img.clientHeight));
 	canvas.width = w;
 	canvas.height = h;
-	canvas.style.width = `${w}px`;
-	canvas.style.height = `${h}px`;
 
 	const ctx = canvas.getContext('2d');
 	ctx.clearRect(0, 0, w, h);
@@ -396,6 +514,15 @@ function onKey(ev) {
 	} else if (ev.key === 's' || ev.key === 'S') {
 		ev.preventDefault();
 		saveLabels();
+	} else if (ev.key === '+' || ev.key === '=') {
+		ev.preventDefault();
+		zoomBy(ZOOM_STEP);
+	} else if (ev.key === '-' || ev.key === '_') {
+		ev.preventDefault();
+		zoomBy(1 / ZOOM_STEP);
+	} else if (ev.key === '0') {
+		ev.preventDefault();
+		resetView();
 	} else if (ev.key === '1' || ev.key === '2' || ev.key === '3') {
 		const map = { 1: 'ok', 2: 'wrong', 3: 'spurious' };
 		const result = currentResult();

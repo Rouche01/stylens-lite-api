@@ -212,7 +212,8 @@ export class OutfitIdentityProcessor {
 		const existing = await this.closet.findClosetItemForPhotoCrop(
 			params.userId,
 			params.imageKey,
-			params.item.bounding_box
+			params.item.bounding_box,
+			params.item.category
 		);
 		if (existing) {
 			await this.closet.linkClosetItemToOutfit({
