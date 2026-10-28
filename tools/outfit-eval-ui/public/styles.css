@@ -208,8 +208,9 @@ button.chip.active-unclear {
 }
 
 .preview {
+	--preview-frame-h: min(78vh, calc(100vh - 10.5rem));
 	padding: 1rem;
-	min-height: 70vh;
+	min-height: 0;
 }
 
 .preview-toolbar {
@@ -247,7 +248,8 @@ button.chip.active-unclear {
 .preview-frame {
 	position: relative;
 	width: 100%;
-	min-height: 60vh;
+	height: var(--preview-frame-h);
+	min-height: 40vh;
 	background:
 		linear-gradient(45deg, #ebe4d6 25%, transparent 25%),
 		linear-gradient(-45deg, #ebe4d6 25%, transparent 25%),
@@ -286,14 +288,17 @@ button.chip.active-unclear {
 .preview-stage {
 	position: relative;
 	max-width: 100%;
-	max-height: 72vh;
+	max-height: 100%;
+	line-height: 0;
 }
 
 #photo {
+	/* Fit entire outfit inside the frame (no crop). Zoom still works on top. */
 	max-width: 100%;
-	max-height: 72vh;
+	max-height: var(--preview-frame-h);
 	width: auto;
 	height: auto;
+	object-fit: contain;
 	display: block;
 }
 
@@ -530,10 +535,6 @@ button.chip.active-unclear {
 	}
 
 	.preview {
-		min-height: auto;
-	}
-
-	.preview-frame {
-		min-height: 50vh;
+		--preview-frame-h: min(62vh, calc(100vh - 12rem));
 	}
 }

@@ -4,6 +4,7 @@ import {
 	imageToReplicateUri,
 	parseDinoClsEmbedding,
 	resolveDinoModel,
+	throttleRetryDelayMs,
 } from '../src/services/identity/encode/providers/replicate.provider';
 import {
 	VECTORIZE_INDEX_DIMENSIONS,
@@ -94,6 +95,15 @@ describe('imageToReplicateUri', () => {
 				true
 			)
 		).toBe('data:image/jpeg;base64,AQID');
+	});
+});
+
+describe('throttleRetryDelayMs', () => {
+	it('honors Replicate reset hints with a floor', () => {
+		expect(throttleRetryDelayMs('rate limit resets in ~4s.', 0)).toBeGreaterThanOrEqual(11_000);
+		expect(throttleRetryDelayMs('rate limit resets in ~4s.', 1)).toBeGreaterThan(
+			throttleRetryDelayMs('rate limit resets in ~4s.', 0)
+		);
 	});
 });
 

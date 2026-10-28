@@ -11,9 +11,10 @@ const REPLICATE_PREDICTIONS_URL = 'https://api.replicate.com/v1/predictions';
 /** Scale-to-zero T4 queue has exceeded 4m (query still `starting` at our old cap, then succeeded). */
 const WAIT_BUDGET_MS = 480_000;
 const POLL_INTERVAL_MS = 2_000;
-/** Transient API / network flakes from smoke (large crops + cold starts). */
-const EMBED_ATTEMPTS = 3;
+/** Transient API / network flakes; low Replicate credit throttles to ~6/min. */
+const EMBED_ATTEMPTS = 6;
 const EMBED_RETRY_BASE_MS = 400;
+const THROTTLE_RETRY_FLOOR_MS = 11_000;
 
 function isNumericVector(value: unknown): value is number[] {
 	return Array.isArray(value) && value.length > 0 && value.every((n) => typeof n === 'number' && Number.isFinite(n));
@@ -128,6 +129,25 @@ function isRetryableEmbedError(err: unknown): boolean {
 	return true;
 }
 
+function isThrottleEmbedError(err: unknown): boolean {
+	return err instanceof IdentityEmbedError && err.status === 429;
+}
+
+/** Replicate: "Your rate limit resets in ~4s." */
+export function throttleRetryDelayMs(message: string, attempt = 0): number {
+	const match = message.match(/resets in ~?(\d+)\s*s/i);
+	const resetMs = match ? Number(match[1]) * 1000 + 750 : THROTTLE_RETRY_FLOOR_MS;
+	return Math.max(THROTTLE_RETRY_FLOOR_MS, resetMs) + attempt * 2_000;
+}
+
+function embedRetryDelayMs(err: unknown, attempt: number): number {
+	if (isThrottleEmbedError(err)) {
+		const message = err instanceof Error ? err.message : '';
+		return throttleRetryDelayMs(message, attempt);
+	}
+	return EMBED_RETRY_BASE_MS * 2 ** attempt;
+}
+
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
 	const bytes = new Uint8Array(buffer);
 	let binary = '';
@@ -185,16 +205,19 @@ export class DinoV3ReplicateEmbedProvider implements ImageEmbedProvider {
 		}
 
 		let lastErr: unknown;
+		let lastWasThrottle = false;
 		for (let attempt = 0; attempt < EMBED_ATTEMPTS; attempt++) {
-			const preferBytes = attempt > 0;
+			// Bytes fallback only after non-throttle failures (URL fetch / parse issues).
+			const preferBytes = attempt > 0 && !lastWasThrottle;
 			try {
 				return await this.embedImageOnce(apiKey, input, preferBytes);
 			} catch (err) {
 				lastErr = err;
+				lastWasThrottle = isThrottleEmbedError(err);
 				if (!isRetryableEmbedError(err) || attempt >= EMBED_ATTEMPTS - 1) {
 					throw err;
 				}
-				await sleep(EMBED_RETRY_BASE_MS * 2 ** attempt, input.signal);
+				await sleep(embedRetryDelayMs(err, attempt), input.signal);
 			}
 		}
 		throw lastErr instanceof Error ? lastErr : new IdentityEmbedError('DINOv3 embed failed', 502);
@@ -277,7 +300,8 @@ export class DinoV3ReplicateEmbedProvider implements ImageEmbedProvider {
 			if (response.status === 401 || response.status === 403) {
 				throw new IdentityEmbedError('Replicate unauthorized — check REPLICATE_API_TOKEN', 502);
 			}
-			throw new IdentityEmbedError(replicateErrorMessage(json, response.status), 502);
+			const status = response.status === 429 ? 429 : 502;
+			throw new IdentityEmbedError(replicateErrorMessage(json, response.status), status);
 		}
 		return json;
 	}
