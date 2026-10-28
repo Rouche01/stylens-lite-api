@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 
-/** Let local queue consumers drain after D1/Vectorize wipe before next extract. */
-const POST_RESET_SETTLE_MS = 2_500;
+/** Let local queue consumers + Vectorize delete lag settle before next extract. */
+const POST_RESET_SETTLE_MS = 5_000;
 
 function sleep(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));

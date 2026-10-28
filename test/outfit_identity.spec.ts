@@ -84,6 +84,24 @@ describe('decideIdentityFromNeighbors', () => {
 			neighborClosetItemId: null,
 		});
 	});
+
+	it('creates when a high-scoring Vectorize hit has no live D1 row (eval orphan)', () => {
+		expect(
+			decideIdentityFromNeighbors([
+				neighbor({
+					id: 'item:orphan-1',
+					closet_item_id: 'orphan-1',
+					d1_closet_item_id: null,
+					identity_score: 0.97,
+				}),
+			])
+		).toEqual({
+			action: 'create',
+			reason: 'missing_candidate',
+			identityScore: 0.97,
+			neighborClosetItemId: 'orphan-1',
+		});
+	});
 });
 
 describe('decideCommitAfterRequery', () => {

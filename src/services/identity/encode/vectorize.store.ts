@@ -226,7 +226,7 @@ export class ClosetVectorStore {
 	 */
 	async deleteByUserId(
 		userId: string,
-		options: { topK?: number; maxRounds?: number } = {}
+		options: { topK?: number; maxRounds?: number; settleMs?: number } = {}
 	): Promise<DeleteByUserIdResult> {
 		const trimmed = userId.trim();
 		if (!trimmed) {
@@ -234,6 +234,7 @@ export class ClosetVectorStore {
 		}
 		const topK = Math.min(USER_DELETE_TOP_K, Math.max(1, Math.floor(options.topK ?? USER_DELETE_TOP_K)));
 		const maxRounds = Math.max(1, Math.floor(options.maxRounds ?? USER_DELETE_MAX_ROUNDS));
+		const settleMs = Math.max(0, Math.floor(options.settleMs ?? 0));
 		const filter = buildClosetQueryFilter({ userId: trimmed });
 		let deleted = 0;
 		let failed = 0;
@@ -258,7 +259,11 @@ export class ClosetVectorStore {
 				failed += ids.length;
 				break;
 			}
-			if (ids.length < topK) {
+			// Vectorize deletes are eventually consistent — brief pause before re-query.
+			if (settleMs > 0) {
+				await new Promise((resolve) => setTimeout(resolve, settleMs));
+			}
+			if (ids.length < topK && settleMs === 0) {
 				break;
 			}
 		}

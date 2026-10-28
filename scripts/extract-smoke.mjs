@@ -25,8 +25,8 @@ const DEFAULT_FILES = [
 
 const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.JPG', '.JPEG', '.PNG', '.WEBP']);
 
-/** Let local queue consumers drain after D1/Vectorize wipe before first extract. */
-const POST_RESET_SETTLE_MS = 2_500;
+/** Let local queue consumers + Vectorize delete lag settle before first extract. */
+const POST_RESET_SETTLE_MS = 5_000;
 
 function sleep(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));

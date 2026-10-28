@@ -74,7 +74,10 @@ export function decideIdentityFromNeighbors(neighbors: QueryClosetCropMatch[]): 
 	if (!top) {
 		return { action: 'create', reason: 'no_neighbor' };
 	}
+	// Meta-only ids are fine for eval breadcrumbs; asks require a live D1 row
+	// (orphan Vectorize hits after eval reset must not createPendingMatch → FK).
 	const neighborId = candidateClosetItemId(top);
+	const d1Candidate = top.d1_closet_item_id?.trim() || null;
 	if (!isIdentityMatch(top.identity_score)) {
 		return {
 			action: 'create',
@@ -83,17 +86,17 @@ export function decideIdentityFromNeighbors(neighbors: QueryClosetCropMatch[]): 
 			neighborClosetItemId: neighborId,
 		};
 	}
-	if (!neighborId) {
+	if (!d1Candidate) {
 		return {
 			action: 'create',
 			reason: 'missing_candidate',
 			identityScore: top.identity_score,
-			neighborClosetItemId: null,
+			neighborClosetItemId: neighborId,
 		};
 	}
 	return {
 		action: 'ask',
-		candidateClosetItemId: neighborId,
+		candidateClosetItemId: d1Candidate,
 		identityScore: top.identity_score,
 		cosine: top.score,
 		colorDistance: top.color_distance,

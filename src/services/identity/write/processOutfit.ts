@@ -280,7 +280,30 @@ export class OutfitIdentityProcessor {
 
 		const decision = await this.decideItem(params, prepared, log);
 		if (decision.action === 'ask') {
-			return this.persistAsk(params, decision, prepared, log);
+			try {
+				return await this.persistAsk(params, decision, prepared, log);
+			} catch (err) {
+				// Orphan candidate after wipe / race — fall through to create.
+				if (isSqliteForeignKeyError(err)) {
+					log.warn(
+						'outfit_identity_ask_fk_fallback',
+						{
+							outfit_id: params.outfitId,
+							candidate_closet_item_id: decision.candidateClosetItemId,
+							identity_score: decision.identityScore,
+							label: params.item.label,
+						},
+						err
+					);
+					return commitNewItem(this.writeDeps(log), params, prepared, {
+						action: 'create',
+						reason: 'missing_candidate',
+						identityScore: decision.identityScore,
+						neighborClosetItemId: decision.candidateClosetItemId,
+					});
+				}
+				throw err;
+			}
 		}
 
 		return commitNewItem(this.writeDeps(log), params, prepared, decision);

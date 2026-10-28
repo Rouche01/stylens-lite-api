@@ -85,8 +85,9 @@ export async function resetEvalUserCloset(params: {
 		}
 
 		// Catch orphans (and anything re-upserted / missing from D1 list).
+		// settleMs: Vectorize mutations lag; pause between query rounds so eval cycles start clean.
 		try {
-			const sweep = await store.deleteByUserId(userId);
+			const sweep = await store.deleteByUserId(userId, { settleMs: 400 });
 			vectorsDeleted += sweep.deleted;
 			vectorsFailed += sweep.failed;
 			vectorSweepRounds = sweep.rounds;
