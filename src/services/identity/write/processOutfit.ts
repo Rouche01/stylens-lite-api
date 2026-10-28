@@ -248,9 +248,16 @@ export class OutfitIdentityProcessor {
 				log,
 			});
 		} catch (err) {
+			const box = params.item.bounding_box;
 			log.warn(
 				'outfit_identity_embed_failed',
-				{ image_key: params.imageKey, label: params.item.label },
+				{
+					image_key: params.imageKey,
+					label: params.item.label,
+					box_w: box?.width,
+					box_h: box?.height,
+					box_area: box ? box.width * box.height : undefined,
+				},
 				err
 			);
 			return failedItem(params.item, 'embed_failed');

@@ -20,11 +20,12 @@ export async function cropJpegWithTrim(
 	images: ImagesBinding,
 	bytes: ArrayBuffer,
 	trim: ImageTrim,
-	cropQuality = 85
+	cropQuality = 85,
+	options?: { alreadyOriented?: boolean }
 ): Promise<ArrayBuffer> {
-	const oriented = await orientImageJpeg(images, bytes);
+	const source = options?.alreadyOriented ? bytes : await orientImageJpeg(images, bytes);
 	const cropped = (
-		await images.input(new Blob([oriented]).stream()).transform({ trim }).output({
+		await images.input(new Blob([source]).stream()).transform({ trim }).output({
 			format: 'image/jpeg',
 			quality: cropQuality,
 		})
@@ -35,4 +36,31 @@ export async function cropJpegWithTrim(
 	}
 
 	return cropped.arrayBuffer();
+}
+
+/** Shrink so the longest side is at most `maxSide` (no upscale). */
+export async function resizeJpegMaxSide(
+	images: ImagesBinding,
+	bytes: ArrayBuffer,
+	maxSide: number,
+	quality = 85
+): Promise<ArrayBuffer> {
+	if (!Number.isFinite(maxSide) || maxSide <= 0) {
+		return bytes;
+	}
+	const resized = (
+		await images
+			.input(new Blob([bytes]).stream())
+			.transform({ width: maxSide, height: maxSide, fit: 'scale-down' })
+			.output({
+				format: 'image/jpeg',
+				quality,
+			})
+	).response();
+
+	if (!resized.ok || !resized.body) {
+		throw new Error(`Failed to resize image (${resized.status})`);
+	}
+
+	return resized.arrayBuffer();
 }

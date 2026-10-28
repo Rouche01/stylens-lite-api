@@ -11,6 +11,9 @@ const REPLICATE_PREDICTIONS_URL = 'https://api.replicate.com/v1/predictions';
 /** Scale-to-zero T4 queue has exceeded 4m (query still `starting` at our old cap, then succeeded). */
 const WAIT_BUDGET_MS = 480_000;
 const POLL_INTERVAL_MS = 2_000;
+/** Transient API / network flakes from smoke (large crops + cold starts). */
+const EMBED_ATTEMPTS = 3;
+const EMBED_RETRY_BASE_MS = 400;
 
 function isNumericVector(value: unknown): value is number[] {
 	return Array.isArray(value) && value.length > 0 && value.every((n) => typeof n === 'number' && Number.isFinite(n));
@@ -96,12 +99,33 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 	});
 }
 
-function imageToReplicateUri(input: EmbedImageInput): string {
+/**
+ * Prefer a fetchable HTTPS URL over a data URI. Smoke failures clustered on large crops where
+ * base64 bloated the predictions POST; Replicate can pull the already-signed R2 crop URL.
+ */
+export function imageToReplicateUri(input: EmbedImageInput, preferBytes = false): string {
+	const url = input.imageUrl?.trim();
+	if (!preferBytes && url && /^https?:\/\//i.test(url)) {
+		return url;
+	}
 	if (input.imageBytes.byteLength > 0) {
 		const type = input.contentType?.trim() || 'image/jpeg';
 		return `data:${type};base64,${arrayBufferToBase64(input.imageBytes)}`;
 	}
-	return input.imageUrl;
+	if (url) {
+		return url;
+	}
+	throw new IdentityEmbedError('DINOv3 embed input had neither imageUrl nor imageBytes', 500);
+}
+
+function isRetryableEmbedError(err: unknown): boolean {
+	if (err instanceof DOMException && err.name === 'AbortError') {
+		return false;
+	}
+	if (err instanceof IdentityEmbedError) {
+		return err.status === 502 || err.status === 504 || err.status === 429;
+	}
+	return true;
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -160,6 +184,23 @@ export class DinoV3ReplicateEmbedProvider implements ImageEmbedProvider {
 			throw new IdentityEmbedError('REPLICATE_API_TOKEN is not set', 500);
 		}
 
+		let lastErr: unknown;
+		for (let attempt = 0; attempt < EMBED_ATTEMPTS; attempt++) {
+			const preferBytes = attempt > 0;
+			try {
+				return await this.embedImageOnce(apiKey, input, preferBytes);
+			} catch (err) {
+				lastErr = err;
+				if (!isRetryableEmbedError(err) || attempt >= EMBED_ATTEMPTS - 1) {
+					throw err;
+				}
+				await sleep(EMBED_RETRY_BASE_MS * 2 ** attempt, input.signal);
+			}
+		}
+		throw lastErr instanceof Error ? lastErr : new IdentityEmbedError('DINOv3 embed failed', 502);
+	}
+
+	private async embedImageOnce(apiKey: string, input: EmbedImageInput, preferBytes: boolean): Promise<ImageEmbedResult> {
 		const deadline = Date.now() + WAIT_BUDGET_MS;
 		let prediction = (await this.requestJson(
 			REPLICATE_PREDICTIONS_URL,
@@ -168,7 +209,7 @@ export class DinoV3ReplicateEmbedProvider implements ImageEmbedProvider {
 				'Content-Type': 'application/json',
 				Prefer: 'wait',
 			},
-			JSON.stringify({ version: this.version, input: { image: imageToReplicateUri(input) } }),
+			JSON.stringify({ version: this.version, input: { image: imageToReplicateUri(input, preferBytes) } }),
 			input.signal
 		)) as ReplicatePrediction;
 

@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { parseJinaEmbedding } from '../src/services/identity/encode/providers/jina.provider';
-import { parseDinoClsEmbedding, resolveDinoModel } from '../src/services/identity/encode/providers/replicate.provider';
+import {
+	imageToReplicateUri,
+	parseDinoClsEmbedding,
+	resolveDinoModel,
+} from '../src/services/identity/encode/providers/replicate.provider';
 import {
 	VECTORIZE_INDEX_DIMENSIONS,
 	DEFAULT_DINO_EMBED_MODEL,
@@ -63,6 +67,33 @@ describe('resolveDinoModel', () => {
 
 	it('accepts owner/name:version', () => {
 		expect(resolveDinoModel('acme/dino:abc123')).toEqual({ model: 'acme/dino', version: 'abc123' });
+	});
+});
+
+describe('imageToReplicateUri', () => {
+	it('prefers an https crop URL over base64', () => {
+		const bytes = new Uint8Array([1, 2, 3]).buffer;
+		expect(
+			imageToReplicateUri({
+				imageUrl: 'https://bucket.example.r2.cloudflarestorage.com/crop.jpg',
+				imageBytes: bytes,
+				contentType: 'image/jpeg',
+			})
+		).toBe('https://bucket.example.r2.cloudflarestorage.com/crop.jpg');
+	});
+
+	it('falls back to a data URI when preferBytes is set', () => {
+		const bytes = new Uint8Array([1, 2, 3]).buffer;
+		expect(
+			imageToReplicateUri(
+				{
+					imageUrl: 'https://bucket.example.r2.cloudflarestorage.com/crop.jpg',
+					imageBytes: bytes,
+					contentType: 'image/jpeg',
+				},
+				true
+			)
+		).toBe('data:image/jpeg;base64,AQID');
 	});
 });
 

@@ -1,6 +1,6 @@
 import { signDownloadUrlForKey } from '../../../utils/assets.utils';
 import { percentBoxToTrim, type PercentBox } from '../../../utils/bounding_box';
-import { cropJpegWithTrim, orientImageJpeg } from '../../../utils/cf_images.utils';
+import { cropJpegWithTrim, orientImageJpeg, resizeJpegMaxSide } from '../../../utils/cf_images.utils';
 import { getImageDimensions } from '../../../utils/image.utils';
 import { Logger, createLogger } from '../../../utils/logger.utils';
 import { createClosetDB } from '../../../db';
@@ -98,6 +98,8 @@ export const VECTOR_VISIBLE_TIMEOUT_MS = 20_000;
 export const VECTOR_VISIBLE_POLL_MS = 500;
 
 const VECTOR_PREVIEW_LENGTH = 8;
+/** DINOv3 does not need multi-megapixel crops; keeps Replicate payloads small and stable. */
+const EMBED_CROP_MAX_SIDE = 768;
 
 export class CropEncoder {
 	constructor(
@@ -297,7 +299,8 @@ export class CropEncoder {
 		const oriented = await orientImageJpeg(this.images, sourceBytes);
 		const dims = await getImageDimensions(oriented);
 		const trim = percentBoxToTrim(boundingBox, dims.width, dims.height);
-		const cropJpeg = await cropJpegWithTrim(this.images, oriented, trim);
+		const rawCrop = await cropJpegWithTrim(this.images, oriented, trim, 85, { alreadyOriented: true });
+		const cropJpeg = await resizeJpegMaxSide(this.images, rawCrop, EMBED_CROP_MAX_SIDE);
 		const cropDims = await getImageDimensions(cropJpeg);
 
 		const cropImageKey = `identity/scratch/crop-${crypto.randomUUID()}.jpg`;
@@ -323,6 +326,9 @@ export class CropEncoder {
 
 		log.info('identity_embed_start', {
 			crop_image_key: cropImageKey,
+			crop_width: cropDims.width,
+			crop_height: cropDims.height,
+			crop_bytes: cropJpeg.byteLength,
 			crop_color_h: cropColor?.h,
 			crop_color_s: cropColor?.s,
 			crop_color_l: cropColor?.l,
