@@ -36,3 +36,9 @@ export {
 } from './logging/runArtifact';
 export type { IdentityRunArtifact, IdentityRunArtifactSource } from './logging/runArtifact';
 export type { ClosetIdentityEnqueueResult, ClosetIdentityQueueJob } from './jobs/closetIdentityJob';
+export {
+	assertEvalUserAllowed,
+	resetEvalUserCloset,
+	EvalUserResetError,
+} from './eval/resetEvalUser';
+export type { ResetEvalUserEnv, ResetEvalUserResult } from './eval/resetEvalUser';

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Outfit extract / identity labels</title>
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap"
+			rel="stylesheet"
+		/>
+		<link rel="stylesheet" href="/styles.css" />
+	</head>
+	<body>
+		<header class="top">
+			<div class="brand">
+				<span class="brand-mark">GoStylens</span>
+				<span class="brand-sub">extract / identity labels</span>
+			</div>
+			<div class="top-controls">
+				<label class="field">
+					<span>Smoke run</span>
+					<select id="smokeSelect"></select>
+				</label>
+				<div class="nav">
+					<button type="button" id="prevBtn" class="ghost">← Prev</button>
+					<span id="photoIndex" class="mono muted">—</span>
+					<button type="button" id="nextBtn" class="ghost">Next →</button>
+				</div>
+				<button type="button" id="saveBtn" class="primary">Save labels</button>
+				<span id="saveStatus" class="mono muted" aria-live="polite"></span>
+			</div>
+		</header>
+
+		<main class="stage">
+			<section class="preview" aria-label="Photo preview">
+				<div class="preview-frame">
+					<img id="photo" alt="Outfit photo" hidden />
+					<canvas id="overlay" hidden></canvas>
+					<p id="previewEmpty" class="empty">Load a smoke run to begin.</p>
+				</div>
+				<p id="photoName" class="mono muted photo-name"></p>
+			</section>
+
+			<aside class="panel" aria-label="Labels">
+				<div class="panel-head">
+					<h1 id="panelTitle">Extracted items</h1>
+					<p id="panelMeta" class="muted"></p>
+				</div>
+
+				<div id="itemList" class="item-list"></div>
+
+				<section class="photo-label">
+					<h2>Photo notes</h2>
+					<label class="field block">
+						<span>Missing items (not extracted)</span>
+						<input id="missingItems" type="text" placeholder="e.g. white sneakers, crossbody bag" />
+					</label>
+					<label class="field block">
+						<span>Notes</span>
+						<textarea id="photoNotes" rows="2" placeholder="Optional freeform notes"></textarea>
+					</label>
+				</section>
+
+				<section class="legend">
+					<h2>Keys</h2>
+					<p class="muted small">
+						<span class="kbd">←</span>/<span class="kbd">→</span> photos ·
+						<span class="kbd">1</span>–<span class="kbd">3</span> extract ok / wrong / spurious ·
+						<span class="kbd">S</span> save
+					</p>
+				</section>
+			</aside>
+		</main>
+
+		<script type="module" src="/app.js"></script>
+	</body>
+</html>

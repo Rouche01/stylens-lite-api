@@ -190,6 +190,8 @@ declare namespace Cloudflare {
 		REPLICATE_API_TOKEN: string;
 		POSTHOG_PERSONAL_API_KEY: string;
 		FEATURE_FLAG_OVERRIDES: string;
+		/** Dedicated user for extract/identity eval cycles. Reset refuses any other id. */
+		EVAL_USER_ID?: string;
 		CLOSET_ITEMS?: VectorizeIndex;
 		AI?: Ai;
 		CLOSET_EMBED_PROVIDER?: "dinov3";

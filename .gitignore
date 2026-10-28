@@ -181,3 +181,4 @@ wrangler.jsonc
 .env*
 !.env.example
 .wrangler/
+tmp/

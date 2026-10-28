@@ -11,6 +11,16 @@ npm run dev             # or dev:scheduled
 
 Enable closet browse if needed (`FEATURE_FLAG_OVERRIDES={"closet-browse":true}` in `.dev.vars`, `ENV_NAME=dev`).
 
+### Fixture eval cycles (API extract)
+
+Use a **dedicated** `EVAL_USER_ID` in `.dev.vars` (never a real customer). Between cycles, wipe that user’s closet / outfits / matches / Vectorize vectors:
+
+```bash
+npm run eval:reset   # POST /closet/eval/reset — refuses any userId ≠ EVAL_USER_ID
+```
+
+Within one cycle, keep D1 + Vectorize populated across all fixture photos so identity can ask/link. Reset only at the **start** of the next cycle.
+
 **Sheet (gitignored):** `.cursor/identity_calibration_reviews.local.md` — one row per extracted item. Do not commit signed URLs or raw images.
 
 ## Who does what

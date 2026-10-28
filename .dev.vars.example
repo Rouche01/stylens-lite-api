@@ -29,6 +29,12 @@ SUPABASE_ROLE_KEY=dummy
 # Admin
 ADMIN_API_KEY=dummy
 
+# Extract / identity eval harness (dedicated sandbox user — never a real customer)
+# Used by POST /closet/eval/reset and scripts/eval-reset.mjs / extract-smoke
+EVAL_USER_ID=
+# Optional override for smoke/reset scripts (default http://127.0.0.1:8787)
+# EVAL_API_BASE_URL=http://127.0.0.1:8787
+
 # Webhooks
 REVENUECAT_WEBHOOK_SECRET=dummy
 
