@@ -102,6 +102,8 @@ async function listSmokeRuns() {
 			meta = {
 				ran_at: parsed.ran_at ?? null,
 				model: parsed.model ?? null,
+				source: parsed.source ?? 'claude_direct',
+				user_id: parsed.user_id ?? null,
 				photo_count: Array.isArray(parsed.results) ? parsed.results.length : 0,
 				ok_count: Array.isArray(parsed.results) ? parsed.results.filter((r) => r.ok).length : 0,
 			};
@@ -110,7 +112,13 @@ async function listSmokeRuns() {
 		}
 		runs.push({ id: name, mtime: st.mtime.toISOString(), ...meta });
 	}
-	runs.sort((a, b) => (a.mtime < b.mtime ? 1 : -1));
+	// Prefer API extract cycles, then newest mtime.
+	runs.sort((a, b) => {
+		const aApi = a.source === 'api_extract' ? 1 : 0;
+		const bApi = b.source === 'api_extract' ? 1 : 0;
+		if (aApi !== bApi) return bApi - aApi;
+		return a.mtime < b.mtime ? 1 : -1;
+	});
 	return runs;
 }
 

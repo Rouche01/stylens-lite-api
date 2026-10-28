@@ -316,6 +316,63 @@ button.chip.active-unclear {
 	color: var(--muted);
 }
 
+.system-identity {
+	margin: 0.65rem 0 0.15rem;
+	padding: 0.55rem 0.65rem;
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--bg) 70%, #fff);
+	border: 1px dashed var(--line);
+}
+
+.system-identity-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem 0.75rem;
+	align-items: center;
+	margin: 0;
+	font-size: 0.8rem;
+}
+
+.system-identity-ids {
+	margin: 0.35rem 0 0;
+	font-size: 0.72rem;
+	color: var(--muted);
+	word-break: break-all;
+}
+
+.pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	padding: 0.15rem 0.45rem;
+	border-radius: 999px;
+	font-family: 'IBM Plex Mono', monospace;
+	font-size: 0.72rem;
+	font-weight: 500;
+	border: 1px solid var(--line);
+	background: #fff;
+}
+
+.pill-created,
+.pill-link {
+	border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+	color: var(--ok);
+}
+
+.pill-ask {
+	border-color: color-mix(in srgb, var(--warn) 45%, var(--line));
+	color: var(--warn);
+}
+
+.pill-failed {
+	border-color: color-mix(in srgb, var(--bad) 45%, var(--line));
+	color: var(--bad);
+}
+
+.pill-muted {
+	color: var(--muted);
+}
+
 .chips {
 	display: flex;
 	flex-wrap: wrap;

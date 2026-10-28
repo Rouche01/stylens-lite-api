@@ -90,7 +90,9 @@ async function init() {
 	for (const run of smokeList.runs) {
 		const opt = document.createElement('option');
 		opt.value = run.id;
-		opt.textContent = `${run.id} · ${run.ok_count ?? '?'} photos · ${run.model || 'model?'}`;
+		const source = run.source === 'api_extract' ? 'api' : 'legacy';
+		const modelOrUser = run.source === 'api_extract' ? shortId(run.user_id) || 'eval-user' : run.model || 'claude';
+		opt.textContent = `${source} · ${run.ok_count ?? '?'} photos · ${modelOrUser} · ${run.id}`;
 		els.smokeSelect.appendChild(opt);
 	}
 
@@ -158,7 +160,7 @@ function renderPhoto() {
 	els.overlay.hidden = false;
 	els.photoName.textContent = result.file;
 	els.panelTitle.textContent = 'Extracted items';
-	els.panelMeta.textContent = `${result.item_count} items · ${result.elapsed_ms}ms · ${result.model || state.smoke?.model || ''}`;
+	els.panelMeta.textContent = panelMetaText(result);
 
 	const key = photoKey(result);
 	const photoLabels = ensurePhotoLabels(key);
@@ -167,6 +169,63 @@ function renderPhoto() {
 
 	els.photo.src = `/photos/${encodeURIComponent(result.file)}`;
 	renderItems();
+}
+
+function panelMetaText(result) {
+	const source = state.smoke?.source === 'api_extract' ? 'API extract' : 'Legacy Claude smoke';
+	const bits = [
+		source,
+		`${result.item_count} items`,
+		result.elapsed_ms != null ? `${result.elapsed_ms}ms` : null,
+		result.outfit_id ? `outfit ${shortId(result.outfit_id)}` : null,
+		state.smoke?.user_id ? `user ${shortId(state.smoke.user_id)}` : null,
+		result.model || state.smoke?.model || null,
+	];
+	return bits.filter(Boolean).join(' · ');
+}
+
+function shortId(value) {
+	const s = String(value || '').trim();
+	if (!s) return '';
+	return s.length <= 10 ? s : `${s.slice(0, 8)}…`;
+}
+
+function formatScore(score) {
+	if (score == null || Number.isNaN(Number(score))) return null;
+	return Number(score).toFixed(3);
+}
+
+function systemIdentityHtml(item) {
+	const status = item.identity_status;
+	if (!status && item.identity_score == null && !item.identity_reason) {
+		return `
+			<div class="system-identity">
+				<p class="system-identity-row muted small">No identity fields on this smoke (legacy Claude-only run).</p>
+			</div>
+		`;
+	}
+
+	const score = formatScore(item.identity_score);
+	const statusClass =
+		status === 'created' ? 'pill-created' : status === 'ask' ? 'pill-ask' : status === 'failed' ? 'pill-failed' : 'pill-muted';
+
+	const idParts = [
+		item.closet_item_id ? `closet ${shortId(item.closet_item_id)}` : null,
+		item.candidate_closet_item_id ? `candidate ${shortId(item.candidate_closet_item_id)}` : null,
+		item.match_id ? `match ${shortId(item.match_id)}` : null,
+	].filter(Boolean);
+
+	return `
+		<div class="system-identity">
+			<p class="system-identity-row">
+				<span class="chip-row-label" style="width:auto;margin:0">System</span>
+				<span class="pill ${statusClass}">${escapeHtml(status || '—')}</span>
+				${score != null ? `<span class="pill pill-muted">score ${escapeHtml(score)}</span>` : ''}
+				${item.identity_reason ? `<span class="pill pill-muted">${escapeHtml(item.identity_reason)}</span>` : ''}
+			</p>
+			${idParts.length ? `<p class="system-identity-ids mono">${escapeHtml(idParts.join(' · '))}</p>` : ''}
+		</div>
+	`;
 }
 
 function renderItems() {
@@ -189,6 +248,7 @@ function renderItems() {
 					<p class="item-meta mono">${escapeHtml(item.category)}/${escapeHtml(item.subcategory)} · ${escapeHtml(item.color)} · ${escapeHtml(item.confidence)}</p>
 				</div>
 			</div>
+			${systemIdentityHtml(item)}
 			<div class="chips" data-group="extract">
 				<span class="chip-row-label">Extract</span>
 				<button type="button" class="chip ${label.extract_verdict === 'ok' ? 'active-ok' : ''}" data-field="extract_verdict" data-value="ok">ok</button>
@@ -196,7 +256,7 @@ function renderItems() {
 				<button type="button" class="chip ${label.extract_verdict === 'spurious' ? 'active-spurious' : ''}" data-field="extract_verdict" data-value="spurious">spurious</button>
 			</div>
 			<div class="chips" data-group="identity">
-				<span class="chip-row-label">Identity (optional)</span>
+				<span class="chip-row-label">Your identity verdict</span>
 				<button type="button" class="chip ${label.human_verdict === 'same' ? 'active-same' : ''}" data-field="human_verdict" data-value="same">same</button>
 				<button type="button" class="chip ${label.human_verdict === 'different' ? 'active-different' : ''}" data-field="human_verdict" data-value="different">different</button>
 				<button type="button" class="chip ${label.human_verdict === 'unclear' ? 'active-unclear' : ''}" data-field="human_verdict" data-value="unclear">unclear</button>
