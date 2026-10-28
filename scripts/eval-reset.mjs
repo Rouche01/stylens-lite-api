@@ -13,6 +13,13 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 
+/** Let local queue consumers drain after D1/Vectorize wipe before next extract. */
+const POST_RESET_SETTLE_MS = 2_500;
+
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function parseDevVars(text) {
 	const out = {};
 	for (const line of text.split('\n')) {
@@ -65,7 +72,10 @@ async function main() {
 		console.error(`Reset failed (${res.status}):`, body);
 		process.exit(1);
 	}
-	console.log(JSON.stringify(body, null, 2));
+	process.stdout.write(`Settling ${POST_RESET_SETTLE_MS}ms for stale queue drain ... `);
+	await sleep(POST_RESET_SETTLE_MS);
+	console.log('ok');
+	console.log(JSON.stringify({ ...body, settle_ms: POST_RESET_SETTLE_MS }, null, 2));
 }
 
 main().catch((err) => {

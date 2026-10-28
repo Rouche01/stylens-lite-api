@@ -26,7 +26,7 @@ import { createClosetMatchDigestScheduler } from '../notify/digest';
 import { createClosetCatalogNotifier, type ClosetCatalogNotifier } from '../notify/catalogBroadcast';
 import { ClosetMatchResolvedError, IdentityBusyError } from './errors';
 import { commitNewItem } from './commit';
-import { extractSnapshot, extractionConfidence, failedItem } from './helpers';
+import { extractSnapshot, extractionConfidence, failedItem, isSqliteForeignKeyError } from './helpers';
 import { resolveClosetMatch } from './resolveMatch';
 import type {
 	ClosetMatchDigestScheduler,
@@ -216,28 +216,42 @@ export class OutfitIdentityProcessor {
 			params.item.category
 		);
 		if (existing) {
-			await this.closet.linkClosetItemToOutfit({
-				outfitId: params.outfitId,
-				closetItemId: existing.id,
-				boundingBox: params.item.bounding_box,
-				confidence: extractionConfidence(params.item.confidence),
-				blurHash: await this.closet.getLatestItemBlurHash(existing.id),
-			});
-			log.info('outfit_identity_existing_crop', {
-				outfit_id: params.outfitId,
-				closet_item_id: existing.id,
-				label: params.item.label,
-			});
-			return {
-				...params.item,
-				closet_item_id: existing.id,
-				is_new_closet_item: false,
-				identity_status: 'created',
-				identity_reason: 'existing_crop',
-				match_id: null,
-				candidate_closet_item_id: null,
-				identity_score: null,
-			};
+			try {
+				await this.closet.linkClosetItemToOutfit({
+					outfitId: params.outfitId,
+					closetItemId: existing.id,
+					boundingBox: params.item.bounding_box,
+					confidence: extractionConfidence(params.item.confidence),
+					blurHash: await this.closet.getLatestItemBlurHash(existing.id),
+				});
+				log.info('outfit_identity_existing_crop', {
+					outfit_id: params.outfitId,
+					closet_item_id: existing.id,
+					label: params.item.label,
+				});
+				return {
+					...params.item,
+					closet_item_id: existing.id,
+					is_new_closet_item: false,
+					identity_status: 'created',
+					identity_reason: 'existing_crop',
+					match_id: null,
+					candidate_closet_item_id: null,
+					identity_score: null,
+				};
+			} catch (err) {
+				// Stale closet id after eval reset / concurrent wipe — fall through to embed+create.
+				log.warn(
+					'outfit_identity_existing_crop_failed',
+					{
+						outfit_id: params.outfitId,
+						closet_item_id: existing.id,
+						label: params.item.label,
+						foreign_key: isSqliteForeignKeyError(err),
+					},
+					err
+				);
+			}
 		}
 
 		let prepared: PreparedClosetCrop;

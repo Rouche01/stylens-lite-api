@@ -98,6 +98,10 @@ export async function runClosetVectorRepair(params: {
 
 	const item = await params.closet.getClosetItemSummary(closetItemId);
 	if (!item) {
+		params.log.info('closet_vector_repair_missing_item', {
+			closet_item_id: closetItemId,
+			kind: isClosetVectorRepairJob(params.job) ? params.job.kind : params.job.kind,
+		});
 		return { action: 'ack', reason: 'missing_item' };
 	}
 	if (item.vector_indexed_at != null) {

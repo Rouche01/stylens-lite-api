@@ -193,6 +193,28 @@ describe('OutfitIdentityProcessor', () => {
 		expect(harness.closet.outfits[0].image_height).toBe(1500);
 	});
 
+	it('falls through to create when existing_crop link hits a foreign key error', async () => {
+		const harness = createHarness({
+			neighbors: [],
+			photoCropItem: { id: 'stale-item', label: 'ghost', category: 'top', iou: 0.99 },
+			linkError: new Error(
+				'D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)'
+			),
+		});
+		const result = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/test.jpg',
+		});
+
+		expect(result?.items[0].identity_status).toBe('created');
+		expect(result?.items[0].identity_reason).toBe('no_neighbor');
+		expect(result?.items[0].closet_item_id).not.toBe('stale-item');
+		expect(harness.closet.links).toHaveLength(1);
+		expect(harness.closet.links[0].closetItemId).toBe(result?.items[0].closet_item_id);
+		expect(harness.identity.prepares).toBe(1);
+	});
+
 	it('includes identity_run_id on per-item decision logs and encode query params', async () => {
 		const { log, events } = capturingLogger();
 		const queryLogs: Array<Logger | undefined> = [];
@@ -1140,6 +1162,8 @@ function createHarness(options: {
 	visible?: boolean;
 	repairError?: Error;
 	prepareError?: Error;
+	photoCropItem?: { id: string; label: string; category: string; iou: number } | null;
+	linkError?: Error;
 	log?: Logger;
 }) {
 	const items = options.items ?? [clothingItem()];
@@ -1150,7 +1174,11 @@ function createHarness(options: {
 		extracted_at: new Date().toISOString(),
 		image_dimensions: { width: 1000, height: 1500 },
 	};
-	const closet = new MemoryCloset({ d1Error: options.d1Error });
+	const closet = new MemoryCloset({
+		d1Error: options.d1Error,
+		photoCropItem: options.photoCropItem,
+		linkError: options.linkError,
+	});
 	const identity = {
 		prepares: 0,
 		queries: 0,
@@ -1249,7 +1277,13 @@ function createHarness(options: {
 	stealResolvedClosetItemId: string | null = null;
 	probeEmbeds: Record<string, NonNullable<ClosetItemMatch['probe_embed']>> = {};
 
-	constructor(private options: { d1Error?: Error } = {}) {}
+	constructor(
+		private options: {
+			d1Error?: Error;
+			photoCropItem?: { id: string; label: string; category: string; iou: number } | null;
+			linkError?: Error;
+		} = {}
+	) {}
 
 	async tryAcquireIdentityLock(userId: string, jobId: string): Promise<boolean> {
 		this.lockAcquireAttempts += 1;
@@ -1264,8 +1298,13 @@ function createHarness(options: {
 		}
 	}
 
-	async findClosetItemForPhotoCrop(): Promise<null> {
-		return null;
+	async findClosetItemForPhotoCrop(): Promise<{
+		id: string;
+		label: string;
+		category: string;
+		iou: number;
+	} | null> {
+		return this.options.photoCropItem ?? null;
 	}
 
 	async getClosetItemSummary(itemId: string) {
@@ -1421,6 +1460,12 @@ function createHarness(options: {
 		boundingBox?: { x: number; y: number; width: number; height: number };
 		blurHash?: string | null;
 	}): Promise<void> {
+		if (this.options.linkError) {
+			const err = this.options.linkError;
+			// One-shot: simulate stale existing_crop FK, then allow create-path link.
+			this.options.linkError = undefined;
+			throw err;
+		}
 		const exists = this.links.some(
 			(link) =>
 				link.outfitId === params.outfitId &&

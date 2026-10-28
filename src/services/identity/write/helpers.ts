@@ -11,6 +11,16 @@ import type { IdentityCreateReason } from '../decide/policy';
 import type { ClosetVectorBackfillJob, ClosetVectorRepairJob } from '../jobs/closetVectorRepair';
 import type { OutfitIdentityWriteDeps, ProcessedOutfitItem } from './types';
 
+/** D1 / SQLite foreign-key failures (e.g. eval reset wiped rows mid-queue). */
+export function isSqliteForeignKeyError(err: unknown): boolean {
+	const message = err instanceof Error ? err.message : String(err);
+	return (
+		/FOREIGN KEY constraint failed/i.test(message) ||
+		/SQLITE_CONSTRAINT_FOREIGNKEY/i.test(message) ||
+		/D1_ERROR:.*FOREIGN KEY/i.test(message)
+	);
+}
+
 export function failedItem(
 	item: ClothingItem,
 	reason: IdentityCreateReason,

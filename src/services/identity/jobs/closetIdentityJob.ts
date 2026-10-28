@@ -12,6 +12,7 @@ import {
 	summarizeIdentityRunItems,
 } from '../logging/runLogging';
 import { IdentityBusyError } from '../write/errors';
+import { isSqliteForeignKeyError } from '../write/helpers';
 import type { ProcessOutfitImageParams, ProcessOutfitImageResult } from '../write/types';
 import type { ClosetCatalogNotifyItem } from '../../../utils/closet_browse';
 
@@ -59,7 +60,7 @@ export type ClosetIdentityRunStore = Pick<
 >;
 
 export type ClosetIdentityRunDecision =
-	| { action: 'ack'; reason: 'done' | 'invalid' | 'completed' | 'failed' }
+	| { action: 'ack'; reason: 'done' | 'invalid' | 'completed' | 'failed' | 'stale' }
 	| { action: 'retry'; delaySeconds: number; reason: 'busy' | 'extract_empty' | 'error' };
 
 export function collectOutfitIdentityImages(message: MessageEntry, tags: StyleEntryTag[]): RemoteImage[] {
@@ -328,6 +329,15 @@ export async function runClosetIdentityJob(params: {
 		if (isIdentityBusyError(err)) {
 			runLog.info(IdentityRunLogEvents.JOB_BUSY, { attempts });
 			return failOrRetry(params, runLog, userId, imageKey, attempts, 'busy', identityRunId);
+		}
+		if (isSqliteForeignKeyError(err)) {
+			// Eval reset (or other wipe) deleted D1 rows while this message was in flight.
+			runLog.warn(IdentityRunLogEvents.JOB_FAILED, {
+				attempts,
+				reason: 'stale_foreign_key',
+				error_message: err instanceof Error ? err.message : String(err),
+			});
+			return { action: 'ack', reason: 'stale' };
 		}
 		runLog.error(IdentityRunLogEvents.JOB_FAILED, { attempts }, err);
 		return failOrRetry(params, runLog, userId, imageKey, attempts, 'error', identityRunId);

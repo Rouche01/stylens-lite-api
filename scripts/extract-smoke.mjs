@@ -25,6 +25,13 @@ const DEFAULT_FILES = [
 
 const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.JPG', '.JPEG', '.PNG', '.WEBP']);
 
+/** Let local queue consumers drain after D1/Vectorize wipe before first extract. */
+const POST_RESET_SETTLE_MS = 2_500;
+
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function parseDevVars(text) {
 	const out = {};
 	for (const line of text.split('\n')) {
@@ -226,6 +233,10 @@ async function main() {
 		console.log(
 			`ok (closet_items=${resetResult?.d1?.closet_items ?? '?'}, vectors_deleted=${resetResult?.vectors_deleted ?? '?'})`
 		);
+		process.stdout.write(`→ settle ${POST_RESET_SETTLE_MS}ms (drain stale queue jobs) ... `);
+		await sleep(POST_RESET_SETTLE_MS);
+		console.log('ok');
+		resetResult = { ...resetResult, settle_ms: POST_RESET_SETTLE_MS };
 		console.log('');
 	}
 

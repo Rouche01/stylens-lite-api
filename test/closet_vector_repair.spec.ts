@@ -129,6 +129,27 @@ describe('runClosetVectorRepair', () => {
 		expect(harness.identity.upserts).toHaveLength(0);
 	});
 
+	it('acks when the closet item was wiped (eval reset)', async () => {
+		const harness = createRepairHarness({ visibleIds: [] });
+		harness.closet.item = null as never;
+
+		const decision = await runClosetVectorRepair({
+			job: JOB,
+			closet: {
+				...harness.closet,
+				async getClosetItemSummary() {
+					return null;
+				},
+			},
+			identity: harness.identity,
+			log: silentLogger(),
+		});
+
+		expect(decision).toEqual({ action: 'ack', reason: 'missing_item' });
+		expect(harness.identity.getByIdsCalls).toEqual([]);
+		expect(harness.identity.upserts).toHaveLength(0);
+	});
+
 	it('enqueues backfill after max attempts and never deletes the vector', async () => {
 		const harness = createRepairHarness({ visibleIds: [] });
 		const sent: unknown[] = [];

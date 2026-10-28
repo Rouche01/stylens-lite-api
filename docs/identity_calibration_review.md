@@ -25,7 +25,8 @@ End-to-end labeling against the **real** `POST /outfits/extract` path (not a sid
 
 **Cycle rules**
 
-- **Start of cycle:** wipe that user’s closet / outfits / matches / Vectorize vectors (`eval:reset`, also run automatically by `extract:smoke`).
+- **Start of cycle:** wipe that user’s closet / outfits / matches **and** sweep all Vectorize vectors with `user_id = EVAL_USER_ID` (`eval:reset`, also run automatically by `extract:smoke`). Reset deletes known D1 item ids **plus** an orphan sweep so neighbors from the previous cycle cannot pollute ask/link scores.
+- **After reset:** smoke / `eval:reset` wait ~2.5s so in-flight identity/repair queue jobs drain (stale FK work is also soft-acked). Do not extract the first photo immediately after wipe.
 - **Within a cycle:** keep D1 + Vectorize as photos are processed so identity can `ask` / link against earlier fixtures.
 - **Next cycle:** reset again before a new batch.
 

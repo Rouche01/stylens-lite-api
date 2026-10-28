@@ -220,6 +220,28 @@ describe('runClosetIdentityJob', () => {
 		expect(processed).toBe(0);
 	});
 
+	it('acks foreign-key failures as stale instead of retrying after an eval wipe', async () => {
+		const closet = memoryJobs();
+		closet.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'queued' }));
+		const message = mockQueueMessage(queueJob());
+
+		const decision = await runClosetIdentityJob({
+			job: message.body,
+			closet,
+			process: async () => {
+				throw new Error(
+					'D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)'
+				);
+			},
+			log: silentLogger(),
+		});
+		applyQueueDecision(message, decision);
+
+		expect(decision).toEqual({ action: 'ack', reason: 'stale' });
+		expect(message.acks).toBe(1);
+		expect(message.retries).toEqual([]);
+	});
+
 	it('marks the job done after process succeeds', async () => {
 		const closet = memoryJobs();
 		closet.rows.set('u1|users/u1/a.jpg', jobRow({ status: 'queued' }));
