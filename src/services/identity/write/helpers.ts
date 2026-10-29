@@ -24,7 +24,8 @@ export function isSqliteForeignKeyError(err: unknown): boolean {
 export function failedItem(
 	item: ClothingItem,
 	reason: IdentityCreateReason,
-	identityScore?: number | null
+	identityScore?: number | null,
+	diagnostics?: { cosine?: number | null; colorDistance?: number | null }
 ): ProcessedOutfitItem {
 	return {
 		...item,
@@ -35,6 +36,8 @@ export function failedItem(
 		match_id: null,
 		candidate_closet_item_id: null,
 		identity_score: identityScore ?? null,
+		identity_cosine: diagnostics?.cosine ?? null,
+		identity_color_distance: diagnostics?.colorDistance ?? null,
 	};
 }
 

@@ -132,6 +132,7 @@ function createGateHarness(options: {
 						user_id: item.user_id,
 						label: item.label,
 						category: item.category,
+						subcategory: item.subcategory ?? '',
 						vector_indexed_at: item.vector_indexed_at,
 						index_status: item.index_status,
 						index_attempts: item.index_attempts,

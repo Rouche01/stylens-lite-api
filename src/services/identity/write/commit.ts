@@ -18,6 +18,49 @@ export async function commitNewItem(
 	prepared: PreparedClosetCrop,
 	decision: Extract<IdentityDecision, { action: 'create' }>
 ): Promise<ProcessedOutfitItem> {
+	return commitCreatedItem(deps, params, decision, {
+		probeEmbed: closetMatchProbeFromPrepared(prepared),
+		blurHash: prepared.crop_blur_hash,
+		prepared,
+	});
+}
+
+/**
+ * D1 tile + outfit link without embed/Vectorize.
+ * Used for unusable identity crops (e.g. brim-only hats) so they don't poison ANN/color.
+ */
+export async function commitUnindexedItem(
+	deps: OutfitIdentityWriteDeps,
+	params: {
+		userId: string;
+		imageKey: string;
+		outfitId: string;
+		item: ClothingItem;
+	},
+	decision: Extract<IdentityDecision, { action: 'create' }> = { action: 'create', reason: 'skip_query' }
+): Promise<ProcessedOutfitItem> {
+	return commitCreatedItem(deps, params, decision, {
+		probeEmbed: null,
+		blurHash: null,
+		prepared: null,
+	});
+}
+
+async function commitCreatedItem(
+	deps: OutfitIdentityWriteDeps,
+	params: {
+		userId: string;
+		imageKey: string;
+		outfitId: string;
+		item: ClothingItem;
+	},
+	decision: Extract<IdentityDecision, { action: 'create' }>,
+	opts: {
+		probeEmbed: ReturnType<typeof closetMatchProbeFromPrepared> | null;
+		blurHash: string | null;
+		prepared: PreparedClosetCrop | null;
+	}
+): Promise<ProcessedOutfitItem> {
 	const closetItemId = crypto.randomUUID();
 
 	try {
@@ -30,27 +73,32 @@ export async function commitNewItem(
 			color: params.item.color,
 			pattern: params.item.pattern,
 			styleTags: params.item.style_tags || [],
-			probeEmbed: closetMatchProbeFromPrepared(prepared),
+			probeEmbed: opts.probeEmbed,
 		});
 		await deps.closet.linkClosetItemToOutfit({
 			outfitId: params.outfitId,
 			closetItemId: closetItem.id,
 			boundingBox: params.item.bounding_box,
 			confidence: extractionConfidence(params.item.confidence),
-			blurHash: prepared.crop_blur_hash,
+			blurHash: opts.blurHash,
 		});
-		await indexCommittedItem(deps, {
-			userId: params.userId,
-			closetItemId: closetItem.id,
-			category: params.item.category,
-			prepared,
-		});
+		if (opts.prepared) {
+			await indexCommittedItem(deps, {
+				userId: params.userId,
+				closetItemId: closetItem.id,
+				category: params.item.category,
+				prepared: opts.prepared,
+			});
+		}
 		deps.log.info('outfit_identity_created', {
 			outfit_id: params.outfitId,
 			closet_item_id: closetItem.id,
 			reason: decision.reason,
 			identity_score: decision.identityScore ?? null,
+			identity_cosine: decision.cosine ?? null,
+			identity_color_distance: decision.colorDistance ?? null,
 			candidate_closet_item_id: decision.neighborClosetItemId ?? null,
+			indexed: Boolean(opts.prepared),
 			label: params.item.label,
 		});
 		return {
@@ -63,6 +111,8 @@ export async function commitNewItem(
 			// Nearest declined neighbor (eval / calibration); null when no neighbor.
 			candidate_closet_item_id: decision.neighborClosetItemId ?? null,
 			identity_score: decision.identityScore ?? null,
+			identity_cosine: decision.cosine ?? null,
+			identity_color_distance: decision.colorDistance ?? null,
 		};
 	} catch (err) {
 		deps.log.warn(

@@ -2,7 +2,48 @@ import { ClothingItem, ExtractionConfidence } from '../../../types';
 import { isUsableIdentityBox } from '../../../utils/bounding_box';
 import { isIdentityMatch } from '../encode/cropColor';
 import type { QueryClosetCropMatch } from '../encode/cropEncoder';
+import { resolveIdentitySlot, type IdentitySlot } from '../encode/slot';
 import { closetItemVectorId } from '../encode/vectorize.store';
+
+/** Slots where hat≠socks / sneakers≠boots — Claude subcategory is reliable enough to hard-gate asks. */
+const SUBCATEGORY_STRICT_SLOTS: ReadonlySet<IdentitySlot> = new Set(['accessory', 'footwear']);
+
+export type IdentityProbeHints = {
+	category?: string | null;
+	subcategory?: string | null;
+};
+
+export function normalizeIdentitySubcategory(value?: string | null): string | null {
+	const key = value?.trim().toLowerCase();
+	return key || null;
+}
+
+/**
+ * Within accessory/footwear, reject cross-subcategory neighbors (cap must not ask vs socks).
+ * Upper/lower keep Claude-flexible subcategory (jacket↔top swaps). Missing either side → allow.
+ */
+export function identitySubcategoryCompatible(
+	probeSubcategory?: string | null,
+	neighborSubcategory?: string | null,
+	slot?: IdentitySlot | null
+): boolean {
+	if (!slot || !SUBCATEGORY_STRICT_SLOTS.has(slot)) return true;
+	const probe = normalizeIdentitySubcategory(probeSubcategory);
+	const neighbor = normalizeIdentitySubcategory(neighborSubcategory);
+	if (!probe || !neighbor) return true;
+	return probe === neighbor;
+}
+
+export function neighborsCompatibleWithProbe(
+	neighbors: readonly QueryClosetCropMatch[],
+	hints?: IdentityProbeHints
+): QueryClosetCropMatch[] {
+	const slot = resolveIdentitySlot(hints?.category ?? undefined) ?? null;
+	const probeSub = hints?.subcategory;
+	return neighbors.filter((match) =>
+		identitySubcategoryCompatible(probeSub, match.d1_subcategory, slot)
+	);
+}
 
 export type IdentityCreateReason =
 	| 'skip_query'
@@ -24,6 +65,8 @@ export type IdentityDecision =
 			identityScore?: number | null;
 			/** Nearest neighbor declined for ask (below_threshold / missing_candidate). */
 			neighborClosetItemId?: string | null;
+			cosine?: number | null;
+			colorDistance?: number | null;
 	  }
 	| {
 			action: 'ask';
@@ -69,10 +112,25 @@ export function neighborsExcludingSelf(
 	);
 }
 
-export function decideIdentityFromNeighbors(neighbors: QueryClosetCropMatch[]): IdentityDecision {
-	const top = neighbors[0];
-	if (!top) {
-		return { action: 'create', reason: 'no_neighbor' };
+export function decideIdentityFromNeighbors(
+	neighbors: QueryClosetCropMatch[],
+	hints?: IdentityProbeHints
+): IdentityDecision {
+	const compatible = neighborsCompatibleWithProbe(neighbors, hints);
+	const top = compatible[0] ?? neighbors[0];
+	if (!compatible[0]) {
+		if (!neighbors[0]) {
+			return { action: 'create', reason: 'no_neighbor' };
+		}
+		// Wrong-subcategory ANN hit (e.g. hat→socks): create, keep score breadcrumbs.
+		return {
+			action: 'create',
+			reason: 'below_threshold',
+			identityScore: neighbors[0].identity_score,
+			neighborClosetItemId: candidateClosetItemId(neighbors[0]),
+			cosine: neighbors[0].score,
+			colorDistance: neighbors[0].color_distance,
+		};
 	}
 	// Meta-only ids are fine for eval breadcrumbs; asks require a live D1 row
 	// (orphan Vectorize hits after eval reset must not createPendingMatch → FK).
@@ -84,6 +142,8 @@ export function decideIdentityFromNeighbors(neighbors: QueryClosetCropMatch[]): 
 			reason: 'below_threshold',
 			identityScore: top.identity_score,
 			neighborClosetItemId: neighborId,
+			cosine: top.score,
+			colorDistance: top.color_distance,
 		};
 	}
 	if (!d1Candidate) {
@@ -92,6 +152,8 @@ export function decideIdentityFromNeighbors(neighbors: QueryClosetCropMatch[]): 
 			reason: 'missing_candidate',
 			identityScore: top.identity_score,
 			neighborClosetItemId: neighborId,
+			cosine: top.score,
+			colorDistance: top.color_distance,
 		};
 	}
 	return {
@@ -106,10 +168,14 @@ export function decideIdentityFromNeighbors(neighbors: QueryClosetCropMatch[]): 
 export function decideCommitAfterRequery(
 	selfClosetItemId: string,
 	neighbors: QueryClosetCropMatch[],
-	ignoreClosetItemIds: readonly string[] = []
+	ignoreClosetItemIds: readonly string[] = [],
+	hints?: IdentityProbeHints
 ): CommitDecision {
 	const ignored = new Set(ignoreClosetItemIds);
-	const contenders = neighborsExcludingSelf(neighbors, selfClosetItemId).filter((match) => {
+	const contenders = neighborsCompatibleWithProbe(
+		neighborsExcludingSelf(neighbors, selfClosetItemId),
+		hints
+	).filter((match) => {
 		if (!isIdentityMatch(match.identity_score)) return false;
 		const candidateId = candidateClosetItemId(match);
 		if (candidateId && ignored.has(candidateId)) return false;
@@ -154,5 +220,8 @@ export function shouldQueryIdentity(item: ClothingItem): boolean {
 	if (item.confidence === ExtractionConfidence.LOW) {
 		return false;
 	}
-	return isUsableIdentityBox(item.bounding_box);
+	return isUsableIdentityBox(item.bounding_box, {
+		category: item.category,
+		subcategory: item.subcategory,
+	});
 }

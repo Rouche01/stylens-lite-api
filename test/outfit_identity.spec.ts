@@ -54,6 +54,8 @@ describe('decideIdentityFromNeighbors', () => {
 			reason: 'below_threshold',
 			identityScore: 0.24,
 			neighborClosetItemId: 'c1',
+			cosine: 0.96,
+			colorDistance: 0.03,
 		});
 	});
 
@@ -82,6 +84,8 @@ describe('decideIdentityFromNeighbors', () => {
 			reason: 'missing_candidate',
 			identityScore: 0.8,
 			neighborClosetItemId: null,
+			cosine: 0.96,
+			colorDistance: 0.03,
 		});
 	});
 
@@ -100,6 +104,88 @@ describe('decideIdentityFromNeighbors', () => {
 			reason: 'missing_candidate',
 			identityScore: 0.97,
 			neighborClosetItemId: 'orphan-1',
+			cosine: 0.96,
+			colorDistance: 0.03,
+		});
+	});
+
+	it('does not ask a hat against socks in the accessory slot', () => {
+		expect(
+			decideIdentityFromNeighbors(
+				[
+					neighbor({
+						id: 'item:socks-1',
+						closet_item_id: 'socks-1',
+						d1_closet_item_id: 'socks-1',
+						d1_label: 'white socks',
+						d1_subcategory: 'socks',
+						identity_score: 0.785,
+						score: 0.98,
+						color_distance: 0.08,
+					}),
+				],
+				{ category: 'accessory', subcategory: 'hat' }
+			)
+		).toEqual({
+			action: 'create',
+			reason: 'below_threshold',
+			identityScore: 0.785,
+			neighborClosetItemId: 'socks-1',
+			cosine: 0.98,
+			colorDistance: 0.08,
+		});
+	});
+
+	it('skips incompatible accessory neighbors and asks the next hat', () => {
+		expect(
+			decideIdentityFromNeighbors(
+				[
+					neighbor({
+						id: 'item:socks-1',
+						closet_item_id: 'socks-1',
+						d1_closet_item_id: 'socks-1',
+						d1_subcategory: 'socks',
+						identity_score: 0.8,
+					}),
+					neighbor({
+						id: 'item:hat-1',
+						closet_item_id: 'hat-1',
+						d1_closet_item_id: 'hat-1',
+						d1_label: 'black cap',
+						d1_subcategory: 'hat',
+						identity_score: 0.72,
+						score: 0.97,
+						color_distance: 0.05,
+					}),
+				],
+				{ category: 'accessory', subcategory: 'hat' }
+			)
+		).toEqual({
+			action: 'ask',
+			candidateClosetItemId: 'hat-1',
+			identityScore: 0.72,
+			cosine: 0.97,
+			colorDistance: 0.05,
+		});
+	});
+
+	it('still allows cross-subcategory asks on upper (Claude jacket/top swaps)', () => {
+		expect(
+			decideIdentityFromNeighbors(
+				[
+					neighbor({
+						d1_subcategory: 'jacket',
+						identity_score: 0.77,
+					}),
+				],
+				{ category: 'top', subcategory: 'shirt' }
+			)
+		).toEqual({
+			action: 'ask',
+			candidateClosetItemId: 'c1',
+			identityScore: 0.77,
+			cosine: 0.96,
+			colorDistance: 0.03,
 		});
 	});
 });
@@ -187,9 +273,51 @@ describe('shouldQueryIdentity', () => {
 		);
 		expect(shouldQueryIdentity(clothingItem())).toBe(true);
 	});
+
+	it('skips brim-only hat boxes', () => {
+		expect(
+			shouldQueryIdentity(
+				clothingItem({
+					category: ClothingItemCategory.ACCESSORY,
+					subcategory: ClothingItemSubcategory.HAT,
+					label: 'black baseball cap',
+					bounding_box: { x: 32.5, y: 45.1, width: 6.6, height: 3.2 },
+				})
+			)
+		).toBe(false);
+	});
 });
 
 describe('OutfitIdentityProcessor', () => {
+	it('creates without embedding when the hat box is a brim-only strip', async () => {
+		const harness = createHarness({
+			neighbors: [],
+			items: [
+				clothingItem({
+					label: 'black baseball cap',
+					category: ClothingItemCategory.ACCESSORY,
+					subcategory: ClothingItemSubcategory.HAT,
+					bounding_box: { x: 32.5, y: 45.1, width: 6.6, height: 3.2 },
+				}),
+			],
+		});
+		const result = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/test.jpg',
+		});
+
+		expect(result?.items[0]).toMatchObject({
+			identity_status: 'created',
+			identity_reason: 'skip_query',
+			is_new_closet_item: true,
+		});
+		expect(result?.items[0].closet_item_id).toBeTruthy();
+		expect(harness.identity.prepares).toBe(0);
+		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.closet.items).toHaveLength(1);
+	});
+
 	it('creates a closet tile and upserts when there is no neighbor', async () => {
 		const harness = createHarness({ neighbors: [] });
 		const result = await harness.processor.process({
@@ -306,6 +434,8 @@ describe('OutfitIdentityProcessor', () => {
 		expect(result?.items[0].identity_reason).toBe('below_threshold');
 		expect(result?.items[0].identity_score).toBe(0.24);
 		expect(result?.items[0].candidate_closet_item_id).toBe('c1');
+		expect(result?.items[0].identity_cosine).toBe(0.96);
+		expect(result?.items[0].identity_color_distance).toBe(0.13);
 		expect(harness.closet.matches).toHaveLength(0);
 		expect(harness.closet.items).toHaveLength(1);
 	});
@@ -1158,6 +1288,7 @@ function neighbor(overrides: Partial<QueryClosetCropMatch> = {}): QueryClosetCro
 		closet_item_id: 'c1',
 		d1_closet_item_id: 'c1',
 		d1_label: 'olive shirt',
+		d1_subcategory: 'shirt',
 		color_distance: 0.03,
 		identity_score: 0.77,
 		...overrides,
@@ -1340,6 +1471,7 @@ function createHarness(options: {
 					user_id: item.user_id,
 					label: item.label,
 					category: item.category,
+					subcategory: item.subcategory,
 					vector_indexed_at: item.vector_indexed_at ?? null,
 					index_status: item.index_status ?? null,
 					index_attempts: item.index_attempts ?? 0,

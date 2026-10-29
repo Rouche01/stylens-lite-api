@@ -16,7 +16,11 @@ import {
 	rgbaToColorSignature,
 	cropColorDistance,
 	identityScore,
+	identityColorFullPenalty,
+	isDarkNeutral,
+	isDarkNeutralPair,
 	decodePngRgba,
+	COLOR_DISTANCE_FULL_PENALTY_DARK_NEUTRAL,
 } from '../src/services/identity/encode/cropColor';
 import { resolveIdentitySlot } from '../src/services/identity/encode/slot';
 import {
@@ -328,13 +332,50 @@ describe('crop color identity', () => {
 			{ r: 90, g: 112, b: 64, n: 20 },
 		]);
 		const distance = cropColorDistance(rgbaToColorSignature(black), rgbaToColorSignature(olive));
-		expect(distance).toBeGreaterThan(0.35);
+		expect(distance).toBeGreaterThan(0.3);
 		expect(identityScore(0.96, distance)).toBeLessThan(0.5);
+		expect(
+			identityScore(
+				0.96,
+				distance,
+				identityColorFullPenalty(rgbaToColorSignature(black), rgbaToColorSignature(olive))
+			)
+		).toBeLessThan(0.5);
 	});
 
 	it('rejects 0.96 cosine when crop color is as far as olive vs black zip', () => {
 		expect(identityScore(0.96, 0.032)).toBeGreaterThan(0.5);
 		expect(identityScore(0.96, 0.134)).toBeLessThan(0.5);
+	});
+
+	it('allows black vs dark-gray under lighting shift at high cosine', () => {
+		const black = rgbaToColorSignature(flatRgba(22, 22, 24));
+		const darkGray = rgbaToColorSignature(flatRgba(58, 58, 62));
+		expect(isDarkNeutral(black)).toBe(true);
+		expect(isDarkNeutral(darkGray)).toBe(true);
+		const distance = cropColorDistance(black, darkGray);
+		// Must not force the olive-scale 0.45 floor.
+		expect(distance).toBeLessThan(0.35);
+		const score = identityScore(0.98, distance, identityColorFullPenalty(black, darkGray));
+		expect(score).toBeGreaterThanOrEqual(0.5);
+	});
+
+	it('asks on navy vs black at the observed ~0.166 color distance', () => {
+		const black = rgbaToColorSignature(flatRgba(22, 22, 24));
+		const navy = rgbaToColorSignature(flatRgba(40, 45, 70));
+		expect(isDarkNeutral(navy)).toBe(true);
+		expect(isDarkNeutralPair(black, navy)).toBe(true);
+		expect(identityColorFullPenalty(black, navy)).toBe(COLOR_DISTANCE_FULL_PENALTY_DARK_NEUTRAL);
+		// Smoke: cos≈0.984, color_d≈0.166 → must clear ask floor with dark ramp.
+		expect(identityScore(0.984, 0.166, identityColorFullPenalty(black, navy))).toBeGreaterThanOrEqual(0.5);
+	});
+
+	it('still separates near-black from olive with the hard floor', () => {
+		const black = rgbaToColorSignature(flatRgba(22, 22, 24));
+		const olive = rgbaToColorSignature(flatRgba(112, 128, 64));
+		expect(isDarkNeutral(olive)).toBe(false);
+		expect(isDarkNeutralPair(black, olive)).toBe(false);
+		expect(cropColorDistance(black, olive)).toBeGreaterThanOrEqual(0.45);
 	});
 
 	it('decodes a 1×1 PNG', async () => {

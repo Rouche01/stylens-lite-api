@@ -31,6 +31,8 @@ function item(
 		match_id: null,
 		candidate_closet_item_id: null,
 		identity_score: 0.4,
+		identity_cosine: null,
+		identity_color_distance: null,
 		...partial,
 	};
 }

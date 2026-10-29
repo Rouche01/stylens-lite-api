@@ -33,6 +33,8 @@ function item(
 		match_id: null,
 		candidate_closet_item_id: null,
 		identity_score: null,
+		identity_cosine: null,
+		identity_color_distance: null,
 		...partial,
 	};
 }
@@ -100,6 +102,8 @@ describe('identity run logging contract', () => {
 			identity_status: 'created',
 			identity_reason: 'below_threshold',
 			identity_score: 0.4,
+			identity_cosine: null,
+			identity_color_distance: null,
 			closet_item_id: 'c1',
 		});
 	});

@@ -438,6 +438,8 @@ function systemIdentityHtml(item, neighbor = neighborRef(item)) {
 	}
 
 	const score = formatScore(item.identity_score);
+	const cosine = formatScore(item.identity_cosine);
+	const colorD = formatScore(item.identity_color_distance);
 	const statusClass =
 		status === 'created' ? 'pill-created' : status === 'ask' ? 'pill-ask' : status === 'failed' ? 'pill-failed' : 'pill-muted';
 
@@ -455,6 +457,8 @@ function systemIdentityHtml(item, neighbor = neighborRef(item)) {
 				<span class="chip-row-label" style="width:auto;margin:0">System</span>
 				<span class="pill ${statusClass}">${escapeHtml(status || '—')}</span>
 				${score != null ? `<span class="pill pill-muted">score ${escapeHtml(score)}</span>` : ''}
+				${cosine != null ? `<span class="pill pill-muted" title="Vectorize/probe cosine before color blend">cos ${escapeHtml(cosine)}</span>` : ''}
+				${colorD != null ? `<span class="pill pill-muted" title="Crop color distance (full penalty ≥ 0.12)">color ${escapeHtml(colorD)}</span>` : ''}
 				${item.identity_reason ? `<span class="pill pill-muted">${escapeHtml(item.identity_reason)}</span>` : ''}
 			</p>
 			${neighborPreviewHtml(neighbor)}

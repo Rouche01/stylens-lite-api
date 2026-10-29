@@ -8,7 +8,14 @@ export type CropColorSignature = {
 	l: number;
 };
 
-const COLOR_DISTANCE_FULL_PENALTY = 0.12;
+/** Color Δ at which agree→0 for typical garments (olive vs black, etc.). */
+export const COLOR_DISTANCE_FULL_PENALTY = 0.12;
+/**
+ * Wider agree ramp for black / charcoal / navy / dark-gray pairs.
+ * Same physical dark hat under different light often lands ~0.12–0.20 Δ;
+ * the default 0.12 ramp floor-kills ~0.98 cosine to ~0.25.
+ */
+export const COLOR_DISTANCE_FULL_PENALTY_DARK_NEUTRAL = 0.3;
 const CHROMA_HUE_MIN_S = 0.12;
 
 export function rgbToHsl(r: number, g: number, b: number): CropColorSignature {
@@ -44,6 +51,23 @@ function isLikelyBackground(hsl: CropColorSignature): boolean {
 
 function isNearBlack(hsl: CropColorSignature): boolean {
 	return hsl.l < 0.22 && hsl.s < 0.18;
+}
+
+/**
+ * Black / charcoal / navy / dark-gray (low–moderate chroma).
+ * Wide enough for indoor navy caps; olive stays out via saturation.
+ */
+export function isDarkNeutral(hsl: CropColorSignature): boolean {
+	return hsl.l < 0.38 && hsl.s < 0.28;
+}
+
+/** Pair-level dark-neutral: both dark, or mean-dark with capped chroma (lighting shift). */
+export function isDarkNeutralPair(a: CropColorSignature, b: CropColorSignature): boolean {
+	if (isDarkNeutral(a) && isDarkNeutral(b)) return true;
+	const meanL = (a.l + b.l) / 2;
+	const maxL = Math.max(a.l, b.l);
+	const maxS = Math.max(a.s, b.s);
+	return meanL < 0.34 && maxL < 0.42 && maxS < 0.3;
 }
 
 export function rgbaToColorSignature(rgba: Uint8Array): CropColorSignature {
@@ -90,18 +114,45 @@ export function cropColorDistance(a: CropColorSignature, b: CropColorSignature):
 	}
 	dH = (dH / 180) * hueWeight;
 	const distance = Math.hypot(dL, dS, dH);
+	// Near-black vs olive/white/bright: keep hard separation.
+	// Near-black vs charcoal/dark-gray (strict): lighting shift — use raw Δ only.
+	// (Wider isDarkNeutral is for the agree ramp; floor skip stays conservative.)
 	if (isNearBlack(a) !== isNearBlack(b)) {
-		return Math.max(distance, 0.45);
+		const other = isNearBlack(a) ? b : a;
+		const charcoalPeer = other.l < 0.32 && other.s < 0.2;
+		if (!charcoalPeer) {
+			return Math.max(distance, 0.45);
+		}
 	}
 	return distance;
 }
 
-/** Blend Vectorize cosine with crop-color agreement. Color mismatch cannot silent-merge. */
-export function identityScore(cosine: number, colorDistance: number | null): number {
+/** Full-penalty Δ for {@link identityScore}; wider for dark-neutral pairs. */
+export function identityColorFullPenalty(
+	a: CropColorSignature | null | undefined,
+	b: CropColorSignature | null | undefined
+): number {
+	if (a && b && isDarkNeutralPair(a, b)) {
+		return COLOR_DISTANCE_FULL_PENALTY_DARK_NEUTRAL;
+	}
+	return COLOR_DISTANCE_FULL_PENALTY;
+}
+
+/**
+ * Blend Vectorize cosine with crop-color agreement. Color mismatch cannot silent-merge.
+ * @param fullPenalty - Δ at which agree→0 (default {@link COLOR_DISTANCE_FULL_PENALTY}).
+ */
+export function identityScore(
+	cosine: number,
+	colorDistance: number | null,
+	fullPenalty: number = COLOR_DISTANCE_FULL_PENALTY
+): number {
 	if (colorDistance == null || !Number.isFinite(colorDistance)) {
 		return cosine;
 	}
-	const agree = Math.max(0, 1 - colorDistance / COLOR_DISTANCE_FULL_PENALTY);
+	const penalty =
+		Number.isFinite(fullPenalty) && fullPenalty > 0 ? fullPenalty : COLOR_DISTANCE_FULL_PENALTY;
+	const agree = Math.max(0, 1 - colorDistance / penalty);
 	return cosine * (0.25 + 0.75 * agree);
 }
 

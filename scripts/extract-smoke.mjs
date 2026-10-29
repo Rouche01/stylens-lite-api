@@ -120,6 +120,8 @@ function summarizeItems(items) {
 		identity_status: it.identity_status ?? null,
 		identity_reason: it.identity_reason ?? null,
 		identity_score: it.identity_score ?? null,
+		identity_cosine: it.identity_cosine ?? null,
+		identity_color_distance: it.identity_color_distance ?? null,
 		closet_item_id: it.closet_item_id ?? null,
 		candidate_closet_item_id: it.candidate_closet_item_id ?? null,
 		match_id: it.match_id ?? null,
@@ -273,8 +275,14 @@ async function main() {
 				const idBit = row.identity_status
 					? ` identity=${row.identity_status}${row.identity_score != null ? `@${Number(row.identity_score).toFixed(3)}` : ''}`
 					: '';
+				const diagBits = [];
+				if (row.identity_cosine != null) diagBits.push(`cos=${Number(row.identity_cosine).toFixed(3)}`);
+				if (row.identity_color_distance != null) {
+					diagBits.push(`color_d=${Number(row.identity_color_distance).toFixed(3)}`);
+				}
+				const diag = diagBits.length ? ` [${diagBits.join(' ')}]` : '';
 				console.log(
-					`   - [${row.confidence}] ${row.category}/${row.subcategory} ${row.color}: ${row.label}${idBit}`
+					`   - [${row.confidence}] ${row.category}/${row.subcategory} ${row.color}: ${row.label}${idBit}${diag}`
 				);
 			}
 		} catch (err) {

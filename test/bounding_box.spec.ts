@@ -46,6 +46,18 @@ describe('isUsableIdentityBox', () => {
 		expect(isUsableIdentityBox({ x: 0, y: 0, width: 1, height: 1 })).toBe(false);
 		expect(isUsableIdentityBox({ x: 20, y: 15, width: 40, height: 35 })).toBe(true);
 	});
+
+	it('rejects brim-only hat strips that pass area but are too short', () => {
+		const brim = { x: 32.5, y: 45.1, width: 6.6, height: 3.2 };
+		expect(isUsableIdentityBox(brim)).toBe(false);
+		expect(isUsableIdentityBox(brim, { category: 'accessory', subcategory: 'hat' })).toBe(false);
+		expect(
+			isUsableIdentityBox(
+				{ x: 43, y: 24, width: 15.6, height: 6.8 },
+				{ category: 'accessory', subcategory: 'hat' }
+			)
+		).toBe(true);
+	});
 });
 
 describe('outfitExtractionUserPrompt', () => {

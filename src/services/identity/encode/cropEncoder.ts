@@ -18,6 +18,7 @@ import {
 	colorSignatureToMetadata,
 	cropColorDistance,
 	extractCropVisuals,
+	identityColorFullPenalty,
 	identityScore,
 	isIdentityMatch,
 	type CropColorSignature,
@@ -77,6 +78,7 @@ export type QueryClosetCropParams = EmbedClosetCropParams & {
 export type QueryClosetCropMatch = ClosetVectorMatch & {
 	d1_closet_item_id: string | null;
 	d1_label: string | null;
+	d1_subcategory: string | null;
 	color_distance: number | null;
 	identity_score: number;
 };
@@ -282,8 +284,13 @@ export class CropEncoder {
 					...match,
 					d1_closet_item_id: item?.id ?? null,
 					d1_label: item?.label ?? null,
+					d1_subcategory: item?.subcategory?.trim() ? item.subcategory : null,
 					color_distance: colorDistance,
-					identity_score: identityScore(match.score, colorDistance),
+					identity_score: identityScore(
+						match.score,
+						colorDistance,
+						identityColorFullPenalty(probeColor, storedColor)
+					),
 				};
 			})
 		);

@@ -1,5 +1,5 @@
 import type { ClosetMatchProbeEmbed } from '../../../db/closet';
-import { cropColorDistance, identityScore } from '../encode/cropColor';
+import { cropColorDistance, identityColorFullPenalty, identityScore } from '../encode/cropColor';
 import type { PreparedClosetCrop, QueryClosetCropMatch } from '../encode/cropEncoder';
 import { closetItemVectorId } from '../encode/vectorize.store';
 import { resolveIdentitySlot } from '../encode/slot';
@@ -11,6 +11,7 @@ export const UNINDEXED_PROBE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export type UnindexedClosetProbe = {
 	closetItemId: string;
 	category: string;
+	subcategory?: string;
 	label: string;
 	probeEmbed: ClosetMatchProbeEmbed;
 };
@@ -29,6 +30,7 @@ export function scoreUnindexedProbes(params: {
 	prepared: PreparedClosetCrop;
 	probes: readonly UnindexedClosetProbe[];
 	category?: string;
+	subcategory?: string;
 }): QueryClosetCropMatch[] {
 	const probeSlot = resolveIdentitySlot(params.category);
 	const matches: QueryClosetCropMatch[] = [];
@@ -45,18 +47,24 @@ export function scoreUnindexedProbes(params: {
 		if (embed.vector.length !== params.prepared.vector.length) continue;
 
 		const cosine = cosineSimilarity(params.prepared.vector, embed.vector);
+		const probeColor = params.prepared.crop_color;
+		const storedColor = embed.crop_color;
 		const colorDistance =
-			params.prepared.crop_color && embed.crop_color
-				? cropColorDistance(params.prepared.crop_color, embed.crop_color)
-				: null;
+			probeColor && storedColor ? cropColorDistance(probeColor, storedColor) : null;
+		const subcategory = row.subcategory?.trim() || null;
 		matches.push({
 			id: closetItemVectorId(row.closetItemId),
 			score: cosine,
 			closet_item_id: row.closetItemId,
 			d1_closet_item_id: row.closetItemId,
 			d1_label: row.label,
+			d1_subcategory: subcategory,
 			color_distance: colorDistance,
-			identity_score: identityScore(cosine, colorDistance),
+			identity_score: identityScore(
+				cosine,
+				colorDistance,
+				identityColorFullPenalty(probeColor, storedColor)
+			),
 		});
 	}
 

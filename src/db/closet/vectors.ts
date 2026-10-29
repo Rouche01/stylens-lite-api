@@ -16,6 +16,7 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 			user_id: string;
 			label: string;
 			category: string;
+			subcategory: string;
 			vector_indexed_at: number | null;
 			index_status: ClosetIndexStatus | null;
 			index_attempts: number;
@@ -23,7 +24,7 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 			const row = await this.db
 				.prepare(
 					`
-					SELECT id, user_id, label, category, vector_indexed_at, index_status, index_attempts
+					SELECT id, user_id, label, category, subcategory, vector_indexed_at, index_status, index_attempts
 					FROM closet_items WHERE id = ?
 					`
 				)
@@ -33,6 +34,7 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 					user_id: string;
 					label: string;
 					category: string;
+					subcategory: string;
 					vector_indexed_at: number | null;
 					index_status: string | null;
 					index_attempts: number | null;
@@ -43,6 +45,7 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 				user_id: row.user_id,
 				label: row.label,
 				category: row.category,
+				subcategory: row.subcategory ?? '',
 				vector_indexed_at: row.vector_indexed_at ?? null,
 				index_status: parseClosetIndexStatus(row.index_status),
 				index_attempts: row.index_attempts ?? 0,
@@ -172,6 +175,7 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 			Array<{
 				closetItemId: string;
 				category: string;
+				subcategory: string;
 				label: string;
 				probeEmbed: ClosetMatchProbeEmbed;
 				indexStatus: ClosetIndexStatus | null;
@@ -184,7 +188,7 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 			const result = await this.db
 				.prepare(
 					`
-					SELECT id, category, label, probe_embed, index_status, created_at
+					SELECT id, category, subcategory, label, probe_embed, index_status, created_at
 					FROM closet_items
 					WHERE user_id = ?
 						AND vector_indexed_at IS NULL
@@ -199,6 +203,7 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 				.all<{
 					id: string;
 					category: string;
+					subcategory: string;
 					label: string;
 					probe_embed: string;
 					index_status: string | null;
@@ -208,6 +213,7 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 			const rows: Array<{
 				closetItemId: string;
 				category: string;
+				subcategory: string;
 				label: string;
 				probeEmbed: ClosetMatchProbeEmbed;
 				indexStatus: ClosetIndexStatus | null;
@@ -219,6 +225,7 @@ export function WithClosetVectors<TBase extends Ctor>(Base: TBase) {
 				rows.push({
 					closetItemId: row.id,
 					category: row.category,
+					subcategory: row.subcategory ?? '',
 					label: row.label,
 					probeEmbed,
 					indexStatus: parseClosetIndexStatus(row.index_status),

@@ -97,6 +97,10 @@ export type ProcessedOutfitItem = ClothingItem & {
 	match_id: string | null;
 	candidate_closet_item_id: string | null;
 	identity_score: number | null;
+	/** Raw Vectorize / probe cosine before crop-color blend (eval diagnostics). */
+	identity_cosine: number | null;
+	/** Crop-color distance used in identityScore; null when color unavailable. */
+	identity_color_distance: number | null;
 };
 
 export type ProcessOutfitImageResult = {

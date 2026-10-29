@@ -65,6 +65,8 @@ export type IdentityRunItemLogRow = {
 	identity_status: ProcessedOutfitItem['identity_status'];
 	identity_reason: string;
 	identity_score: number | null;
+	identity_cosine: number | null;
+	identity_color_distance: number | null;
 	candidate_closet_item_id: string | null;
 	closet_item_id: string | null;
 };
@@ -144,6 +146,8 @@ export function toIdentityRunItemLogRow(item: ProcessedOutfitItem): IdentityRunI
 		identity_status: item.identity_status,
 		identity_reason: String(item.identity_reason),
 		identity_score: item.identity_score,
+		identity_cosine: item.identity_cosine,
+		identity_color_distance: item.identity_color_distance,
 		candidate_closet_item_id: item.candidate_closet_item_id,
 		closet_item_id: item.closet_item_id,
 	};

@@ -1,5 +1,6 @@
 import { createClosetDB } from '../../../db';
 import { ClothingItem } from '../../../types';
+import { isUsableIdentityBox } from '../../../utils/bounding_box';
 import { Logger } from '../../../utils/logger.utils';
 import { createOutfitExtractionService } from '../../outfit_extraction.svc';
 import { createRealtimeService } from '../../realtime.svc';
@@ -25,7 +26,7 @@ import {
 import { createClosetMatchDigestScheduler } from '../notify/digest';
 import { createClosetCatalogNotifier, type ClosetCatalogNotifier } from '../notify/catalogBroadcast';
 import { ClosetMatchResolvedError, IdentityBusyError } from './errors';
-import { commitNewItem } from './commit';
+import { commitNewItem, commitUnindexedItem } from './commit';
 import { extractSnapshot, extractionConfidence, failedItem, isSqliteForeignKeyError } from './helpers';
 import { resolveClosetMatch } from './resolveMatch';
 import type {
@@ -238,6 +239,8 @@ export class OutfitIdentityProcessor {
 					match_id: null,
 					candidate_closet_item_id: null,
 					identity_score: null,
+					identity_cosine: null,
+					identity_color_distance: null,
 				};
 			} catch (err) {
 				// Stale closet id after eval reset / concurrent wipe — fall through to embed+create.
@@ -254,24 +257,47 @@ export class OutfitIdentityProcessor {
 			}
 		}
 
+		const box = params.item.bounding_box;
+		if (
+			!box ||
+			!isUsableIdentityBox(box, {
+				category: params.item.category,
+				subcategory: params.item.subcategory,
+			})
+		) {
+			// Brim-only / tiny crops poison Vectorize + crop-color; keep a D1 tile, skip embed.
+			log.warn('outfit_identity_unusable_box', {
+				outfit_id: params.outfitId,
+				label: params.item.label,
+				category: params.item.category,
+				subcategory: params.item.subcategory,
+				box_w: box?.width,
+				box_h: box?.height,
+				box_area: box ? box.width * box.height : undefined,
+			});
+			return commitUnindexedItem(this.writeDeps(log), params, {
+				action: 'create',
+				reason: 'skip_query',
+			});
+		}
+
 		let prepared: PreparedClosetCrop;
 		try {
 			prepared = await this.identity.prepareClosetCrop({
 				imageKey: params.imageKey,
-				boundingBox: params.item.bounding_box,
+				boundingBox: box,
 				signal: params.signal,
 				log,
 			});
 		} catch (err) {
-			const box = params.item.bounding_box;
 			log.warn(
 				'outfit_identity_embed_failed',
 				{
 					image_key: params.imageKey,
 					label: params.item.label,
-					box_w: box?.width,
-					box_h: box?.height,
-					box_area: box ? box.width * box.height : undefined,
+					box_w: box.width,
+					box_h: box.height,
+					box_area: box.width * box.height,
 				},
 				err
 			);
@@ -300,6 +326,8 @@ export class OutfitIdentityProcessor {
 						reason: 'missing_candidate',
 						identityScore: decision.identityScore,
 						neighborClosetItemId: decision.candidateClosetItemId,
+						cosine: decision.cosine,
+						colorDistance: decision.colorDistance,
 					});
 				}
 				throw err;
@@ -333,10 +361,14 @@ export class OutfitIdentityProcessor {
 				params.userId,
 				prepared,
 				params.item.category,
+				params.item.subcategory,
 				log
 			);
 			const neighbors = mergeIdentityNeighbors(queried.neighbors, localNeighbors);
-			return decideIdentityFromNeighbors(neighbors);
+			return decideIdentityFromNeighbors(neighbors, {
+				category: params.item.category,
+				subcategory: params.item.subcategory,
+			});
 		} catch (err) {
 			log.warn(
 				'outfit_identity_query_failed',
@@ -355,6 +387,7 @@ export class OutfitIdentityProcessor {
 		userId: string,
 		prepared: PreparedClosetCrop,
 		category: string,
+		subcategory: string,
 		log: Logger
 	): Promise<QueryClosetCropMatch[]> {
 		try {
@@ -362,7 +395,7 @@ export class OutfitIdentityProcessor {
 				limit: UNINDEXED_PROBE_LIMIT,
 				maxAgeMs: UNINDEXED_PROBE_MAX_AGE_MS,
 			});
-			return scoreUnindexedProbes({ prepared, probes, category });
+			return scoreUnindexedProbes({ prepared, probes, category, subcategory });
 		} catch (err) {
 			log.warn('outfit_identity_unindexed_fallback_failed', { user_id: userId }, err);
 			return [];
@@ -433,6 +466,8 @@ export class OutfitIdentityProcessor {
 			match_id: matchId,
 			candidate_closet_item_id: decision.candidateClosetItemId,
 			identity_score: decision.identityScore,
+			identity_cosine: decision.cosine,
+			identity_color_distance: decision.colorDistance,
 		};
 	}
 

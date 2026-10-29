@@ -19,12 +19,42 @@ export type ImageTrim = {
 /** Percent-area floor. Tiny Florence false boxes skip Vectorize and create a new tile. */
 export const IDENTITY_BOX_MIN_AREA = 2;
 
+/** Flat brim strips (e.g. 6×3) poison crop-color; require a minimum height. */
+export const IDENTITY_BOX_MIN_HEIGHT = 4;
+
+/** Hats need a taller crop than the generic floor (brim-only boxes are ~3% tall). */
+export const IDENTITY_HAT_BOX_MIN_HEIGHT = 5;
+
+export type UsableIdentityBoxOptions = {
+	category?: string | null;
+	subcategory?: string | null;
+};
+
+function isHatItem(options?: UsableIdentityBoxOptions): boolean {
+	const sub = options?.subcategory?.trim().toLowerCase();
+	return sub === 'hat' || sub === 'cap';
+}
+
+/** Minimum percent height for identity embed (stricter for hats). */
+export function identityBoxMinHeight(options?: UsableIdentityBoxOptions): number {
+	return isHatItem(options) ? IDENTITY_HAT_BOX_MIN_HEIGHT : IDENTITY_BOX_MIN_HEIGHT;
+}
+
 /** True when the crop is large enough to embed as identity. */
-export function isUsableIdentityBox(box: PercentBox): boolean {
+export function isUsableIdentityBox(box: PercentBox, options?: UsableIdentityBoxOptions): boolean {
 	if (!Number.isFinite(box.width) || !Number.isFinite(box.height)) {
 		return false;
 	}
-	return box.width * box.height >= IDENTITY_BOX_MIN_AREA;
+	if (box.width <= 0 || box.height <= 0) {
+		return false;
+	}
+	if (box.width * box.height < IDENTITY_BOX_MIN_AREA) {
+		return false;
+	}
+	if (box.height < identityBoxMinHeight(options)) {
+		return false;
+	}
+	return true;
 }
 
 /** Extra percent of the box added on each side before converting to CF Images trim. */
