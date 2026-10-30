@@ -37,11 +37,13 @@ npm run dev
 npm run extract:smoke
 # or: npm run extract:smoke -- /path/to/outfits-set-v1 photo1.jpg photo2.jpg
 # debug only: npm run extract:smoke -- --no-reset
+# identity iteration: npm run extract:smoke -- --reuse-extract
+# force Claude: npm run extract:smoke -- --reuse-extract --bust-extract-cache
 
 npm run eval:ui   # http://127.0.0.1:8788 — boxes + system identity + your labels
 ```
 
-Smoke JSON lands in `tmp/extract_smoke/` (`source: "api_extract"`). Labels save to `tmp/extract_smoke/labels.json`.
+Smoke JSON lands in `tmp/extract_smoke/` (`source: "api_extract"`). Labels save to `tmp/extract_smoke/labels.json`. Extract snapshots cache under `tmp/extract_smoke/extract_cache/` (see `--reuse-extract` in `docs/identity_manifest.md`).
 
 Manual wipe without a full smoke: `npm run eval:reset`.
 

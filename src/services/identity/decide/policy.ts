@@ -8,30 +8,60 @@ import { closetItemVectorId } from '../encode/vectorize.store';
 /** Slots where hat≠socks / sneakers≠boots — Claude subcategory is reliable enough to hard-gate asks. */
 const SUBCATEGORY_STRICT_SLOTS: ReadonlySet<IdentitySlot> = new Set(['accessory', 'footwear']);
 
+/** Closed shoes: soft-compatible (×{@link SUBCATEGORY_FAMILY_PENALTY}); open vs closed stays hard-blocked. */
+const CLOSED_SHOE_SUBCATEGORIES: ReadonlySet<string> = new Set(['boots', 'sneakers', 'loafers']);
+
+/** Multiplicative score penalty when subcategory differs but shares a soft family. */
+export const SUBCATEGORY_FAMILY_PENALTY = 0.85;
+
 export type IdentityProbeHints = {
 	category?: string | null;
 	subcategory?: string | null;
 };
+
+export type IdentitySubcategoryRelation = 'exact' | 'family' | 'reject' | 'open';
 
 export function normalizeIdentitySubcategory(value?: string | null): string | null {
 	const key = value?.trim().toLowerCase();
 	return key || null;
 }
 
+function closedShoeFamily(sub: string): boolean {
+	return CLOSED_SHOE_SUBCATEGORIES.has(sub);
+}
+
+/**
+ * How probe vs neighbor subcategory relate for identity gating.
+ * - exact / open → keep score
+ * - family → allow with {@link SUBCATEGORY_FAMILY_PENALTY}
+ * - reject → drop neighbor (hat≠socks; boots≠sandals)
+ */
+export function identitySubcategoryRelation(
+	probeSubcategory?: string | null,
+	neighborSubcategory?: string | null,
+	slot?: IdentitySlot | null
+): IdentitySubcategoryRelation {
+	if (!slot || !SUBCATEGORY_STRICT_SLOTS.has(slot)) return 'open';
+	const probe = normalizeIdentitySubcategory(probeSubcategory);
+	const neighbor = normalizeIdentitySubcategory(neighborSubcategory);
+	if (!probe || !neighbor) return 'open';
+	if (probe === neighbor) return 'exact';
+	if (slot === 'footwear' && closedShoeFamily(probe) && closedShoeFamily(neighbor)) {
+		return 'family';
+	}
+	return 'reject';
+}
+
 /**
  * Within accessory/footwear, reject cross-subcategory neighbors (cap must not ask vs socks).
- * Upper/lower keep Claude-flexible subcategory (jacket↔top swaps). Missing either side → allow.
+ * Closed shoes (boots/sneakers/loafers) are soft-compatible. Upper/lower stay open (Claude swaps).
  */
 export function identitySubcategoryCompatible(
 	probeSubcategory?: string | null,
 	neighborSubcategory?: string | null,
 	slot?: IdentitySlot | null
 ): boolean {
-	if (!slot || !SUBCATEGORY_STRICT_SLOTS.has(slot)) return true;
-	const probe = normalizeIdentitySubcategory(probeSubcategory);
-	const neighbor = normalizeIdentitySubcategory(neighborSubcategory);
-	if (!probe || !neighbor) return true;
-	return probe === neighbor;
+	return identitySubcategoryRelation(probeSubcategory, neighborSubcategory, slot) !== 'reject';
 }
 
 export function neighborsCompatibleWithProbe(
@@ -40,9 +70,38 @@ export function neighborsCompatibleWithProbe(
 ): QueryClosetCropMatch[] {
 	const slot = resolveIdentitySlot(hints?.category ?? undefined) ?? null;
 	const probeSub = hints?.subcategory;
-	return neighbors.filter((match) =>
-		identitySubcategoryCompatible(probeSub, match.d1_subcategory, slot)
-	);
+	const out: QueryClosetCropMatch[] = [];
+	for (const match of neighbors) {
+		const relation = identitySubcategoryRelation(probeSub, match.d1_subcategory, slot);
+		if (relation === 'reject') continue;
+		if (relation === 'family') {
+			out.push({
+				...match,
+				identity_score: match.identity_score * SUBCATEGORY_FAMILY_PENALTY,
+			});
+			continue;
+		}
+		out.push(match);
+	}
+	return out.sort((a, b) => b.identity_score - a.identity_score);
+}
+
+/**
+ * One row per closet item — keep the wear with the highest identity_score.
+ * Multiple Vectorize vectors can share `closet_item_id` after confirmed-same prototypes.
+ */
+export function collapseNeighborsByClosetItem(
+	neighbors: readonly QueryClosetCropMatch[]
+): QueryClosetCropMatch[] {
+	const best = new Map<string, QueryClosetCropMatch>();
+	for (const match of neighbors) {
+		const key = candidateClosetItemId(match) || match.id;
+		const prev = best.get(key);
+		if (!prev || match.identity_score > prev.identity_score) {
+			best.set(key, match);
+		}
+	}
+	return [...best.values()].sort((a, b) => b.identity_score - a.identity_score);
 }
 
 export type IdentityCreateReason =
@@ -116,20 +175,21 @@ export function decideIdentityFromNeighbors(
 	neighbors: QueryClosetCropMatch[],
 	hints?: IdentityProbeHints
 ): IdentityDecision {
-	const compatible = neighborsCompatibleWithProbe(neighbors, hints);
-	const top = compatible[0] ?? neighbors[0];
+	const collapsed = collapseNeighborsByClosetItem(neighbors);
+	const compatible = neighborsCompatibleWithProbe(collapsed, hints);
+	const top = compatible[0] ?? collapsed[0];
 	if (!compatible[0]) {
-		if (!neighbors[0]) {
+		if (!collapsed[0]) {
 			return { action: 'create', reason: 'no_neighbor' };
 		}
 		// Wrong-subcategory ANN hit (e.g. hat→socks): create, keep score breadcrumbs.
 		return {
 			action: 'create',
 			reason: 'below_threshold',
-			identityScore: neighbors[0].identity_score,
-			neighborClosetItemId: candidateClosetItemId(neighbors[0]),
-			cosine: neighbors[0].score,
-			colorDistance: neighbors[0].color_distance,
+			identityScore: collapsed[0].identity_score,
+			neighborClosetItemId: candidateClosetItemId(collapsed[0]),
+			cosine: collapsed[0].score,
+			colorDistance: collapsed[0].color_distance,
 		};
 	}
 	// Meta-only ids are fine for eval breadcrumbs; asks require a live D1 row
@@ -173,7 +233,7 @@ export function decideCommitAfterRequery(
 ): CommitDecision {
 	const ignored = new Set(ignoreClosetItemIds);
 	const contenders = neighborsCompatibleWithProbe(
-		neighborsExcludingSelf(neighbors, selfClosetItemId),
+		neighborsExcludingSelf(collapseNeighborsByClosetItem(neighbors), selfClosetItemId),
 		hints
 	).filter((match) => {
 		if (!isIdentityMatch(match.identity_score)) return false;

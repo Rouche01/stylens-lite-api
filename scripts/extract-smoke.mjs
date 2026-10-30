@@ -7,19 +7,31 @@
  *
  *   npm run extract:smoke
  *   npm run extract:smoke -- --no-reset
+ *   npm run extract:smoke -- --reuse-extract
+ *   npm run extract:smoke -- --reuse-extract --bust-extract-cache
  *   npm run extract:smoke -- /path/to/outfits-set-v1 img1.jpg img2.jpg
  *
  * Probe artifacts (admin extract only): each item may include `identity_probe`
  * (encoder, vector, crop_color, crop_image_key). Crops are downloaded under
  * tmp/extract_smoke/work/<stamp>/crops/ for offline replay.
+ *
+ * --reuse-extract: skip Claude+grounding when a cache hit exists for
+ *   sha256(image bytes) + prompt/schema version (see extract_cache/).
  */
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const DEFAULT_SET = resolve(ROOT, '../outfits-set-v1');
 const OUT_DIR = join(ROOT, 'tmp/extract_smoke');
+const EXTRACT_CACHE_DIR = join(OUT_DIR, 'extract_cache');
+const PROMPT_PATHS = [
+	join(ROOT, 'src/llm/prompts/outfit_extraction.ts'),
+	join(ROOT, 'src/llm/schemas/outfit_extraction.schema.ts'),
+];
 
 const DEFAULT_FILES = [
 	'IMG_3009.jpg',
@@ -91,8 +103,94 @@ function parseArgs(argv) {
 
 	return {
 		noReset: flags.has('--no-reset'),
+		reuseExtract: flags.has('--reuse-extract'),
+		bustExtractCache: flags.has('--bust-extract-cache'),
 		setDir,
 		files: files.map((f) => (f.includes('/') || f.startsWith('.') ? resolve(f) : join(setDir, f))),
+	};
+}
+
+function sha256Hex(buf) {
+	return createHash('sha256').update(buf).digest('hex');
+}
+
+async function resolvePromptVersion(env) {
+	const parts = [];
+	for (const path of PROMPT_PATHS) {
+		try {
+			parts.push(await readFile(path, 'utf8'));
+		} catch {
+			parts.push(`missing:${basename(path)}`);
+		}
+	}
+	const model =
+		env.ANTHROPIC_OUTFIT_EXTRACTION_MODEL_VERSION ||
+		env.OPENAI_OUTFIT_EXTRACTION_MODEL_VERSION ||
+		env.OUTFIT_EXTRACTION_MODEL ||
+		'';
+	parts.push(`model:${model}`);
+	return sha256Hex(parts.join('\n')).slice(0, 16);
+}
+
+function extractCachePath(imageSha, promptVersion) {
+	return join(EXTRACT_CACHE_DIR, `${imageSha.slice(0, 24)}_${promptVersion}.json`);
+}
+
+async function loadExtractCache(imageSha, promptVersion) {
+	const path = extractCachePath(imageSha, promptVersion);
+	if (!existsSync(path)) return null;
+	try {
+		const parsed = JSON.parse(await readFile(path, 'utf8'));
+		if (parsed?.image_sha256 !== imageSha || parsed?.prompt_version !== promptVersion) return null;
+		if (!parsed.extraction || !Array.isArray(parsed.extraction.items)) return null;
+		const dims = parsed.extraction.image_dimensions;
+		if (!dims || typeof dims.width !== 'number' || typeof dims.height !== 'number') return null;
+		return { path, extraction: parsed.extraction };
+	} catch {
+		return null;
+	}
+}
+
+async function saveExtractCache({ imageSha, promptVersion, sourceFile, extraction }) {
+	await mkdir(EXTRACT_CACHE_DIR, { recursive: true });
+	const path = extractCachePath(imageSha, promptVersion);
+	const payload = {
+		version: 1,
+		image_sha256: imageSha,
+		prompt_version: promptVersion,
+		source_file: sourceFile,
+		cached_at: new Date().toISOString(),
+		extraction: {
+			items: extraction.items,
+			item_count: extraction.item_count ?? extraction.items.length,
+			image_dimensions: extraction.image_dimensions,
+			extracted_at: extraction.extracted_at ?? new Date().toISOString(),
+			// image_url is rewritten on reuse to the current upload
+			image_url: extraction.image_url ?? '',
+		},
+	};
+	await writeFile(path, JSON.stringify(payload, null, 2));
+	return path;
+}
+
+/** Strip identity/probe fields so the cache stays a pure extraction snapshot. */
+function extractionFromExtractResponse(body) {
+	const items = (Array.isArray(body?.items) ? body.items : []).map((it) => ({
+		label: it.label,
+		category: it.category,
+		subcategory: it.subcategory,
+		color: it.color,
+		pattern: it.pattern,
+		style_tags: it.style_tags || [],
+		confidence: it.confidence,
+		bounding_box: it.bounding_box,
+	}));
+	return {
+		items,
+		item_count: items.length,
+		image_url: body?.image_url || '',
+		extracted_at: body?.extracted_at || new Date().toISOString(),
+		image_dimensions: body?.image_dimensions || null,
 	};
 }
 
@@ -217,7 +315,7 @@ async function uploadPhoto({ base, srcPath }) {
 	};
 }
 
-async function extractOutfit({ base, adminKey, userId, imageKey, imageUrl }) {
+async function extractOutfit({ base, adminKey, userId, imageKey, imageUrl, cachedExtraction }) {
 	const started = Date.now();
 	const res = await fetch(`${base}/outfits/extract`, {
 		method: 'POST',
@@ -229,6 +327,7 @@ async function extractOutfit({ base, adminKey, userId, imageKey, imageUrl }) {
 			userId,
 			imageKey,
 			...(imageUrl ? { imageUrl } : {}),
+			...(cachedExtraction ? { cachedExtraction } : {}),
 		}),
 	});
 	const elapsedMs = Date.now() - started;
@@ -236,7 +335,7 @@ async function extractOutfit({ base, adminKey, userId, imageKey, imageUrl }) {
 	if (!res.ok) {
 		throw new Error(`extract failed: ${errorMessage(body, res.status, res.statusText)} (${text.slice(0, 240)})`);
 	}
-	return { body, elapsedMs };
+	return { body, elapsedMs, reusedExtract: Boolean(cachedExtraction) };
 }
 
 async function probeApi(base) {
@@ -251,7 +350,7 @@ async function probeApi(base) {
 }
 
 async function main() {
-	const { noReset, setDir, files } = parseArgs(process.argv.slice(2));
+	const { noReset, reuseExtract, bustExtractCache, setDir, files } = parseArgs(process.argv.slice(2));
 	const env = parseDevVars(await readFile(join(ROOT, '.dev.vars'), 'utf8'));
 	const base = (env.EVAL_API_BASE_URL || 'http://127.0.0.1:8787').replace(/\/$/, '');
 	const adminKey = env.ADMIN_API_KEY;
@@ -266,11 +365,17 @@ async function main() {
 
 	await probeApi(base);
 	await mkdir(OUT_DIR, { recursive: true });
+	const promptVersion = await resolvePromptVersion(env);
 
 	console.log(`API extract smoke — ${base}`);
 	console.log(`Eval user: ${userId}`);
 	console.log(`Set: ${setDir}`);
 	console.log(`Photos (${files.length}): ${files.map((f) => basename(f)).join(', ')}`);
+	console.log(
+		reuseExtract
+			? `Extract cache: reuse on (prompt=${promptVersion}${bustExtractCache ? ', bust' : ''})`
+			: 'Extract cache: write-through (pass --reuse-extract to skip Claude on hits)'
+	);
 	console.log(noReset ? 'Reset: skipped (--no-reset)\n' : 'Reset: once at cycle start\n');
 
 	let resetResult = null;
@@ -295,18 +400,59 @@ async function main() {
 	const results = [];
 	let probeCount = 0;
 	let cropCount = 0;
+	let extractCacheHits = 0;
+	let extractCacheMisses = 0;
 	for (const srcPath of files) {
 		const file = basename(srcPath);
 		process.stdout.write(`→ ${file} ... `);
 		try {
+			const bytes = await readFile(srcPath);
+			const imageSha = sha256Hex(bytes);
+			let cachedExtraction = null;
+			if (reuseExtract && !bustExtractCache) {
+				const hit = await loadExtractCache(imageSha, promptVersion);
+				if (hit) {
+					cachedExtraction = {
+						...hit.extraction,
+						image_url: '', // filled after upload
+					};
+					extractCacheHits += 1;
+				} else {
+					extractCacheMisses += 1;
+				}
+			} else if (reuseExtract && bustExtractCache) {
+				extractCacheMisses += 1;
+			}
+
 			const uploaded = await uploadPhoto({ base, srcPath });
-			const { body, elapsedMs } = await extractOutfit({
+			if (cachedExtraction) {
+				cachedExtraction = {
+					...cachedExtraction,
+					image_url: uploaded.imageUrl || cachedExtraction.image_url || '',
+				};
+			}
+			const { body, elapsedMs, reusedExtract } = await extractOutfit({
 				base,
 				adminKey,
 				userId,
 				imageKey: uploaded.imageKey,
 				imageUrl: uploaded.imageUrl,
+				cachedExtraction,
 			});
+
+			// Always refresh cache from a live extract; on reuse keep existing entry.
+			if (!reusedExtract) {
+				const snap = extractionFromExtractResponse(body);
+				if (snap.image_dimensions && snap.items.length) {
+					await saveExtractCache({
+						imageSha,
+						promptVersion,
+						sourceFile: file,
+						extraction: snap,
+					});
+				}
+			}
+
 			const rawItems = Array.isArray(body?.items) ? body.items : [];
 			const photoCropsDir = join(cropsRoot, file.replace(/[^\w.-]+/g, '_'));
 			await mkdir(photoCropsDir, { recursive: true });
@@ -330,8 +476,11 @@ async function main() {
 				items,
 				summary: summarizeItems(items),
 			};
-			results.push(result);
-			console.log(`${result.item_count} items in ${elapsedMs}ms (outfit=${result.outfit_id || '—'})`);
+			results.push({ ...result, extract_reused: reusedExtract, image_sha256: imageSha });
+			const reuseBit = reusedExtract ? ' extract=cache' : '';
+			console.log(
+				`${result.item_count} items in ${elapsedMs}ms (outfit=${result.outfit_id || '—'})${reuseBit}`
+			);
 			for (const row of result.summary) {
 				const idBit = row.identity_status
 					? ` identity=${row.identity_status}${row.identity_score != null ? `@${Number(row.identity_score).toFixed(3)}` : ''}`
@@ -374,7 +523,15 @@ async function main() {
 				work_dir: relative(ROOT, workDir),
 				probe_count: probeCount,
 				crop_count: cropCount,
-				note: 'Full POST /outfits/extract cycle. Closet accumulates across photos; reset only at cycle start. Admin extract includes identity_probe; crops under work_dir/crops/.',
+				extract_cache: {
+					enabled: reuseExtract,
+					bust: bustExtractCache,
+					prompt_version: promptVersion,
+					hits: extractCacheHits,
+					misses: extractCacheMisses,
+					dir: relative(ROOT, EXTRACT_CACHE_DIR),
+				},
+				note: 'Full POST /outfits/extract cycle. Closet accumulates across photos; reset only at cycle start. Admin extract includes identity_probe; crops under work_dir/crops/. Pass --reuse-extract to skip Claude on cache hits.',
 				results,
 			},
 			null,
@@ -384,8 +541,11 @@ async function main() {
 
 	console.log(`Wrote ${outPath}`);
 	console.log(`Probes: ${probeCount} · crops saved: ${cropCount} → ${relative(ROOT, cropsRoot)}`);
+	if (reuseExtract) {
+		console.log(`Extract cache: ${extractCacheHits} hit · ${extractCacheMisses} miss (${relative(ROOT, EXTRACT_CACHE_DIR)})`);
+	}
 	console.log(`Done: ${ok} ok, ${fail} failed`);
-	console.log('Tip: npm run eval:ui  ·  npm run identity:sink (optional run artifacts)');
+	console.log('Tip: npm run eval:ui  ·  npm run identity:replay');
 	if (fail) process.exitCode = 1;
 }
 

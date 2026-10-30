@@ -44,6 +44,9 @@ const SLOT_BY_CATEGORY = {
 };
 
 const SUBCATEGORY_STRICT_SLOTS = new Set(['accessory', 'footwear']);
+const CLOSED_SHOE_SUBCATEGORIES = new Set(['boots', 'sneakers', 'loafers']);
+/** Keep in sync with src/services/identity/decide/policy.ts */
+const SUBCATEGORY_FAMILY_PENALTY = 0.85;
 
 function parseArgs(argv) {
 	const flags = new Set();
@@ -132,12 +135,16 @@ function normalizeSubcategory(value) {
 	return key || null;
 }
 
-function subcategoryCompatible(probeSub, neighborSub, slot) {
-	if (!slot || !SUBCATEGORY_STRICT_SLOTS.has(slot)) return true;
+function subcategoryRelation(probeSub, neighborSub, slot) {
+	if (!slot || !SUBCATEGORY_STRICT_SLOTS.has(slot)) return 'open';
 	const probe = normalizeSubcategory(probeSub);
 	const neighbor = normalizeSubcategory(neighborSub);
-	if (!probe || !neighbor) return true;
-	return probe === neighbor;
+	if (!probe || !neighbor) return 'open';
+	if (probe === neighbor) return 'exact';
+	if (slot === 'footwear' && CLOSED_SHOE_SUBCATEGORIES.has(probe) && CLOSED_SHOE_SUBCATEGORIES.has(neighbor)) {
+		return 'family';
+	}
+	return 'reject';
 }
 
 function boxIou(a, b) {
@@ -259,13 +266,15 @@ function replayCorpus({ smoke, labels, manifest, penalty, askFloor, autoLinkFloo
 			for (const [candId, protos] of closet.entries()) {
 				for (const proto of protos) {
 					if (slot && proto.slot && slot !== proto.slot) continue;
-					if (!subcategoryCompatible(item.subcategory, proto.subcategory, slot)) continue;
+					const relation = subcategoryRelation(item.subcategory, proto.subcategory, slot);
+					if (relation === 'reject') continue;
 					const cos = cosineSimilarity(probe.vector, proto.vector);
 					if (cos == null) continue;
 					const colorD =
 						probe.crop_color && proto.color ? cropColorDistance(probe.crop_color, proto.color) : null;
 					const fullPen = identityColorFullPenalty(probe.crop_color, proto.color, penalty);
-					const score = identityScore(cos, colorD, fullPen);
+					let score = identityScore(cos, colorD, fullPen);
+					if (relation === 'family') score *= SUBCATEGORY_FAMILY_PENALTY;
 					if (!best || score > best.score) {
 						best = {
 							garment_id: candId,

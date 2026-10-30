@@ -29,6 +29,7 @@ import {
 	buildClosetVectorMetadata,
 	clampTopK,
 	closetItemVectorId,
+	closetWearVectorId,
 	ClosetVectorStore,
 	randomUnitEmbedding,
 	resolveClosetVectorId,
@@ -136,6 +137,7 @@ describe('parseJinaEmbedding', () => {
 describe('closet vector ids', () => {
 	it('namespaces closet item ids', () => {
 		expect(closetItemVectorId('abc-123')).toBe('item:abc-123');
+		expect(closetWearVectorId('match-uuid')).toBe('wear:match-uuid');
 	});
 
 	it('prefers an explicit id, then closetItemId, then a scratch uuid', () => {

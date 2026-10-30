@@ -15,13 +15,26 @@ import { getIsolatedItemUrl, signDownloadUrlForKey } from 'utils/assets.utils';
 import { createUsersDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ApiRequest, AuthRequest } from 'types';
+import type { OutfitExtractionResponse } from 'types/outfit_extraction';
 import { logRouteError } from 'utils/error';
 
 type ExtractOutfitBody = {
 	imageUrl?: string;
 	imageKey?: string;
 	userId?: string;
+	/**
+	 * Admin/eval only: skip Claude + grounding and run identity on this extraction.
+	 * Used by `extract:smoke --reuse-extract`.
+	 */
+	cachedExtraction?: OutfitExtractionResponse;
 };
+
+function parseAdminCachedExtraction(raw: unknown): OutfitExtractionResponse | undefined {
+	if (!raw || typeof raw !== 'object') return undefined;
+	const parsed = raw as OutfitExtractionResponse;
+	if (!Array.isArray(parsed.items)) return undefined;
+	return parsed;
+}
 
 const extractOutfitHandler: RequestHandler<ApiRequest> = async (request) => {
 	try {
@@ -64,13 +77,38 @@ const extractOutfitHandler: RequestHandler<ApiRequest> = async (request) => {
 			// Fallback to imageUrl
 		}
 
+		const cachedExtraction = request.isAdmin
+			? parseAdminCachedExtraction(body.cachedExtraction)
+			: undefined;
+		if (body.cachedExtraction && !request.isAdmin) {
+			return error(403, 'cachedExtraction is admin-only');
+		}
+		if (body.cachedExtraction && request.isAdmin && !cachedExtraction) {
+			return error(400, 'cachedExtraction must include an items array');
+		}
+
 		const identityRunId = mintIdentityRunId();
+		if (cachedExtraction) {
+			request.log.info('outfit_extract_cached_reuse', {
+				identity_run_id: identityRunId,
+				item_count: cachedExtraction.items.length,
+				image_key: imageKey,
+			});
+		}
 		const processed = await createOutfitIdentityService(env, request.log).process({
 			userId,
 			imageUrl,
 			imageKey,
 			identityRunId,
 			signal: request.signal,
+			...(cachedExtraction
+				? {
+						cachedExtraction: {
+							...cachedExtraction,
+							image_url: imageUrl,
+						},
+					}
+				: {}),
 		});
 
 		if (!processed) {

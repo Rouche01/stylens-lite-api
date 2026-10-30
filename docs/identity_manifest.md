@@ -65,6 +65,23 @@ Recall for identity metrics counts only garments with at least one non-`missing`
 
 Admin `POST /outfits/extract` returns `identity_probe` on each embedded item. `npm run extract:smoke` writes those into `tmp/extract_smoke/smoke_*.json` and downloads crop JPEGs to `tmp/extract_smoke/work/<stamp>/crops/`.
 
+## Extract cache (`--reuse-extract`)
+
+Every successful live extract writes a snapshot under `tmp/extract_smoke/extract_cache/` keyed by `sha256(image bytes)` + a short hash of the outfit-extraction prompt, schema, and model env. Cache entries store Claude/Florence items + boxes + `image_dimensions` only (no identity probes).
+
+```bash
+# First run (or after prompt/schema change): populate / refresh cache
+npm run extract:smoke
+
+# Later re-smokes: skip Claude + grounding; still upload, embed, match, probe
+npm run extract:smoke -- --reuse-extract
+
+# Force Claude again but keep writing cache
+npm run extract:smoke -- --reuse-extract --bust-extract-cache
+```
+
+Admin extract accepts `cachedExtraction` (admin-only). Smoke rewrites `image_url` to the current upload. Use this when iterating identity / policy so Claude variance does not confound the run.
+
 | Field | Purpose |
 | --- | --- |
 | `encoder` / `model` / `dimensions` / `vector` | Re-score without calling Replicate |

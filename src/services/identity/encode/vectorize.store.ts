@@ -57,6 +57,18 @@ export function closetItemVectorId(closetItemId: string): string {
 	return assertVectorIdLength(`item:${trimmed}`);
 }
 
+/**
+ * Extra Vectorize vector for a confirmed wear of an existing closet item.
+ * Metadata still carries `closet_item_id`; query scoring takes max over wears.
+ */
+export function closetWearVectorId(wearId: string): string {
+	const trimmed = wearId.trim();
+	if (!trimmed) {
+		throw new IdentityEmbedError('wearId is required', 400);
+	}
+	return assertVectorIdLength(`wear:${trimmed}`);
+}
+
 export function assertVectorIdLength(id: string): string {
 	if (new TextEncoder().encode(id).length > VECTOR_ID_MAX_BYTES) {
 		throw new IdentityEmbedError(`Vector id exceeds Vectorize ${VECTOR_ID_MAX_BYTES}-byte limit`, 400);

@@ -2,6 +2,7 @@ import type { ClosetItemMatchWithOutfit } from '../../../db/closet';
 import type { ExtractionConfidence } from '../../../types';
 import { closetMatchProbeFromPrepared, preparedFromProbeEmbed } from '../encode/probeEmbed';
 import type { PreparedClosetCrop } from '../encode/cropEncoder';
+import { closetWearVectorId } from '../encode/vectorize.store';
 import { logResolveCalibrationLabel } from '../logging/calibrationLabel';
 import { indexCommittedItem } from './commit';
 import { ClosetMatchNotFoundError, ClosetMatchResolvedError } from './errors';
@@ -168,6 +169,8 @@ async function finishResolvedSame(
 		blurHash: await deps.closet.getLatestItemBlurHash(closetItemId),
 	});
 
+	await indexWearPrototype(deps, match, closetItemId);
+
 	deps.log.info('outfit_identity_resolve_same', {
 		match_id: match.id,
 		outfit_id: match.outfit_id,
@@ -190,6 +193,48 @@ async function finishResolvedSame(
 		identity_reason: 'same',
 		identity_score: match.score,
 	};
+}
+
+/**
+ * Persist this wear's probe as an extra Vectorize vector on the confirmed closet item.
+ * Best-effort: link already succeeded; a failed upsert only costs future lighting-drift recall.
+ */
+async function indexWearPrototype(
+	deps: OutfitIdentityWriteDeps,
+	match: ClosetItemMatchWithOutfit,
+	closetItemId: string
+): Promise<void> {
+	const prepared = preparedFromProbeEmbed(match.probe_embed, match.outfit_image_key);
+	if (!prepared) {
+		deps.log.info('outfit_identity_wear_prototype_skipped', {
+			match_id: match.id,
+			closet_item_id: closetItemId,
+			reason: 'no_probe',
+		});
+		return;
+	}
+	const category = match.extract_snapshot.category || 'top';
+	try {
+		const wearVectorId = closetWearVectorId(match.id);
+		await deps.identity.upsertPreparedCrop(prepared, {
+			id: wearVectorId,
+			userId: match.user_id,
+			category,
+			closetItemId,
+			log: deps.log,
+		});
+		deps.log.info('outfit_identity_wear_prototype_upserted', {
+			match_id: match.id,
+			closet_item_id: closetItemId,
+			vector_id: wearVectorId,
+		});
+	} catch (err) {
+		deps.log.warn(
+			'outfit_identity_wear_prototype_failed',
+			{ match_id: match.id, closet_item_id: closetItemId },
+			err
+		);
+	}
 }
 
 async function resumeResolvedNew(

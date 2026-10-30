@@ -136,6 +136,85 @@ describe('decideIdentityFromNeighbors', () => {
 		});
 	});
 
+	it('asks boots against sneakers with a family penalty (closed-shoe soft gate)', () => {
+		expect(
+			decideIdentityFromNeighbors(
+				[
+					neighbor({
+						id: 'item:sneaker-1',
+						closet_item_id: 'sneaker-1',
+						d1_closet_item_id: 'sneaker-1',
+						d1_subcategory: 'sneakers',
+						identity_score: 0.7,
+						score: 0.95,
+						color_distance: 0.05,
+					}),
+				],
+				{ category: 'footwear', subcategory: 'boots' }
+			)
+		).toEqual({
+			action: 'ask',
+			candidateClosetItemId: 'sneaker-1',
+			identityScore: 0.7 * 0.85,
+			cosine: 0.95,
+			colorDistance: 0.05,
+		});
+	});
+
+	it('still hard-blocks boots against sandals', () => {
+		expect(
+			decideIdentityFromNeighbors(
+				[
+					neighbor({
+						id: 'item:sandal-1',
+						closet_item_id: 'sandal-1',
+						d1_closet_item_id: 'sandal-1',
+						d1_subcategory: 'sandals',
+						identity_score: 0.8,
+						score: 0.97,
+						color_distance: 0.04,
+					}),
+				],
+				{ category: 'footwear', subcategory: 'boots' }
+			)
+		).toEqual({
+			action: 'create',
+			reason: 'below_threshold',
+			identityScore: 0.8,
+			neighborClosetItemId: 'sandal-1',
+			cosine: 0.97,
+			colorDistance: 0.04,
+		});
+	});
+
+	it('collapses multiple wear vectors for the same closet item to the max score', () => {
+		expect(
+			decideIdentityFromNeighbors([
+				neighbor({
+					id: 'item:c1',
+					closet_item_id: 'c1',
+					d1_closet_item_id: 'c1',
+					identity_score: 0.55,
+					score: 0.9,
+				}),
+				neighbor({
+					id: 'wear:match-2',
+					closet_item_id: 'c1',
+					d1_closet_item_id: 'c1',
+					identity_score: 0.82,
+					score: 0.97,
+					color_distance: 0.02,
+				}),
+			])
+		).toEqual({
+			action: 'ask',
+			candidateClosetItemId: 'c1',
+			identityScore: 0.82,
+			cosine: 0.97,
+			colorDistance: 0.02,
+		});
+	});
+
 	it('skips incompatible accessory neighbors and asks the next hat', () => {
 		expect(
 			decideIdentityFromNeighbors(
@@ -642,7 +721,7 @@ describe('OutfitIdentityProcessor', () => {
 });
 
 describe('OutfitIdentityProcessor.resolveMatch', () => {
-	it('links the wear to the candidate on same and does not upsert', async () => {
+	it('links the wear to the candidate on same and upserts a wear prototype', async () => {
 		const harness = createHarness({ neighbors: [] });
 		const match = seedPendingMatch(harness.closet);
 
@@ -664,7 +743,7 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		expect(harness.closet.items.map((item) => item.id)).toEqual(['c1']);
 		expect(harness.closet.matches[0].status).toBe('same');
 		expect(harness.closet.lock).toBeNull();
-		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.identity.upserts).toEqual([{ id: 'wear:match-1', closetItemId: 'c1' }]);
 		expect(harness.identity.prepares).toBe(0);
 		expect(harness.repairSends).toEqual([]);
 		expect(harness.catalogNotifies).toEqual([
@@ -929,6 +1008,20 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 		});
 		expect(harness.closet.links).toHaveLength(1);
 		expect(harness.closet.matches[0].status).toBe('same');
+		expect(harness.identity.upserts).toEqual([
+			{ id: 'wear:match-1', closetItemId: 'c1' },
+			{ id: 'wear:match-1', closetItemId: 'c1' },
+		]);
+	});
+
+	it('upserts a wear prototype vector when resolve-same confirms a match', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const match = seedPendingMatch(harness.closet);
+
+		await harness.processor.resolveMatch({ userId: 'u1', matchId: match.id, decision: 'same' });
+
+		expect(harness.identity.upserts).toEqual([{ id: 'wear:match-1', closetItemId: 'c1' }]);
+		expect(harness.closet.links).toHaveLength(1);
 	});
 
 	it('returns 200 with the same closet item when new is posted again', async () => {
@@ -1174,7 +1267,7 @@ describe('serial identity writer', () => {
 		expect(result.closet_item_id).toBe('c1');
 		expect(harness.closet.lock).toEqual({ userId: 'u1', jobId: 'outfit-writer' });
 		expect(harness.closet.lockAcquireAttempts).toBe(attemptsBefore);
-		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.identity.upserts).toEqual([{ id: 'wear:match-1', closetItemId: 'c1' }]);
 		expect(harness.identity.prepares).toBe(0);
 		expect(harness.repairSends).toEqual([]);
 	});
@@ -1434,7 +1527,7 @@ function createHarness(options: {
 		}>,
 		queries: 0,
 		waits: 0,
-		upserts: [] as Array<{ closetItemId?: string }>,
+		upserts: [] as Array<{ id?: string; closetItemId?: string }>,
 		deletes: [] as string[],
 		getByIdsCalls: [] as string[][],
 		prepareClosetCrop: async (params: {
@@ -1465,9 +1558,9 @@ function createHarness(options: {
 		},
 		upsertPreparedCrop: async (
 			_embedded: PreparedClosetCrop,
-			params: { closetItemId?: string; log?: Logger }
+			params: { id?: string; closetItemId?: string; log?: Logger }
 		) => {
-			identity.upserts.push({ closetItemId: params.closetItemId });
+			identity.upserts.push({ id: params.id, closetItemId: params.closetItemId });
 			if (options.upsertError && (!options.upsertFailOnce || identity.upserts.length === 1)) {
 				throw options.upsertError;
 			}
