@@ -106,16 +106,22 @@ const extractOutfitHandler: RequestHandler<ApiRequest> = async (request) => {
 		const requestUrl = new URL(request.url);
 		const domain = requestUrl.host;
 
-		const enrichedItems = processed.items.map((item) => ({
-			...item,
-			isolated_image_url: getIsolatedItemUrl({
-				domain,
-				imageUrl,
-				imageKey,
-				boundingBox: item.bounding_box,
-				dimensions: processed.extraction.image_dimensions,
-			}),
-		}));
+		// Full identity_probe (1024-d vector) is admin/eval only — never ship to the app.
+		const includeProbe = Boolean(request.isAdmin);
+		const enrichedItems = processed.items.map((item) => {
+			const { identity_probe, ...rest } = item;
+			return {
+				...rest,
+				isolated_image_url: getIsolatedItemUrl({
+					domain,
+					imageUrl,
+					imageKey,
+					boundingBox: item.bounding_box,
+					dimensions: processed.extraction.image_dimensions,
+				}),
+				...(includeProbe && identity_probe ? { identity_probe } : {}),
+			};
+		});
 
 		const enrichedPayload = {
 			...processed.extraction,

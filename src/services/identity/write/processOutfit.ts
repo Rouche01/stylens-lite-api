@@ -27,7 +27,13 @@ import { createClosetMatchDigestScheduler } from '../notify/digest';
 import { createClosetCatalogNotifier, type ClosetCatalogNotifier } from '../notify/catalogBroadcast';
 import { ClosetMatchResolvedError, IdentityBusyError } from './errors';
 import { commitNewItem, commitUnindexedItem } from './commit';
-import { extractSnapshot, extractionConfidence, failedItem, isSqliteForeignKeyError } from './helpers';
+import {
+	extractSnapshot,
+	extractionConfidence,
+	failedItem,
+	isSqliteForeignKeyError,
+	withIdentityProbe,
+} from './helpers';
 import { resolveClosetMatch } from './resolveMatch';
 import type {
 	ClosetMatchDigestScheduler,
@@ -473,18 +479,21 @@ export class OutfitIdentityProcessor {
 			color_distance: decision.colorDistance,
 			label: params.item.label,
 		});
-		return {
-			...params.item,
-			closet_item_id: null,
-			is_new_closet_item: false,
-			identity_status: 'ask',
-			identity_reason: 'ask',
-			match_id: matchId,
-			candidate_closet_item_id: decision.candidateClosetItemId,
-			identity_score: decision.identityScore,
-			identity_cosine: decision.cosine,
-			identity_color_distance: decision.colorDistance,
-		};
+		return withIdentityProbe(
+			{
+				...params.item,
+				closet_item_id: null,
+				is_new_closet_item: false,
+				identity_status: 'ask',
+				identity_reason: 'ask',
+				match_id: matchId,
+				candidate_closet_item_id: decision.candidateClosetItemId,
+				identity_score: decision.identityScore,
+				identity_cosine: decision.cosine,
+				identity_color_distance: decision.colorDistance,
+			},
+			prepared
+		);
 	}
 
 	private async scheduleDigest(userId: string, log: Logger = this.log): Promise<void> {

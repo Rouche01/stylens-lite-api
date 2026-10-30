@@ -109,9 +109,35 @@ body {
 }
 
 .field textarea,
-.field.block input {
+.field.block input,
+.field.block select,
+.garment-select {
 	min-width: 0;
 	width: 100%;
+}
+
+.garment-field {
+	margin: 0.35rem 0 0.15rem;
+}
+
+.garment-select,
+.garment-description {
+	margin-top: 0.25rem;
+	padding: 0.4rem 0.55rem;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--bg-elev);
+	font: inherit;
+	color: var(--ink);
+}
+
+.garment-description {
+	display: block;
+	width: 100%;
+}
+
+.garment-id {
+	margin: 0.25rem 0 0;
 }
 
 .nav {

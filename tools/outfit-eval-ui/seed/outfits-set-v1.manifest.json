@@ -1,0 +1,354 @@
+{
+  "version": 1,
+  "set": "outfits-set-v1",
+  "updated_at": "2026-10-30T17:20:00.000Z",
+  "garments": [
+    {
+      "id": "g_apr3_hat",
+      "description": "olive/sage baseball cap",
+      "slot": "accessory",
+      "subcategory_hint": "hat",
+      "status": "confirmed",
+      "notes": "Worn in all three Apr3 photos; Claude color/label flips (olive/gray/black)."
+    },
+    {
+      "id": "g_apr3_jacket",
+      "description": "green/olive shirt jacket",
+      "slot": "upper",
+      "subcategory_hint": "jacket",
+      "status": "confirmed",
+      "notes": "Same outerwear across Apr3; extract often says brown/black/cardigan."
+    },
+    {
+      "id": "g_apr3_tee",
+      "description": "olive green inner tee/sweater",
+      "slot": "upper",
+      "subcategory_hint": "sweater",
+      "status": "confirmed",
+      "notes": "Missing under jacket in photo 1; visible in photo 2. Not a match to the jacket."
+    },
+    {
+      "id": "g_apr3_jeans",
+      "description": "light blue jeans",
+      "slot": "lower",
+      "subcategory_hint": "jeans",
+      "status": "confirmed",
+      "notes": "Same pair in all three Apr3 photos."
+    },
+    {
+      "id": "g_apr3_boots",
+      "description": "black leather boots",
+      "slot": "footwear",
+      "subcategory_hint": "boots",
+      "status": "confirmed",
+      "notes": "Same boots; photo 3 often extracted as sneakers."
+    },
+    {
+      "id": "g_3009_jacket",
+      "description": "black leather jacket",
+      "slot": "upper",
+      "subcategory_hint": "jacket",
+      "status": "confirmed",
+      "notes": "IMG_3009 first sighting only."
+    },
+    {
+      "id": "g_3009_jeans",
+      "description": "light blue jeans (IMG_3009)",
+      "slot": "lower",
+      "subcategory_hint": "jeans",
+      "status": "confirmed",
+      "notes": "Photo 1 only in this cycle."
+    },
+    {
+      "id": "g_3009_cap_p1",
+      "description": "baseball cap (IMG_3009 outdoor — greenish/grey)",
+      "slot": "accessory",
+      "subcategory_hint": "hat",
+      "status": "confirmed",
+      "notes": "Labeled create on first sighting; extract color wrong (said black)."
+    },
+    {
+      "id": "g_3009_sneakers",
+      "description": "white sneakers",
+      "slot": "footwear",
+      "subcategory_hint": "sneakers",
+      "status": "confirmed",
+      "notes": "IMG_3009; extract sometimes adds 'with socks'."
+    },
+    {
+      "id": "g_3009_cap",
+      "description": "black baseball cap (mirror + IMG_0379)",
+      "slot": "accessory",
+      "subcategory_hint": "hat",
+      "status": "confirmed",
+      "notes": "Same cap in B016F629 and IMG_0379."
+    },
+    {
+      "id": "g_3009_hoodie",
+      "description": "black hoodie",
+      "slot": "upper",
+      "subcategory_hint": "hoodie",
+      "status": "confirmed",
+      "notes": "B016F629; different from leather jacket."
+    },
+    {
+      "id": "g_3009_bag",
+      "description": "black shoulder bag",
+      "slot": "accessory",
+      "subcategory_hint": "bag",
+      "status": "confirmed",
+      "notes": "B016F629."
+    },
+    {
+      "id": "g_3009_pants_beige",
+      "description": "cream/beige pants",
+      "slot": "lower",
+      "subcategory_hint": "pants",
+      "status": "confirmed",
+      "notes": "B016F629."
+    },
+    {
+      "id": "g_3009_sambas",
+      "description": "black samba-like sneakers",
+      "slot": "footwear",
+      "subcategory_hint": "sneakers",
+      "status": "confirmed",
+      "notes": "B016F629; extract often says boots."
+    },
+    {
+      "id": "g_3009_sweater_cream",
+      "description": "cream quarter-zip pullover",
+      "slot": "upper",
+      "subcategory_hint": "sweater",
+      "status": "confirmed",
+      "notes": "IMG_0379 first sighting."
+    },
+    {
+      "id": "g_3009_pants_gray",
+      "description": "gray pants",
+      "slot": "lower",
+      "subcategory_hint": "pants",
+      "status": "confirmed",
+      "notes": "IMG_0379; different from beige pants."
+    },
+    {
+      "id": "g_0462_hat",
+      "description": "black baseball cap (0462/0472)",
+      "slot": "accessory",
+      "subcategory_hint": "hat",
+      "status": "provisional",
+      "notes": "Unlabeled smoke seed — confirm in eval UI."
+    },
+    {
+      "id": "g_0462_hoodie",
+      "description": "dark hoodie (0462/0472)",
+      "slot": "upper",
+      "subcategory_hint": "hoodie",
+      "status": "provisional",
+      "notes": "Black vs navy extract across photos — confirm same/different."
+    },
+    {
+      "id": "g_0462_jeans",
+      "description": "blue jeans (IMG_0462)",
+      "slot": "lower",
+      "subcategory_hint": "jeans",
+      "status": "provisional",
+      "notes": "May differ from light blue pants in IMG_0472."
+    },
+    {
+      "id": "g_0472_pants",
+      "description": "light blue pants (IMG_0472)",
+      "slot": "lower",
+      "subcategory_hint": "pants",
+      "status": "provisional",
+      "notes": "Provisional separate from g_0462_jeans until labeled."
+    },
+    {
+      "id": "g_0462_loafers",
+      "description": "dark loafers (0462/0472)",
+      "slot": "footwear",
+      "subcategory_hint": "loafers",
+      "status": "provisional",
+      "notes": "Burgundy vs brown extract — confirm same pair."
+    }
+  ],
+  "photos": {
+    "20260403_093203.jpg": {
+      "notes": "Apr3 photo 1. Missing inner green shirt under jacket.",
+      "garments": [
+        {
+          "id": "g_apr3_hat",
+          "box": { "x": 42, "y": 3, "width": 15.8, "height": 7.8 }
+        },
+        {
+          "id": "g_apr3_jacket",
+          "box": { "x": 28.3, "y": 19.8, "width": 43.2, "height": 37.8 }
+        },
+        {
+          "id": "g_apr3_tee",
+          "missing": true,
+          "notes": "inner green shirt under jacket"
+        },
+        {
+          "id": "g_apr3_jeans",
+          "box": { "x": 32.2, "y": 53.7, "width": 30.5, "height": 35.7 }
+        },
+        {
+          "id": "g_apr3_boots",
+          "box": { "x": 49.2, "y": 84.9, "width": 8, "height": 10.1 }
+        }
+      ]
+    },
+    "20260403_093321.jpg": {
+      "notes": "Apr3 photo 2.",
+      "garments": [
+        {
+          "id": "g_apr3_tee",
+          "box": { "x": 28.4, "y": 19.3, "width": 38.2, "height": 28.4 }
+        },
+        {
+          "id": "g_apr3_jacket",
+          "box": { "x": 18.4, "y": 19.7, "width": 47.4, "height": 39.2 }
+        },
+        {
+          "id": "g_apr3_jeans",
+          "box": { "x": 27.2, "y": 53.9, "width": 29.9, "height": 39.8 }
+        },
+        {
+          "id": "g_apr3_boots",
+          "box": { "x": 25.8, "y": 86.3, "width": 32.9, "height": 13.4 }
+        },
+        {
+          "id": "g_apr3_hat",
+          "box": { "x": 31.9, "y": 1.9, "width": 16.4, "height": 8.2 }
+        }
+      ]
+    },
+    "20260403_094058.jpg": {
+      "notes": "Apr3 photo 3.",
+      "garments": [
+        {
+          "id": "g_apr3_hat",
+          "box": { "x": 41.1, "y": 48.6, "width": 7.2, "height": 3.5 }
+        },
+        {
+          "id": "g_apr3_jacket",
+          "box": { "x": 33.3, "y": 55, "width": 22.8, "height": 19.3 }
+        },
+        {
+          "id": "g_apr3_jeans",
+          "box": { "x": 37.4, "y": 70.9, "width": 15.4, "height": 26.6 }
+        },
+        {
+          "id": "g_apr3_boots",
+          "box": { "x": 36.7, "y": 94.7, "width": 9.2, "height": 4.1 }
+        }
+      ]
+    },
+    "IMG_3009.jpg": {
+      "notes": "Outdoor. Missing layered tee under jacket.",
+      "garments": [
+        {
+          "id": "g_3009_jacket",
+          "box": { "x": 22.2, "y": 50.8, "width": 23.3, "height": 18.3 }
+        },
+        {
+          "id": "g_3009_jeans",
+          "box": { "x": 25, "y": 65.7, "width": 16, "height": 22.9 }
+        },
+        {
+          "id": "g_3009_cap_p1",
+          "box": { "x": 32.5, "y": 45.1, "width": 6.6, "height": 3.2 }
+        },
+        {
+          "id": "g_3009_sneakers",
+          "box": { "x": 33.7, "y": 84.4, "width": 7.7, "height": 5.2 }
+        }
+      ]
+    },
+    "B016F629-2536-4E9D-A065-795EF80F88C4_1_102_o.jpeg": {
+      "notes": "Mirror selfie.",
+      "garments": [
+        {
+          "id": "g_3009_cap",
+          "box": { "x": 43.2, "y": 24, "width": 15.6, "height": 6.8 }
+        },
+        {
+          "id": "g_3009_hoodie",
+          "box": { "x": 26.9, "y": 33.4, "width": 43, "height": 26.3 }
+        },
+        {
+          "id": "g_3009_bag",
+          "box": { "x": 26.9, "y": 48.1, "width": 16.8, "height": 11.8 }
+        },
+        {
+          "id": "g_3009_pants_beige",
+          "box": { "x": 36.9, "y": 52.6, "width": 22.8, "height": 24.3 }
+        },
+        {
+          "id": "g_3009_sambas",
+          "box": { "x": 48.1, "y": 72.5, "width": 10.7, "height": 4.2 }
+        }
+      ]
+    },
+    "IMG_0379.JPG": {
+      "notes": "",
+      "garments": [
+        {
+          "id": "g_3009_cap",
+          "box": { "x": 33.4, "y": 34.8, "width": 11.1, "height": 5.8 }
+        },
+        {
+          "id": "g_3009_sweater_cream",
+          "box": { "x": 22, "y": 43.9, "width": 30, "height": 24.7 }
+        },
+        {
+          "id": "g_3009_pants_gray",
+          "box": { "x": 25.6, "y": 65.1, "width": 22.8, "height": 34.6 }
+        }
+      ]
+    },
+    "IMG_0462.JPG": {
+      "notes": "Provisional seed from unlabeled smoke_2026-10-29T15-16-43.",
+      "garments": [
+        {
+          "id": "g_0462_hat",
+          "box": { "x": 47.7, "y": 21.5, "width": 11.1, "height": 6.2 }
+        },
+        {
+          "id": "g_0462_hoodie",
+          "box": { "x": 33.5, "y": 29.9, "width": 33, "height": 24.2 }
+        },
+        {
+          "id": "g_0462_jeans",
+          "box": { "x": 36.7, "y": 54.6, "width": 21.9, "height": 32.4 }
+        },
+        {
+          "id": "g_0462_loafers",
+          "box": { "x": 36.7, "y": 84.2, "width": 21.4, "height": 8.8 }
+        }
+      ]
+    },
+    "IMG_0472.JPG": {
+      "notes": "Provisional seed from unlabeled smoke_2026-10-29T15-16-43.",
+      "garments": [
+        {
+          "id": "g_0462_hat",
+          "box": { "x": 55.6, "y": 16.7, "width": 13.2, "height": 7.2 }
+        },
+        {
+          "id": "g_0462_hoodie",
+          "box": { "x": 39, "y": 27.4, "width": 37.5, "height": 28.8 }
+        },
+        {
+          "id": "g_0472_pants",
+          "box": { "x": 41.6, "y": 53.6, "width": 27.3, "height": 43.4 }
+        },
+        {
+          "id": "g_0462_loafers",
+          "box": { "x": 40.4, "y": 91.8, "width": 25.6, "height": 8 }
+        }
+      ]
+    }
+  }
+}

@@ -3,6 +3,7 @@ import type { ClothingItem, OutfitExtractionResponse } from '../../../types';
 import type { Logger } from '../../../utils/logger.utils';
 import type { OutfitExtractionService } from '../../outfit_extraction.svc';
 import type { CropEncoder } from '../encode/cropEncoder';
+import type { IdentityProbeArtifact } from '../encode/probeEmbed';
 import type { ClosetVectorBackfillJob, ClosetVectorRepairJob } from '../jobs/closetVectorRepair';
 import type { ClosetCatalogNotifier } from '../notify/catalogBroadcast';
 import type { IdentityCreateReason } from '../decide/policy';
@@ -102,6 +103,11 @@ export type ProcessedOutfitItem = ClothingItem & {
 	identity_cosine: number | null;
 	/** Crop-color distance used in identityScore; null when color unavailable. */
 	identity_color_distance: number | null;
+	/**
+	 * Embed + crop artifact for offline replay. Present when this item was embedded.
+	 * HTTP extract strips this for non-admin clients (vectors are large / sensitive).
+	 */
+	identity_probe?: IdentityProbeArtifact | null;
 };
 
 export type ProcessOutfitImageResult = {

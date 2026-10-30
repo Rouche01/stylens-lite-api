@@ -6,7 +6,11 @@ import {
 	serializeClosetMatchProbeEmbed,
 	type ClosetMatchProbeEmbed,
 } from '../src/db/closet';
-import { closetMatchProbeFromPrepared, preparedFromProbeEmbed } from '../src/services/identity/encode/probeEmbed';
+import {
+	closetMatchProbeFromPrepared,
+	identityProbeFromPrepared,
+	preparedFromProbeEmbed,
+} from '../src/services/identity/encode/probeEmbed';
 import { pendingClosetMatchClientPayload } from '../src/routes/closet/handlers/pendingClosetMatchPayload';
 import { IDENTITY_ENCODER, VECTORIZE_INDEX_DIMENSIONS } from '../src/services/identity/encode/embed.types';
 import type { PreparedClosetCrop } from '../src/services/identity/encode/cropEncoder';
@@ -75,6 +79,44 @@ describe('closetMatchProbeFromPrepared', () => {
 	it('returns null when vector length does not match dimensions', () => {
 		expect(closetMatchProbeFromPrepared({ ...prepared, dimensions: 8 })).toBeNull();
 		expect(closetMatchProbeFromPrepared({ ...prepared, vector: [] })).toBeNull();
+	});
+});
+
+describe('identityProbeFromPrepared', () => {
+	const prepared: PreparedClosetCrop = {
+		model: 'noah-bjorner/dinov3',
+		dimensions: 4,
+		index_dimensions: 4,
+		matches_index: true,
+		vector_preview: [0.1],
+		crop_image_key: 'identity/scratch/crop-1.jpg',
+		crop_image_url: 'https://signed.example/crop',
+		crop_width: 64,
+		crop_height: 48,
+		source_image_key: 'users/u1/a.jpg',
+		crop_color: { h: 12, s: 0.4, l: 0.2 },
+		crop_blur_hash: 'LEHV6nWB2yk8pyo0adR*.7kCMdnj',
+		vector: [0.1, 0.2, 0.3, 0.4],
+	};
+
+	it('keeps crop keys and the full vector for smoke/replay', () => {
+		expect(identityProbeFromPrepared(prepared)).toEqual({
+			encoder: 'dinov3-cls-v1',
+			model: prepared.model,
+			dimensions: 4,
+			vector: prepared.vector,
+			crop_color: prepared.crop_color,
+			crop_blur_hash: prepared.crop_blur_hash,
+			crop_image_key: prepared.crop_image_key,
+			crop_image_url: prepared.crop_image_url,
+			crop_width: 64,
+			crop_height: 48,
+			source_image_key: prepared.source_image_key,
+		});
+	});
+
+	it('returns null when the D1 probe would also be null', () => {
+		expect(identityProbeFromPrepared({ ...prepared, vector: [] })).toBeNull();
 	});
 });
 

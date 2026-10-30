@@ -2,7 +2,7 @@ import type { ClothingItem } from '../../../types';
 import { closetMatchProbeFromPrepared } from '../encode/probeEmbed';
 import type { PreparedClosetCrop } from '../encode/cropEncoder';
 import type { IdentityDecision } from '../decide/policy';
-import { enqueueVectorRepair, extractionConfidence, failedItem } from './helpers';
+import { enqueueVectorRepair, extractionConfidence, failedItem, withIdentityProbe } from './helpers';
 import type { OutfitIdentityWriteDeps, ProcessedOutfitItem } from './types';
 
 export async function commitNewItem(
@@ -101,19 +101,22 @@ async function commitCreatedItem(
 			indexed: Boolean(opts.prepared),
 			label: params.item.label,
 		});
-		return {
-			...params.item,
-			closet_item_id: closetItem.id,
-			is_new_closet_item: true,
-			identity_status: 'created',
-			identity_reason: decision.reason,
-			match_id: null,
-			// Nearest declined neighbor (eval / calibration); null when no neighbor.
-			candidate_closet_item_id: decision.neighborClosetItemId ?? null,
-			identity_score: decision.identityScore ?? null,
-			identity_cosine: decision.cosine ?? null,
-			identity_color_distance: decision.colorDistance ?? null,
-		};
+		return withIdentityProbe(
+			{
+				...params.item,
+				closet_item_id: closetItem.id,
+				is_new_closet_item: true,
+				identity_status: 'created',
+				identity_reason: decision.reason,
+				match_id: null,
+				// Nearest declined neighbor (eval / calibration); null when no neighbor.
+				candidate_closet_item_id: decision.neighborClosetItemId ?? null,
+				identity_score: decision.identityScore ?? null,
+				identity_cosine: decision.cosine ?? null,
+				identity_color_distance: decision.colorDistance ?? null,
+			},
+			opts.prepared
+		);
 	} catch (err) {
 		deps.log.warn(
 			'outfit_identity_d1_failed',

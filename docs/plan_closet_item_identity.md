@@ -47,7 +47,7 @@ Targets are a starting bar; revise them here with the data that justifies the ch
 
 **Roadmap (in order):**
 
-1. Measurement: per-garment ground-truth manifest, persisted probe artifacts, offline replay + threshold sweep, extraction cache for re-smokes.
+1. Measurement: per-garment ground-truth manifest ([`docs/identity_manifest.md`](./identity_manifest.md)), persisted probe artifacts (admin extract `identity_probe` + smoke crop download), offline replay + threshold sweep, extraction cache for re-smokes.
 2. Vendor-free structure: multi-prototype items (confirmed wears add vectors/color; score max over wears), outfit co-occurrence prior, soften the `subcategory` gate within closed-shoe and upper-layer families.
 3. Masking (SAM2) for footwear/accessory crops — adopt only if replay shows the gain justifies the per-item cost.
 4. Representation experiments via replay: fashion-tuned encoder bake-off (MODA, GR-Lite, Marqo-FashionSigLIP vs DINOv3), patch-token pooling / flip TTA, lighting-robust color histogram.

@@ -9,18 +9,24 @@
  *   OUTFIT_EVAL_SET   photo folder (default: ../outfits-set-v1)
  *   OUTFIT_EVAL_SMOKE smoke JSON folder (default: tmp/extract_smoke)
  *   OUTFIT_EVAL_PORT  port (default: 8788)
+ *
+ * Ground-truth garments: <SET>/manifest.json (see docs/identity_manifest.md).
+ * Seed copy: tools/outfit-eval-ui/seed/outfits-set-v1.manifest.json
  */
 import { createServer } from 'node:http';
-import { readdir, readFile, writeFile, mkdir, stat } from 'node:fs/promises';
+import { readdir, readFile, writeFile, mkdir, stat, copyFile, rename } from 'node:fs/promises';
 import { createReadStream, existsSync } from 'node:fs';
 import { basename, extname, join, resolve, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
 const PUBLIC = join(fileURLToPath(new URL('.', import.meta.url)), 'public');
+const SEED_MANIFEST = join(fileURLToPath(new URL('.', import.meta.url)), 'seed/outfits-set-v1.manifest.json');
 const SET_DIR = resolve(process.env.OUTFIT_EVAL_SET || join(ROOT, '../outfits-set-v1'));
 const SMOKE_DIR = resolve(process.env.OUTFIT_EVAL_SMOKE || join(ROOT, 'tmp/extract_smoke'));
 const LABELS_PATH = join(SMOKE_DIR, 'labels.json');
+const MANIFEST_PATH = join(SET_DIR, 'manifest.json');
 const IDENTITY_RUNS_DIR = resolve(process.env.OUTFIT_EVAL_IDENTITY_RUNS || join(ROOT, '.cursor/identity_runs'));
 const PORT = Number(process.env.OUTFIT_EVAL_PORT || 8788);
 
@@ -79,12 +85,96 @@ async function emptyLabels() {
 	};
 }
 
+function emptyManifest() {
+	return {
+		version: 1,
+		set: basename(SET_DIR),
+		updated_at: null,
+		garments: [],
+		photos: {},
+	};
+}
+
+function normalizeManifest(raw) {
+	const base = emptyManifest();
+	if (!raw || typeof raw !== 'object') return base;
+	return {
+		version: Number(raw.version) || 1,
+		set: typeof raw.set === 'string' ? raw.set : base.set,
+		updated_at: raw.updated_at ?? null,
+		garments: Array.isArray(raw.garments) ? raw.garments : [],
+		photos: raw.photos && typeof raw.photos === 'object' ? raw.photos : {},
+	};
+}
+
+function countPhotoKeys(photos) {
+	return photos && typeof photos === 'object' ? Object.keys(photos).length : 0;
+}
+
+function countLabeledItems(photos) {
+	let n = 0;
+	if (!photos || typeof photos !== 'object') return 0;
+	for (const photo of Object.values(photos)) {
+		const items = photo?.items;
+		if (!items || typeof items !== 'object') continue;
+		for (const item of Object.values(items)) {
+			if (item && (item.garment_id || item.human_verdict || item.extract_verdict || item.notes)) n += 1;
+		}
+	}
+	return n;
+}
+
+/** Write via temp + rename so a crash cannot leave a 0-byte labels/manifest file. */
+async function writeJsonAtomic(path, value) {
+	const dir = resolve(path, '..');
+	await mkdir(dir, { recursive: true });
+	const tmp = join(dir, `.${basename(path)}.${randomBytes(4).toString('hex')}.tmp`);
+	const payload = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+	if (typeof payload !== 'string' || !payload.trim() || payload === 'null') {
+		throw new Error(`Refusing to write empty JSON to ${path}`);
+	}
+	await writeFile(tmp, payload, 'utf8');
+	// Backup previous good file (best-effort) before replacing.
+	if (existsSync(path)) {
+		try {
+			await copyFile(path, `${path}.bak`);
+		} catch (err) {
+			console.warn(`backup failed for ${path}:`, err?.message || err);
+		}
+	}
+	await rename(tmp, path);
+}
+
 async function loadLabels() {
 	try {
 		const raw = await readFile(LABELS_PATH, 'utf8');
+		if (!raw.trim()) {
+			console.warn(`labels.json is empty at ${LABELS_PATH}; starting fresh`);
+			return emptyLabels();
+		}
 		return JSON.parse(raw);
-	} catch {
+	} catch (err) {
+		console.warn(`Failed to load labels from ${LABELS_PATH}:`, err?.message || err);
 		return emptyLabels();
+	}
+}
+
+/** Prefer set-local manifest; seed from repo copy once if missing. */
+async function loadManifest() {
+	try {
+		const raw = JSON.parse(await readFile(MANIFEST_PATH, 'utf8'));
+		return normalizeManifest(raw);
+	} catch {
+		if (existsSync(SEED_MANIFEST) && existsSync(SET_DIR)) {
+			try {
+				await copyFile(SEED_MANIFEST, MANIFEST_PATH);
+				const raw = JSON.parse(await readFile(MANIFEST_PATH, 'utf8'));
+				return normalizeManifest(raw);
+			} catch {
+				/* fall through */
+			}
+		}
+		return emptyManifest();
 	}
 }
 
@@ -165,10 +255,65 @@ const server = createServer(async (req, res) => {
 				set_dir: SET_DIR,
 				smoke_dir: SMOKE_DIR,
 				labels_path: LABELS_PATH,
+				manifest_path: MANIFEST_PATH,
 				identity_runs_dir: IDENTITY_RUNS_DIR,
 				set_exists: existsSync(SET_DIR),
 				smoke_exists: existsSync(SMOKE_DIR),
+				manifest_exists: existsSync(MANIFEST_PATH),
 			});
+		}
+
+		if (req.method === 'GET' && pathname === '/api/manifest') {
+			return sendJson(res, 200, await loadManifest());
+		}
+
+		if (req.method === 'PUT' && pathname === '/api/manifest') {
+			const chunks = [];
+			for await (const chunk of req) chunks.push(chunk);
+			const rawBody = Buffer.concat(chunks).toString('utf8');
+			if (!rawBody.trim()) {
+				return sendText(res, 400, 'Empty request body');
+			}
+			let body;
+			try {
+				body = JSON.parse(rawBody);
+			} catch {
+				return sendText(res, 400, 'Invalid JSON body');
+			}
+			if (!existsSync(SET_DIR)) {
+				return sendText(res, 400, `Fixture set missing: ${SET_DIR}`);
+			}
+			const next = normalizeManifest({
+				...body,
+				updated_at: new Date().toISOString(),
+			});
+			if (!Array.isArray(next.garments)) {
+				return sendText(res, 400, 'manifest.garments must be an array');
+			}
+			const force = body.force === true || url.searchParams.get('force') === '1';
+			let existingGarments = 0;
+			try {
+				if (existsSync(MANIFEST_PATH)) {
+					const existing = normalizeManifest(JSON.parse(await readFile(MANIFEST_PATH, 'utf8')));
+					existingGarments = existing.garments.length;
+				}
+			} catch {
+				/* ignore */
+			}
+			if (!force && existingGarments > 0 && next.garments.length === 0) {
+				return sendText(
+					res,
+					409,
+					`Refusing to overwrite ${existingGarments} garments with an empty list. Pass force=1 if intentional.`
+				);
+			}
+			try {
+				await writeJsonAtomic(MANIFEST_PATH, next);
+			} catch (err) {
+				console.error('manifest write failed', err);
+				return sendText(res, 500, `Failed to write manifest: ${err?.message || err}`);
+			}
+			return sendJson(res, 200, next);
 		}
 
 		if (req.method === 'GET' && pathname === '/api/smoke') {
@@ -201,14 +346,74 @@ const server = createServer(async (req, res) => {
 		if (req.method === 'PUT' && pathname === '/api/labels') {
 			const chunks = [];
 			for await (const chunk of req) chunks.push(chunk);
-			const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
-			await mkdir(SMOKE_DIR, { recursive: true });
+			const rawBody = Buffer.concat(chunks).toString('utf8');
+			if (!rawBody.trim()) {
+				return sendText(res, 400, 'Empty request body');
+			}
+			let body;
+			try {
+				body = JSON.parse(rawBody);
+			} catch {
+				return sendText(res, 400, 'Invalid JSON body');
+			}
+			const photos = body.photos && typeof body.photos === 'object' && !Array.isArray(body.photos) ? body.photos : null;
+			if (!photos) {
+				return sendText(res, 400, 'labels.photos object required');
+			}
+
+			// Guard: never clobber a non-empty labels file with an empty payload.
+			// This is what wiped ground truth when the UI state had photos: {}.
+			let existing = null;
+			try {
+				if (existsSync(LABELS_PATH)) {
+					const raw = await readFile(LABELS_PATH, 'utf8');
+					if (raw.trim()) existing = JSON.parse(raw);
+				}
+			} catch (err) {
+				console.warn('could not read existing labels before save:', err?.message || err);
+			}
+			const existingPhotos = existing?.photos && typeof existing.photos === 'object' ? existing.photos : {};
+			const existingCount = countPhotoKeys(existingPhotos);
+			const existingItems = countLabeledItems(existingPhotos);
+			const nextCount = countPhotoKeys(photos);
+			const nextItems = countLabeledItems(photos);
+			const force = body.force === true || url.searchParams.get('force') === '1';
+			if (!force && existingCount > 0 && nextCount === 0) {
+				return sendText(
+					res,
+					409,
+					`Refusing to overwrite ${existingCount} labeled photos with an empty photos object. Pass force=1 if intentional.`
+				);
+			}
+			if (!force && existingItems > 0 && nextItems === 0 && nextCount < existingCount) {
+				return sendText(
+					res,
+					409,
+					`Refusing to drop all ${existingItems} item labels (had ${existingCount} photos, got ${nextCount}). Pass force=1 if intentional.`
+				);
+			}
+
 			const next = {
 				version: 1,
 				updated_at: new Date().toISOString(),
-				photos: body.photos && typeof body.photos === 'object' ? body.photos : {},
+				photos,
 			};
-			await writeFile(LABELS_PATH, JSON.stringify(next, null, 2));
+			try {
+				await writeJsonAtomic(LABELS_PATH, next);
+			} catch (err) {
+				console.error('labels write failed', err);
+				return sendText(res, 500, `Failed to write labels: ${err?.message || err}`);
+			}
+			// Verify round-trip so the client never thinks a corrupt write succeeded.
+			try {
+				const verify = JSON.parse(await readFile(LABELS_PATH, 'utf8'));
+				if (countPhotoKeys(verify.photos) !== nextCount) {
+					throw new Error('post-write photo count mismatch');
+				}
+			} catch (err) {
+				console.error('labels verify failed', err);
+				return sendText(res, 500, `Labels write verify failed: ${err?.message || err}`);
+			}
 			return sendJson(res, 200, next);
 		}
 
@@ -243,7 +448,8 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
 	console.log(`Outfit eval UI → http://127.0.0.1:${PORT}`);
-	console.log(`  photos:  ${SET_DIR}`);
-	console.log(`  smoke:   ${SMOKE_DIR}`);
-	console.log(`  labels:  ${LABELS_PATH}`);
+	console.log(`  photos:    ${SET_DIR}`);
+	console.log(`  smoke:     ${SMOKE_DIR}`);
+	console.log(`  labels:    ${LABELS_PATH}`);
+	console.log(`  manifest:  ${MANIFEST_PATH}${existsSync(MANIFEST_PATH) ? '' : ' (will seed on first GET)'}`);
 });

@@ -8,8 +8,21 @@ import {
 } from '../../../types';
 import type { ClosetCatalogNotifyItem } from '../../../utils/closet_browse';
 import type { IdentityCreateReason } from '../decide/policy';
+import type { PreparedClosetCrop } from '../encode/cropEncoder';
+import { identityProbeFromPrepared } from '../encode/probeEmbed';
 import type { ClosetVectorBackfillJob, ClosetVectorRepairJob } from '../jobs/closetVectorRepair';
 import type { OutfitIdentityWriteDeps, ProcessedOutfitItem } from './types';
+
+/** Attach eval probe when prepare succeeded (no-op if vector unusable). */
+export function withIdentityProbe(
+	item: ProcessedOutfitItem,
+	prepared: PreparedClosetCrop | null | undefined
+): ProcessedOutfitItem {
+	if (!prepared) return item;
+	const probe = identityProbeFromPrepared(prepared);
+	if (!probe) return item;
+	return { ...item, identity_probe: probe };
+}
 
 /** D1 / SQLite foreign-key failures (e.g. eval reset wiped rows mid-queue). */
 export function isSqliteForeignKeyError(err: unknown): boolean {

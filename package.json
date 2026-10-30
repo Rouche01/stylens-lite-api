@@ -12,6 +12,7 @@
 		"eval:ui": "node tools/outfit-eval-ui/server.mjs",
 		"eval:reset": "node scripts/eval-reset.mjs",
 		"extract:smoke": "node scripts/extract-smoke.mjs",
+		"identity:replay": "node scripts/identity-replay.mjs",
 		"start": "wrangler dev",
 		"test": "vitest",
 		"cf-typegen": "wrangler types",

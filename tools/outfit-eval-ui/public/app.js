@@ -10,7 +10,9 @@ const state = {
 	photoIndex: 0,
 	activeItem: 0,
 	labels: { version: 1, updated_at: null, photos: {} },
+	manifest: { version: 1, set: '', updated_at: null, garments: [], photos: {} },
 	dirty: false,
+	saving: false,
 	view: { scale: 1, x: 0, y: 0 },
 	pan: null,
 };
@@ -72,10 +74,150 @@ function itemLabel(key, index) {
 			extract_verdict: null,
 			human_verdict: null,
 			expected_action: null,
+			garment_id: null,
 			notes: '',
 		};
 	}
+	if (!('garment_id' in photo.items[index])) photo.items[index].garment_id = null;
 	return photo.items[index];
+}
+
+function garmentById(id) {
+	if (!id) return null;
+	return (state.manifest.garments || []).find((g) => g.id === id) || null;
+}
+
+function garmentsSorted() {
+	return [...(state.manifest.garments || [])].sort((a, b) =>
+		String(a.description || a.id).localeCompare(String(b.description || b.id))
+	);
+}
+
+function suggestGarmentId(item) {
+	const slot =
+		item?.category === 'bottom'
+			? 'lower'
+			: item?.category === 'footwear'
+				? 'footwear'
+				: item?.category === 'accessory'
+					? 'accessory'
+					: item?.category === 'full-body'
+						? 'full_body'
+						: 'upper';
+	const tip = String(item?.subcategory || item?.category || 'item')
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '_')
+		.replace(/^_|_$/g, '');
+	const base = `g_${tip || 'item'}`;
+	const existing = new Set((state.manifest.garments || []).map((g) => g.id));
+	if (!existing.has(base)) return base;
+	for (let i = 2; i < 100; i++) {
+		const id = `${base}_${i}`;
+		if (!existing.has(id)) return id;
+	}
+	return `${base}_${Date.now()}`;
+}
+
+/** Keep manifest.photos[file] in sync when a label assigns a garment. */
+function upsertManifestPhotoGarment(file, garmentId, box, { missing = false } = {}) {
+	if (!file || !garmentId) return;
+	if (!state.manifest.photos[file]) {
+		state.manifest.photos[file] = { notes: '', garments: [] };
+	}
+	const list = state.manifest.photos[file].garments;
+	if (!Array.isArray(list)) state.manifest.photos[file].garments = [];
+	const garments = state.manifest.photos[file].garments;
+	const idx = garments.findIndex((g) => g.id === garmentId);
+	const entry = { id: garmentId };
+	if (missing) entry.missing = true;
+	else if (box && typeof box === 'object') entry.box = { ...box };
+	if (idx >= 0) {
+		const prev = garments[idx];
+		garments[idx] = {
+			...prev,
+			...entry,
+			box: entry.box || prev.box,
+			missing: missing ? true : prev.missing && !entry.box ? true : undefined,
+			notes: prev.notes || undefined,
+		};
+		if (!garments[idx].missing) delete garments[idx].missing;
+		if (!garments[idx].notes) delete garments[idx].notes;
+	} else {
+		garments.push(entry);
+	}
+}
+
+function assignGarmentToItem(file, itemIndex, garmentId, extractItem) {
+	const label = itemLabel(file, itemIndex);
+	label.garment_id = garmentId || null;
+	if (garmentId) {
+		upsertManifestPhotoGarment(file, garmentId, extractItem?.bounding_box);
+		if (!label.human_verdict) {
+			const first = isFirstSightingInSmoke(garmentId, file, itemIndex);
+			label.human_verdict = first ? 'different' : 'same';
+			label.expected_action = first ? 'create' : 'ask';
+		}
+	}
+	markDirty();
+}
+
+function isFirstSightingInSmoke(garmentId, file, itemIndex) {
+	for (const result of okResults()) {
+		const key = result.file;
+		for (let i = 0; i < (result.items || []).length; i++) {
+			if (key === file && i === itemIndex) return true;
+			if (itemLabel(key, i).garment_id === garmentId) return false;
+		}
+	}
+	return true;
+}
+
+function createGarmentFromItem(extractItem, description) {
+	const id = suggestGarmentId(extractItem);
+	const name = String(description ?? extractItem?.label ?? id).trim() || id;
+	const slot =
+		extractItem?.category === 'bottom'
+			? 'lower'
+			: extractItem?.category === 'footwear'
+				? 'footwear'
+				: extractItem?.category === 'accessory'
+					? 'accessory'
+					: extractItem?.category === 'full-body'
+						? 'full_body'
+						: 'upper';
+	state.manifest.garments.push({
+		id,
+		description: name,
+		slot,
+		subcategory_hint: extractItem?.subcategory || null,
+		status: 'confirmed',
+		notes: '',
+	});
+	return id;
+}
+
+function setGarmentDescription(garmentId, description, { requireNonEmpty = false } = {}) {
+	const g = garmentById(garmentId);
+	if (!g) return;
+	const next = String(description ?? '').trim();
+	if (requireNonEmpty && !next) return;
+	if (next === g.description) return;
+	if (!next) return;
+	g.description = next;
+	if (g.status === 'provisional') g.status = 'confirmed';
+	markDirty();
+}
+
+/** Ask for a freeform name; Cancel aborts. Prefills extract label so wrong Claude wording is easy to fix. */
+function promptGarmentDescription(extractItem) {
+	const preset = String(extractItem?.label || '').trim();
+	const typed = window.prompt(
+		'Name this garment (freeform — correct color/type if the extract label is wrong):',
+		preset
+	);
+	if (typed == null) return null;
+	const name = typed.trim();
+	return name || preset || null;
 }
 
 function markDirty(msg = 'Unsaved changes') {
@@ -85,13 +227,29 @@ function markDirty(msg = 'Unsaved changes') {
 
 async function api(path, opts) {
 	const res = await fetch(path, opts);
-	if (!res.ok) throw new Error(await res.text());
+	if (!res.ok) {
+		const text = await res.text();
+		throw new Error(text || `${res.status} ${res.statusText}`);
+	}
+	const type = res.headers.get('content-type') || '';
+	if (!type.includes('application/json')) {
+		throw new Error(`Expected JSON from ${path}, got ${type || 'unknown'}`);
+	}
 	return res.json();
 }
 
+function labeledPhotoCount(photos) {
+	return photos && typeof photos === 'object' ? Object.keys(photos).length : 0;
+}
+
 async function init() {
-	const [smokeList, labels] = await Promise.all([api('/api/smoke'), api('/api/labels')]);
+	const [smokeList, labels, manifest] = await Promise.all([
+		api('/api/smoke'),
+		api('/api/labels'),
+		api('/api/manifest'),
+	]);
 	state.labels = labels?.photos ? labels : { version: 1, updated_at: null, photos: {} };
+	state.manifest = manifest?.garments ? manifest : { version: 1, set: '', updated_at: null, garments: [], photos: {} };
 
 	els.smokeSelect.innerHTML = '';
 	if (!smokeList.runs?.length) {
@@ -501,6 +659,31 @@ function renderItems() {
 				<button type="button" class="chip ${label.extract_verdict === 'wrong' ? 'active-wrong' : ''}" data-field="extract_verdict" data-value="wrong">wrong</button>
 				<button type="button" class="chip ${label.extract_verdict === 'spurious' ? 'active-spurious' : ''}" data-field="extract_verdict" data-value="spurious">spurious</button>
 			</div>
+			<label class="field block garment-field">
+				<span class="chip-row-label">Ground truth garment</span>
+				<select data-field="garment_id" class="garment-select">
+					<option value="">— none —</option>
+					<option value="__new__">＋ new garment…</option>
+					${
+						label.garment_id && !garmentById(label.garment_id)
+							? `<option value="${escapeAttr(label.garment_id)}" selected>${escapeHtml(label.garment_id)} (missing from manifest)</option>`
+							: ''
+					}
+					${garmentsSorted()
+						.map((g) => {
+							const tag = g.status === 'provisional' ? ' (provisional)' : '';
+							const selected = label.garment_id === g.id ? ' selected' : '';
+							return `<option value="${escapeAttr(g.id)}"${selected}>${escapeHtml(g.description || g.id)}${tag}</option>`;
+						})
+						.join('')}
+				</select>
+				${
+					label.garment_id
+						? `<input type="text" data-field="garment_description" class="garment-description" placeholder="Garment name (freeform)" value="${escapeAttr(garmentById(label.garment_id)?.description || label.garment_id)}" ${garmentById(label.garment_id) ? '' : 'disabled'} />
+						<p class="muted small mono garment-id">${escapeHtml(label.garment_id)}${garmentById(label.garment_id) ? ` · ${escapeHtml(garmentById(label.garment_id).slot || '?')}` : ' · not in manifest — re-create or pick another'}</p>`
+						: `<p class="muted small">Pick an existing garment or create one — name is freeform, not the extract label.</p>`
+				}
+			</label>
 			<div class="chips" data-group="identity">
 				<span class="chip-row-label">Your identity verdict</span>
 				<button type="button" class="chip ${label.human_verdict === 'same' ? 'active-same' : ''}" data-field="human_verdict" data-value="same">same</button>
@@ -542,6 +725,43 @@ function renderItems() {
 				drawOverlay();
 			});
 		});
+
+		const garmentSelect = card.querySelector('select[data-field="garment_id"]');
+		garmentSelect.addEventListener('change', () => {
+			let value = garmentSelect.value;
+			if (value === '__new__') {
+				const name = promptGarmentDescription(item);
+				if (name == null) {
+					garmentSelect.value = label.garment_id || '';
+					return;
+				}
+				value = createGarmentFromItem(item, name);
+			}
+			assignGarmentToItem(key, index, value || null, item);
+			renderItems();
+			drawOverlay();
+			const desc = els.itemList.querySelector(
+				`.item[data-index="${index}"] input[data-field="garment_description"]`
+			);
+			if (desc) {
+				desc.focus();
+				desc.select();
+			}
+		});
+
+		const garmentDesc = card.querySelector('input[data-field="garment_description"]');
+		if (garmentDesc) {
+			garmentDesc.addEventListener('change', () => {
+				setGarmentDescription(label.garment_id, garmentDesc.value, { requireNonEmpty: true });
+				renderItems();
+			});
+			garmentDesc.addEventListener('keydown', (ev) => {
+				if (ev.key === 'Enter') {
+					ev.preventDefault();
+					garmentDesc.blur();
+				}
+			});
+		}
 
 		const notesInput = card.querySelector('input[data-field="notes"]');
 		notesInput.addEventListener('input', () => {
@@ -629,15 +849,78 @@ function escapeAttr(value) {
 }
 
 async function saveLabels() {
+	if (state.saving) {
+		els.saveStatus.textContent = 'Save already in progress…';
+		return;
+	}
+	const photos = state.labels?.photos;
+	if (!photos || typeof photos !== 'object') {
+		els.saveStatus.textContent = 'Save blocked: labels state is missing photos';
+		return;
+	}
+	// Client-side belt-and-suspenders: never POST an empty wipe while editing.
+	if (labeledPhotoCount(photos) === 0) {
+		els.saveStatus.textContent = 'Save blocked: no photo labels in memory (refusing empty overwrite)';
+		return;
+	}
+	if (!Array.isArray(state.manifest?.garments)) {
+		els.saveStatus.textContent = 'Save blocked: manifest.garments missing';
+		return;
+	}
+
+	state.saving = true;
+	els.saveBtn.disabled = true;
 	els.saveStatus.textContent = 'Saving…';
-	const saved = await api('/api/labels', {
-		method: 'PUT',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ photos: state.labels.photos }),
-	});
-	state.labels = saved;
-	state.dirty = false;
-	els.saveStatus.textContent = `Saved ${new Date(saved.updated_at).toLocaleTimeString()}`;
+	try {
+		let labelsBody;
+		let manifestBody;
+		try {
+			labelsBody = JSON.stringify({ photos });
+			manifestBody = JSON.stringify(state.manifest);
+		} catch (serErr) {
+			throw new Error(`Could not serialize save payload: ${serErr.message}`);
+		}
+		if (!labelsBody || labelsBody === '{}' || labelsBody === 'null') {
+			throw new Error('Labels payload serialized empty');
+		}
+
+		// Sequential: labels first, then manifest. Never parallel-race the two files.
+		const savedLabels = await api('/api/labels', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: labelsBody,
+		});
+		if (labeledPhotoCount(savedLabels?.photos) === 0) {
+			throw new Error('Server returned empty labels after save — not applying to UI');
+		}
+
+		let savedManifest = state.manifest;
+		try {
+			savedManifest = await api('/api/manifest', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: manifestBody,
+			});
+		} catch (manifestErr) {
+			console.error(manifestErr);
+			state.labels = savedLabels;
+			state.dirty = true;
+			els.saveStatus.textContent = `Labels saved; manifest failed: ${manifestErr.message}`;
+			return;
+		}
+
+		state.labels = savedLabels;
+		state.manifest = savedManifest;
+		state.dirty = false;
+		const when = savedLabels.updated_at || savedManifest.updated_at;
+		els.saveStatus.textContent = `Saved ${when ? new Date(when).toLocaleTimeString() : 'ok'} · ${state.manifest.garments?.length || 0} garments`;
+	} catch (err) {
+		console.error(err);
+		els.saveStatus.textContent = `Save failed: ${err.message}`;
+	} finally {
+		state.saving = false;
+		els.saveBtn.disabled = false;
+	}
 }
 
 function onKey(ev) {

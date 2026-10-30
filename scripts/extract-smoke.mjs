@@ -8,9 +8,13 @@
  *   npm run extract:smoke
  *   npm run extract:smoke -- --no-reset
  *   npm run extract:smoke -- /path/to/outfits-set-v1 img1.jpg img2.jpg
+ *
+ * Probe artifacts (admin extract only): each item may include `identity_probe`
+ * (encoder, vector, crop_color, crop_image_key). Crops are downloaded under
+ * tmp/extract_smoke/work/<stamp>/crops/ for offline replay.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, extname, join, resolve } from 'node:path';
+import { basename, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -126,7 +130,48 @@ function summarizeItems(items) {
 		candidate_closet_item_id: it.candidate_closet_item_id ?? null,
 		match_id: it.match_id ?? null,
 		box: it.bounding_box ?? null,
+		has_probe: Boolean(it.identity_probe?.vector?.length),
+		probe_encoder: it.identity_probe?.encoder ?? null,
+		crop_path: it.identity_probe?.crop_path ?? null,
 	}));
+}
+
+/** Persist crop JPEG locally; strip ephemeral signed URL from the stored probe. */
+async function materializeProbe(item, index, cropsDir) {
+	const probe = item?.identity_probe;
+	if (!probe || !Array.isArray(probe.vector) || probe.vector.length === 0) {
+		return { ...item, identity_probe: probe ?? null };
+	}
+
+	const safeFile = String(item.label || `item_${index}`)
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '_')
+		.replace(/^_|_$/g, '')
+		.slice(0, 40);
+	const cropName = `${String(index).padStart(2, '0')}_${safeFile || 'crop'}.jpg`;
+	const cropAbs = join(cropsDir, cropName);
+	let cropPath = null;
+	const url = typeof probe.crop_image_url === 'string' ? probe.crop_image_url.trim() : '';
+	if (url) {
+		try {
+			const res = await fetch(url);
+			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+			const bytes = Buffer.from(await res.arrayBuffer());
+			await writeFile(cropAbs, bytes);
+			cropPath = relative(ROOT, cropAbs);
+		} catch (err) {
+			console.warn(`   ! crop download failed for item ${index}: ${err?.message || err}`);
+		}
+	}
+
+	const { crop_image_url: _omitUrl, ...rest } = probe;
+	return {
+		...item,
+		identity_probe: {
+			...rest,
+			crop_path: cropPath,
+		},
+	};
 }
 
 async function resetEvalUser({ base, adminKey, userId }) {
@@ -242,7 +287,14 @@ async function main() {
 		console.log('');
 	}
 
+	const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+	const workDir = join(OUT_DIR, 'work', stamp);
+	const cropsRoot = join(workDir, 'crops');
+	await mkdir(cropsRoot, { recursive: true });
+
 	const results = [];
+	let probeCount = 0;
+	let cropCount = 0;
 	for (const srcPath of files) {
 		const file = basename(srcPath);
 		process.stdout.write(`→ ${file} ... `);
@@ -255,7 +307,16 @@ async function main() {
 				imageKey: uploaded.imageKey,
 				imageUrl: uploaded.imageUrl,
 			});
-			const items = Array.isArray(body?.items) ? body.items : [];
+			const rawItems = Array.isArray(body?.items) ? body.items : [];
+			const photoCropsDir = join(cropsRoot, file.replace(/[^\w.-]+/g, '_'));
+			await mkdir(photoCropsDir, { recursive: true });
+			const items = [];
+			for (let i = 0; i < rawItems.length; i++) {
+				const next = await materializeProbe(rawItems[i], i, photoCropsDir);
+				if (next.identity_probe?.vector?.length) probeCount += 1;
+				if (next.identity_probe?.crop_path) cropCount += 1;
+				items.push(next);
+			}
 			const result = {
 				ok: true,
 				file,
@@ -280,6 +341,7 @@ async function main() {
 				if (row.identity_color_distance != null) {
 					diagBits.push(`color_d=${Number(row.identity_color_distance).toFixed(3)}`);
 				}
+				if (row.has_probe) diagBits.push('probe');
 				const diag = diagBits.length ? ` [${diagBits.join(' ')}]` : '';
 				console.log(
 					`   - [${row.confidence}] ${row.category}/${row.subcategory} ${row.color}: ${row.label}${idBit}${diag}`
@@ -297,7 +359,6 @@ async function main() {
 		console.log('');
 	}
 
-	const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 	const outPath = join(OUT_DIR, `smoke_${stamp}.json`);
 	const ok = results.filter((r) => r.ok).length;
 	const fail = results.length - ok;
@@ -310,7 +371,10 @@ async function main() {
 				api_base: base,
 				user_id: userId,
 				reset: noReset ? null : resetResult,
-				note: 'Full POST /outfits/extract cycle. Closet accumulates across photos; reset only at cycle start.',
+				work_dir: relative(ROOT, workDir),
+				probe_count: probeCount,
+				crop_count: cropCount,
+				note: 'Full POST /outfits/extract cycle. Closet accumulates across photos; reset only at cycle start. Admin extract includes identity_probe; crops under work_dir/crops/.',
 				results,
 			},
 			null,
@@ -319,6 +383,7 @@ async function main() {
 	);
 
 	console.log(`Wrote ${outPath}`);
+	console.log(`Probes: ${probeCount} · crops saved: ${cropCount} → ${relative(ROOT, cropsRoot)}`);
 	console.log(`Done: ${ok} ok, ${fail} failed`);
 	console.log('Tip: npm run eval:ui  ·  npm run identity:sink (optional run artifacts)');
 	if (fail) process.exitCode = 1;

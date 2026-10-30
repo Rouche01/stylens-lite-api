@@ -107,7 +107,7 @@ Free-tier trial / monthly quota behavior is documented in `docs/subscription-lim
 |-------|-----|
 | Subscription / free limits | `docs/subscription-limits.md` |
 | Session memory | `docs/session-memory.md` |
-| Closet identity / outfit identity | `docs/plan_closet_item_identity.md`, `docs/outfit_identity_flow.md` |
+| Closet identity / outfit identity | `docs/plan_closet_item_identity.md`, `docs/outfit_identity_flow.md`, `docs/identity_manifest.md` (fixture ground truth) |
 | Outfit twin pipeline | `docs/outfit_twin_pipeline.md` |
 | Blurhash backfill | `scripts/BACKFILL_BLURHASH.md` |
 
