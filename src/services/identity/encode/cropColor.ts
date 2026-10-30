@@ -8,15 +8,32 @@ export type CropColorSignature = {
 	l: number;
 };
 
-/** Color Δ at which agree→0 for typical garments (olive vs black, etc.). */
-export const COLOR_DISTANCE_FULL_PENALTY = 0.12;
 /**
- * Wider agree ramp for black / charcoal / navy / dark-gray pairs.
- * Same physical dark hat under different light often lands ~0.12–0.20 Δ;
- * the default 0.12 ramp floor-kills ~0.98 cosine to ~0.25.
+ * Color Δ at which agree→0.
+ * Calibration (Oct 2026 smokes): genuine different garments in one slot land at
+ * Δ ≥ 0.35 (olive vs black, grey vs beige, hoodie vs leather); the same garment
+ * under a lighting shift lands 0.02–0.17 (light jeans 0.09, navy cap 0.166).
+ * The old 0.12 ramp floor-killed cos 0.996 @ Δ 0.09 to 0.435.
  */
+export const COLOR_DISTANCE_FULL_PENALTY = 0.3;
+/** Dark-neutral pairs use the same ramp today; kept as a hook for a wider dark band. */
 export const COLOR_DISTANCE_FULL_PENALTY_DARK_NEUTRAL = 0.3;
 const CHROMA_HUE_MIN_S = 0.12;
+
+/**
+ * Center-weighted sampling: corners/edges of a Florence box are wall, floor,
+ * skin, or the neighbouring garment. Weight falls off with distance from center
+ * and never drops below this floor.
+ */
+const COLOR_EDGE_WEIGHT_FLOOR = 0.15;
+/** Footwear crops include floor under the shoe; drop this fraction of bottom rows. */
+export const FOOTWEAR_COLOR_BOTTOM_CUT = 0.25;
+
+export type ColorSampleOptions = {
+	width?: number;
+	height?: number;
+	category?: string | null;
+};
 
 export function rgbToHsl(r: number, g: number, b: number): CropColorSignature {
 	const nr = r / 255;
@@ -70,13 +87,43 @@ export function isDarkNeutralPair(a: CropColorSignature, b: CropColorSignature):
 	return meanL < 0.34 && maxL < 0.42 && maxS < 0.3;
 }
 
-export function rgbaToColorSignature(rgba: Uint8Array): CropColorSignature {
+function isFootwearCategory(category?: string | null): boolean {
+	const key = category?.trim().toLowerCase();
+	return key === 'footwear' || key === 'shoes';
+}
+
+/**
+ * Spatial weight for a pixel: 1 at center, {@link COLOR_EDGE_WEIGHT_FLOOR} at corners;
+ * 0 for the floor band under footwear. Without dimensions every pixel weighs 1.
+ */
+export function colorSampleWeight(x: number, y: number, options?: ColorSampleOptions): number {
+	const width = options?.width ?? 0;
+	const height = options?.height ?? 0;
+	if (!(width > 1) || !(height > 1)) {
+		return 1;
+	}
+	if (isFootwearCategory(options?.category) && y >= height * (1 - FOOTWEAR_COLOR_BOTTOM_CUT)) {
+		return 0;
+	}
+	const cx = (width - 1) / 2;
+	const cy = (height - 1) / 2;
+	const dx = (x - cx) / cx;
+	const dy = (y - cy) / cy;
+	// Normalize so the corner is 1; squared falloff keeps the inner ~60% near full weight.
+	const d2 = (dx * dx + dy * dy) / 2;
+	return Math.max(COLOR_EDGE_WEIGHT_FLOOR, 1 - d2);
+}
+
+export function rgbaToColorSignature(rgba: Uint8Array, options?: ColorSampleOptions): CropColorSignature {
+	const width = options?.width ?? 0;
+	const spatial = Boolean(options && (options.width ?? 0) > 1 && (options.height ?? 0) > 1);
 	let sumL = 0;
 	let sumS = 0;
 	let hueX = 0;
 	let hueY = 0;
 	let n = 0;
-	for (let i = 0; i + 3 < rgba.length; i += 4) {
+	let pixel = 0;
+	for (let i = 0; i + 3 < rgba.length; i += 4, pixel++) {
 		if (rgba[i + 3] < 128) {
 			continue;
 		}
@@ -84,15 +131,19 @@ export function rgbaToColorSignature(rgba: Uint8Array): CropColorSignature {
 		if (isLikelySkin(hsl) || isLikelyBackground(hsl)) {
 			continue;
 		}
-		sumL += hsl.l;
-		sumS += hsl.s;
-		const weight = hsl.s * hsl.s;
+		const w = spatial ? colorSampleWeight(pixel % width, Math.floor(pixel / width), options) : 1;
+		if (w <= 0) {
+			continue;
+		}
+		sumL += hsl.l * w;
+		sumS += hsl.s * w;
+		const weight = hsl.s * hsl.s * w;
 		const rad = (hsl.h * Math.PI) / 180;
 		hueX += Math.cos(rad) * weight;
 		hueY += Math.sin(rad) * weight;
-		n += 1;
+		n += w;
 	}
-	if (n === 0) {
+	if (n <= 0) {
 		return { h: 0, s: 0, l: 0 };
 	}
 	const h = (Math.atan2(hueY, hueX) * 180) / Math.PI;
@@ -242,15 +293,17 @@ export async function decodePngRgbaImage(
 
 export async function extractCropColorSignature(
 	images: ImagesBinding,
-	cropJpeg: ArrayBuffer
+	cropJpeg: ArrayBuffer,
+	options?: { category?: string | null }
 ): Promise<CropColorSignature> {
-	const visuals = await extractCropVisuals(images, cropJpeg);
+	const visuals = await extractCropVisuals(images, cropJpeg, options);
 	return visuals.color;
 }
 
 export async function extractCropVisuals(
 	images: ImagesBinding,
-	cropJpeg: ArrayBuffer
+	cropJpeg: ArrayBuffer,
+	options?: { category?: string | null }
 ): Promise<{ color: CropColorSignature; blurHash: string | null }> {
 	const pngResponse = (
 		await images.input(new Blob([cropJpeg]).stream()).transform({ width: 32, height: 32, fit: 'cover' }).output({
@@ -262,7 +315,7 @@ export async function extractCropVisuals(
 	}
 	const { rgba, width, height } = await decodePngRgbaImage(await pngResponse.arrayBuffer());
 	return {
-		color: rgbaToColorSignature(rgba),
+		color: rgbaToColorSignature(rgba, { width, height, category: options?.category }),
 		blurHash: encodeBlurHash4x3(rgba, width, height),
 	};
 }

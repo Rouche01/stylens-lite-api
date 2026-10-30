@@ -345,6 +345,8 @@ async function preparedForResolve(
 	return deps.identity.prepareClosetCrop({
 		imageKey: match.outfit_image_key,
 		boundingBox: match.bounding_box,
+		category: match.extract_snapshot.category,
+		subcategory: match.extract_snapshot.subcategory,
 		signal,
 	});
 }

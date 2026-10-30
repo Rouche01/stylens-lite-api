@@ -274,7 +274,7 @@ describe('shouldQueryIdentity', () => {
 		expect(shouldQueryIdentity(clothingItem())).toBe(true);
 	});
 
-	it('skips brim-only hat boxes', () => {
+	it('queries brim-only hat boxes (encoder expands them to the crown)', () => {
 		expect(
 			shouldQueryIdentity(
 				clothingItem({
@@ -284,12 +284,25 @@ describe('shouldQueryIdentity', () => {
 					bounding_box: { x: 32.5, y: 45.1, width: 6.6, height: 3.2 },
 				})
 			)
+		).toBe(true);
+	});
+
+	it('still skips short non-hat strips', () => {
+		expect(
+			shouldQueryIdentity(
+				clothingItem({
+					category: ClothingItemCategory.ACCESSORY,
+					subcategory: ClothingItemSubcategory.BELT,
+					label: 'belt',
+					bounding_box: { x: 32.5, y: 45.1, width: 6.6, height: 3.2 },
+				})
+			)
 		).toBe(false);
 	});
 });
 
 describe('OutfitIdentityProcessor', () => {
-	it('creates without embedding when the hat box is a brim-only strip', async () => {
+	it('embeds a brim-only hat strip with category hints instead of skipping it', async () => {
 		const harness = createHarness({
 			neighbors: [],
 			items: [
@@ -309,10 +322,43 @@ describe('OutfitIdentityProcessor', () => {
 
 		expect(result?.items[0]).toMatchObject({
 			identity_status: 'created',
-			identity_reason: 'skip_query',
+			identity_reason: 'no_neighbor',
 			is_new_closet_item: true,
 		});
 		expect(result?.items[0].closet_item_id).toBeTruthy();
+		expect(harness.identity.prepares).toBe(1);
+		expect(harness.identity.prepareParams[0]).toMatchObject({
+			category: 'accessory',
+			subcategory: 'hat',
+			boundingBox: { x: 32.5, y: 45.1, width: 6.6, height: 3.2 },
+		});
+		expect(harness.identity.upserts).toHaveLength(1);
+		expect(harness.closet.items).toHaveLength(1);
+	});
+
+	it('creates without embedding when a non-hat box is a tiny false strip', async () => {
+		const harness = createHarness({
+			neighbors: [],
+			items: [
+				clothingItem({
+					label: 'gray waistband',
+					category: ClothingItemCategory.ACCESSORY,
+					subcategory: ClothingItemSubcategory.OTHER,
+					bounding_box: { x: 32.5, y: 45.1, width: 6.6, height: 3.2 },
+				}),
+			],
+		});
+		const result = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/test.jpg',
+		});
+
+		expect(result?.items[0]).toMatchObject({
+			identity_status: 'created',
+			identity_reason: 'skip_query',
+			is_new_closet_item: true,
+		});
 		expect(harness.identity.prepares).toBe(0);
 		expect(harness.identity.upserts).toHaveLength(0);
 		expect(harness.closet.items).toHaveLength(1);
@@ -1265,6 +1311,50 @@ describe('serial identity writer', () => {
 		expect(harness.closet.items[0].index_status).toBe('indexing');
 		expect(harness.identity.deletes).toHaveLength(0);
 	});
+
+	it('asks from a prior pending-match probe when ANN has no neighbors (ask starvation)', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const first = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/a.jpg',
+			imageKey: 'users/u1/a.jpg',
+		});
+		const closetItemId = first?.items[0].closet_item_id;
+		expect(closetItemId).toBeTruthy();
+
+		await harness.closet.createPendingMatch({
+			userId: 'u1',
+			outfitId: 'outfit-seed',
+			candidateClosetItemId: closetItemId!,
+			boundingBox: BOX,
+			confidence: 'high',
+			extractSnapshot: {
+				label: 'olive shirt',
+				category: 'top',
+				subcategory: 'shirt',
+				color: 'olive',
+				pattern: 'solid',
+				styleTags: [],
+			},
+			score: 0.8,
+			cosine: 0.98,
+			colorDistance: 0.02,
+			probeEmbed: closetMatchProbeFromPrepared(PREPARED),
+		});
+
+		const second = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/b.jpg',
+			imageKey: 'users/u1/b.jpg',
+		});
+
+		expect(second?.items[0]).toMatchObject({
+			identity_status: 'ask',
+			candidate_closet_item_id: closetItemId,
+			is_new_closet_item: false,
+		});
+		expect(harness.closet.items).toHaveLength(1);
+	});
 });
 
 function clothingItem(overrides: Partial<ClothingItem> = {}): ClothingItem {
@@ -1337,13 +1427,27 @@ function createHarness(options: {
 	});
 	const identity = {
 		prepares: 0,
+		prepareParams: [] as Array<{
+			boundingBox: { x: number; y: number; width: number; height: number };
+			category?: string;
+			subcategory?: string;
+		}>,
 		queries: 0,
 		waits: 0,
 		upserts: [] as Array<{ closetItemId?: string }>,
 		deletes: [] as string[],
 		getByIdsCalls: [] as string[][],
-		prepareClosetCrop: async () => {
+		prepareClosetCrop: async (params: {
+			boundingBox: { x: number; y: number; width: number; height: number };
+			category?: string;
+			subcategory?: string;
+		}) => {
 			identity.prepares += 1;
+			identity.prepareParams.push({
+				boundingBox: params.boundingBox,
+				category: params.category,
+				subcategory: params.subcategory,
+			});
 			if (options.prepareError) throw options.prepareError;
 			return PREPARED;
 		},
@@ -1536,10 +1640,36 @@ function createHarness(options: {
 			.map((item) => ({
 				closetItemId: item.id,
 				category: item.category,
+				subcategory: item.subcategory,
 				label: item.label,
 				probeEmbed: this.probeEmbeds[item.id],
 				indexStatus: item.index_status ?? null,
 				createdAt: item.created_at,
+			}));
+	}
+
+	async listRecentPendingMatchProbes(userId: string, params?: { limit?: number; maxAgeMs?: number }) {
+		const limit = params?.limit ?? 25;
+		const maxAgeMs = params?.maxAgeMs ?? 7 * 24 * 60 * 60 * 1000;
+		const minCreatedAt = Date.now() - maxAgeMs;
+		return this.matches
+			.filter(
+				(match) =>
+					match.user_id === userId &&
+					match.status === 'pending' &&
+					match.created_at >= minCreatedAt &&
+					Boolean(match.probe_embed)
+			)
+			.sort((a, b) => b.created_at - a.created_at)
+			.slice(0, limit)
+			.map((match) => ({
+				closetItemId: match.candidate_closet_item_id,
+				category: match.extract_snapshot.category,
+				subcategory: match.extract_snapshot.subcategory,
+				label: match.extract_snapshot.label,
+				probeEmbed: match.probe_embed!,
+				matchId: match.id,
+				createdAt: match.created_at,
 			}));
 	}
 

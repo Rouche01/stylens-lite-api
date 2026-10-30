@@ -33,6 +33,7 @@ export type OutfitIdentityStore = Pick<
 	| 'stampVectorIndexedAt'
 	| 'listPendingIndexClosetItemIdsForUser'
 	| 'listRecentUnindexedProbes'
+	| 'listRecentPendingMatchProbes'
 >;
 
 export type ClosetVectorRepairScheduler = {

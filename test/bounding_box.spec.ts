@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { boxInCrop, CATALOG_BOX_PAD, closetTilePad, isUsableIdentityBox, nativeAspectFocusWindow, normalizeOutfitBoundingBox, padPercentBox, percentBoxIou, percentBoxToTrim, personInOutfitBox, photoOverlayInCrop, tileAspectRatio } from '../src/utils/bounding_box';
+import { boxInCrop, CATALOG_BOX_PAD, closetTilePad, IDENTITY_HAT_EXPAND_HEIGHT, identityEmbedBox, isUsableIdentityBox, nativeAspectFocusWindow, normalizeOutfitBoundingBox, padPercentBox, percentBoxIou, percentBoxToTrim, personInOutfitBox, photoOverlayInCrop, tileAspectRatio } from '../src/utils/bounding_box';
 import { outfitExtractionUserPrompt } from '../src/llm/prompts/outfit_extraction';
 
 describe('normalizeOutfitBoundingBox', () => {
@@ -57,6 +57,41 @@ describe('isUsableIdentityBox', () => {
 				{ category: 'accessory', subcategory: 'hat' }
 			)
 		).toBe(true);
+	});
+});
+
+describe('identityEmbedBox', () => {
+	it('passes usable boxes through unchanged', () => {
+		const box = { x: 20, y: 15, width: 40, height: 35 };
+		expect(identityEmbedBox(box)).toBe(box);
+	});
+
+	it('expands brim-only hat strips upward to include the crown', () => {
+		const brim = { x: 32.5, y: 45.1, width: 6.6, height: 3.2 };
+		const expanded = identityEmbedBox(brim, { category: 'accessory', subcategory: 'hat' });
+		expect(expanded).not.toBeNull();
+		expect(expanded!.height).toBeGreaterThanOrEqual(IDENTITY_HAT_EXPAND_HEIGHT);
+		expect(expanded!.width).toBeGreaterThan(brim.width);
+		// Mostly upward growth: new top is well above the brim, bottom moves a little.
+		expect(expanded!.y).toBeLessThan(brim.y - 2);
+		expect(expanded!.y + expanded!.height).toBeGreaterThan(brim.y + brim.height);
+		expect(expanded!.y + expanded!.height).toBeLessThan(brim.y + brim.height + 2);
+		expect(isUsableIdentityBox(expanded!, { category: 'accessory', subcategory: 'hat' })).toBe(true);
+	});
+
+	it('still rejects tiny false boxes, hat or not', () => {
+		const tiny = { x: 0, y: 0, width: 1, height: 1 };
+		expect(identityEmbedBox(tiny)).toBeNull();
+		expect(identityEmbedBox(tiny, { category: 'accessory', subcategory: 'hat' })).toBeNull();
+		expect(identityEmbedBox({ x: 10, y: 10, width: 8, height: 3 }, { category: 'top', subcategory: 'shirt' })).toBeNull();
+	});
+
+	it('clamps expansion at the frame edge', () => {
+		const brimAtTop = { x: 40, y: 0.5, width: 8, height: 3 };
+		const expanded = identityEmbedBox(brimAtTop, { category: 'accessory', subcategory: 'cap' });
+		expect(expanded).not.toBeNull();
+		expect(expanded!.y).toBeGreaterThanOrEqual(0);
+		expect(expanded!.height).toBeGreaterThanOrEqual(IDENTITY_HAT_EXPAND_HEIGHT);
 	});
 });
 

@@ -1,5 +1,5 @@
 import { ClothingItem, ExtractionConfidence } from '../../../types';
-import { isUsableIdentityBox } from '../../../utils/bounding_box';
+import { identityEmbedBox } from '../../../utils/bounding_box';
 import { isIdentityMatch } from '../encode/cropColor';
 import type { QueryClosetCropMatch } from '../encode/cropEncoder';
 import { resolveIdentitySlot, type IdentitySlot } from '../encode/slot';
@@ -220,8 +220,10 @@ export function shouldQueryIdentity(item: ClothingItem): boolean {
 	if (item.confidence === ExtractionConfidence.LOW) {
 		return false;
 	}
-	return isUsableIdentityBox(item.bounding_box, {
-		category: item.category,
-		subcategory: item.subcategory,
-	});
+	return (
+		identityEmbedBox(item.bounding_box, {
+			category: item.category,
+			subcategory: item.subcategory,
+		}) !== null
+	);
 }

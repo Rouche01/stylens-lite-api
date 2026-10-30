@@ -122,7 +122,10 @@ export async function runClosetVectorRepair(params: {
 
 	const match = await loadRepairMatch(params.closet, params.job, closetItemId);
 	try {
-		const prepared = await preparedForRepair(params.identity, params.closet, closetItemId, match);
+		const prepared = await preparedForRepair(params.identity, params.closet, closetItemId, match, {
+			category: item.category,
+			subcategory: item.subcategory,
+		});
 		await params.identity.upsertPreparedCrop(prepared, {
 			userId: item.user_id,
 			category: item.category,
@@ -237,7 +240,8 @@ async function preparedForRepair(
 	identity: ClosetVectorRepairIdentity,
 	closet: ClosetVectorRepairStore,
 	closetItemId: string,
-	match: ClosetItemMatchWithOutfit | null
+	match: ClosetItemMatchWithOutfit | null,
+	hints: { category?: string; subcategory?: string } = {}
 ): Promise<PreparedClosetCrop> {
 	const itemProbe = await closet.getClosetItemProbeEmbed(closetItemId);
 	const fromItem = preparedFromProbeEmbed(itemProbe, match?.outfit_image_key ?? '');
@@ -248,6 +252,7 @@ async function preparedForRepair(
 		return identity.prepareClosetCrop({
 			imageKey: match.outfit_image_key,
 			boundingBox: match.bounding_box,
+			...hints,
 		});
 	}
 	const wear = await closet.getLatestWearImageForClosetItem(closetItemId);
@@ -257,5 +262,6 @@ async function preparedForRepair(
 	return identity.prepareClosetCrop({
 		imageKey: wear.imageKey,
 		boundingBox: wear.boundingBox,
+		...hints,
 	});
 }

@@ -68,6 +68,29 @@ describe('unindexed fallback scoring', () => {
 		});
 	});
 
+	it('scores pending-ask probes the same way (candidate id + extract subcategory)', () => {
+		const matches = scoreUnindexedProbes({
+			prepared: PREPARED,
+			category: 'accessory',
+			subcategory: 'hat',
+			probes: [
+				{
+					closetItemId: 'cap-tile-1',
+					category: 'accessory',
+					subcategory: 'hat',
+					label: 'black cap',
+					probeEmbed: probe(),
+				},
+			],
+		});
+		expect(matches).toHaveLength(1);
+		expect(matches[0]).toMatchObject({
+			d1_closet_item_id: 'cap-tile-1',
+			d1_subcategory: 'hat',
+			identity_score: 1,
+		});
+	});
+
 	it('merges ANN and local neighbors preferring higher identity_score', () => {
 		const merged = mergeIdentityNeighbors(
 			[

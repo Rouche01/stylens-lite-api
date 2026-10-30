@@ -8,13 +8,63 @@ This is closet quality, not shoppable try-on. Plan 1 boxed identity stays the pr
 
 ---
 
+## Goals & acceptance criteria
+
+Every identity plan, policy change, or scoring change should state which of these it moves and report the numbers.
+
+**Product goal:** the closet builds itself from outfit photos. A rewear links to the existing tile as a new wear; a genuinely new garment creates one tile. Wear counts and closet-aware styling depend on this.
+
+**Error priorities (worst first):**
+
+1. **False merge** — two different garments fused into one tile. Silent corruption, hard to undo.
+2. **Missed rewear** — duplicate tile, wrong wear counts. The dominant failure today.
+3. **Ask fatigue** — correct but too many questions; the closet stops feeling automatic.
+
+**Bands:**
+
+| Band | Rule | Status |
+| --- | --- | --- |
+| Auto-link | `identity_score ≥` auto-link floor → link wear silently, with undo | Not built. Enable only when replay shows 0 false merges with margin. |
+| Ask | `IDENTITY_MATCH_MIN` (0.5) ≤ score < auto-link floor → pending match | Live (today every match ≥ 0.5 asks). |
+| Create | score < 0.5, wrong subcategory, or no neighbor | Live |
+
+**Initial targets** (per slot, on a held-out labeled set, not the fixtures used for tuning):
+
+- Rewear recall (auto-link + ask): **≥ 85–90%**
+- False silent merges: **0**
+- False asks: **≤ ~1 per photo**
+- Auto-link share of true rewears: rises over time (asks shrink as the system earns trust)
+
+Targets are a starting bar; revise them here with the data that justifies the change.
+
+**Definitions and limits:**
+
+- **Recall denominator** is garments the extractor returned. A worn item Claude never extracted (hidden socks, a covered belt) is an extraction miss, tracked separately, not an identity miss.
+- **Auto-link evidence bar:** zero false merges in *n* labeled negatives only bounds the true rate at roughly 3/*n* (95%). Do not enable auto-link until the labeled corpus has **≥ ~200 different-garment pairs scoring near the candidate floor** (same slot, within ~0.1 of it) and none cross it.
+- **Near-identical basics** (two plain black tees, two pairs of black boots) cannot be told apart from one photo by any current encoder. For these, **ask is the correct outcome**: count an ask as a hit for recall, never auto-link them, and do not count their asks as false asks when the user confirms either way.
+
+**Measurement rule:** no scoring/policy change ships on a single smoke. Report recall, false-ask, and false-merge rates from the labeled replay corpus (plus one held-out smoke) before and after.
+
+**Roadmap (in order):**
+
+1. Measurement: per-garment ground-truth manifest, persisted probe artifacts, offline replay + threshold sweep, extraction cache for re-smokes.
+2. Vendor-free structure: multi-prototype items (confirmed wears add vectors/color; score max over wears), outfit co-occurrence prior, soften the `subcategory` gate within closed-shoe and upper-layer families.
+3. Masking (SAM2) for footwear/accessory crops — adopt only if replay shows the gain justifies the per-item cost.
+4. Representation experiments via replay: fashion-tuned encoder bake-off (MODA, GR-Lite, Marqo-FashionSigLIP vs DINOv3), patch-token pooling / flip TTA, lighting-robust color histogram.
+5. Auto-link band, calibrated on replay.
+6. Learned combiner over `[cos, Δcolor, subcategory_match, slot, …]` once ~100 labeled pairs exist.
+
+Extraction hygiene (pixel-derived color labels, generic grounding phrases, pinned model / temperature 0) fits between steps. Out of scope: queue / writer / Vectorize / D1 flow, lowering the 0.5 ask floor.
+
+---
+
 ## Product rules
 
 1. **Identity grain is the closet item**, not the whole outfit. An outfit vector answers “have I worn this look?” An item vector answers “is this the same olive shirt?” This plan is the second question.
 2. **Embed the oriented bounding-box crop** (Florence box on the EXIF-baked JPEG), not the full selfie. Background walls must not dominate the vector.
 3. **Attributes are filters and labels**, not the merge key. Coarse **slot** (`upper` | `lower` | `full_body` | `footwear` | `accessory`) scopes the search so jeans never rank against jackets. Map `top` and `outerwear` both to `upper` so Claude’s jacket-vs-top swap still matches. Color/pattern/label can disagree and still be the same piece. Never filter on the exact extract `category` string. **Exception:** within `accessory` and `footwear`, require matching `subcategory` before ask (hat must not ask vs socks; sneakers must not ask vs boots) — Claude is reliable enough there, and those types share one Vectorize slot.
 4. **A duplicate is a new wear, not a new tile.** Always persist the outfit photo. Merge vs create is only about `closet_items`.
-5. **The user is the async decider in the gray zone.** High similarity merges silently. Mid similarity stays off the grid as a second tile and asks. Low similarity creates a new item.
+5. **The user is the async decider in the gray zone.** High similarity merges silently (auto-link band — not yet enabled; see Goals). Mid similarity stays off the grid as a second tile and asks. Low similarity creates a new item.
 6. **Canonical cover is scored, not “latest wear.”** Wear history keeps every photo. Grid Isolate + boxed detail use the cover wear.
 7. **VoltMem is not this.** Stylist memory stays VoltMem. Visual identity is Vectorize + D1.
 
@@ -39,6 +89,8 @@ This is closet quality, not shoppable try-on. Plan 1 boxed identity stays the pr
 Cosine similarity is **not** extract `confidence` (`high` / `medium` / `low` on the Claude item). Extract confidence is a crop-quality gate (“is this box usable?”). Duplicate confidence is **identity_score** (encoder cosine after slot filter, then crop-color agreement). Extract confidence is a crop-quality gate (“is this box usable?”). Cosine alone is not a match: DINOv3 CLS scores ~0.7 for any two clothing crops.
 
 Calibrate thresholds on a labeled set (same garment / different garment / same color different SKU). Do not ship guessed constants. Start **conservative on silent merge** (fewer false joins, more notifications).
+
+Crop-color calibration (Oct 2026, labeled smoke set): in-slot DINOv3 cosine has little separating power (different garments 0.94–0.98), so `color_distance` carries the decision. Every labeled different-garment pair sat at Δ ≥ 0.35, while same-garment lighting shifts reached Δ ≈ 0.17. The ramp is therefore `COLOR_DISTANCE_FULL_PENALTY = 0.3` (agreement hits zero at Δ 0.3). To keep Δ honest, `rgbaToColorSignature` weights crop pixels toward the center (edge floor 0.15) and drops the bottom 25% of footwear crops (floor contamination). Brim-only hat boxes (height < `IDENTITY_HAT_BOX_MIN_HEIGHT`) are no longer skipped: `identityEmbedBox` expands them to `IDENTITY_HAT_EXPAND_HEIGHT` (mostly upward) before embedding.
 
 ```
 new crop embedding

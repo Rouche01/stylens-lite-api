@@ -1,6 +1,6 @@
 import { createClosetDB } from '../../../db';
 import { ClothingItem } from '../../../types';
-import { isUsableIdentityBox } from '../../../utils/bounding_box';
+import { identityEmbedBox } from '../../../utils/bounding_box';
 import { Logger } from '../../../utils/logger.utils';
 import { createOutfitExtractionService } from '../../outfit_extraction.svc';
 import { createRealtimeService } from '../../realtime.svc';
@@ -260,12 +260,13 @@ export class OutfitIdentityProcessor {
 		const box = params.item.bounding_box;
 		if (
 			!box ||
-			!isUsableIdentityBox(box, {
+			!identityEmbedBox(box, {
 				category: params.item.category,
 				subcategory: params.item.subcategory,
 			})
 		) {
-			// Brim-only / tiny crops poison Vectorize + crop-color; keep a D1 tile, skip embed.
+			// Tiny false crops poison Vectorize + crop-color; keep a D1 tile, skip embed.
+			// (Brim-only hat strips are expanded by the encoder instead of skipped.)
 			log.warn('outfit_identity_unusable_box', {
 				outfit_id: params.outfitId,
 				label: params.item.label,
@@ -286,6 +287,8 @@ export class OutfitIdentityProcessor {
 			prepared = await this.identity.prepareClosetCrop({
 				imageKey: params.imageKey,
 				boundingBox: box,
+				category: params.item.category,
+				subcategory: params.item.subcategory,
 				signal: params.signal,
 				log,
 			});
@@ -391,11 +394,24 @@ export class OutfitIdentityProcessor {
 		log: Logger
 	): Promise<QueryClosetCropMatch[]> {
 		try {
-			const probes = await this.closet.listRecentUnindexedProbes(userId, {
-				limit: UNINDEXED_PROBE_LIMIT,
-				maxAgeMs: UNINDEXED_PROBE_MAX_AGE_MS,
+			const probeOpts = { limit: UNINDEXED_PROBE_LIMIT, maxAgeMs: UNINDEXED_PROBE_MAX_AGE_MS };
+			const [unindexed, pending] = await Promise.all([
+				this.closet.listRecentUnindexedProbes(userId, probeOpts),
+				this.closet.listRecentPendingMatchProbes(userId, probeOpts),
+			]);
+			const scoredUnindexed = scoreUnindexedProbes({
+				prepared,
+				probes: unindexed,
+				category,
+				subcategory,
 			});
-			return scoreUnindexedProbes({ prepared, probes, category, subcategory });
+			const scoredPending = scoreUnindexedProbes({
+				prepared,
+				probes: pending,
+				category,
+				subcategory,
+			});
+			return mergeIdentityNeighbors(scoredUnindexed, scoredPending);
 		} catch (err) {
 			log.warn('outfit_identity_unindexed_fallback_failed', { user_id: userId }, err);
 			return [];

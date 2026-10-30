@@ -343,9 +343,51 @@ describe('crop color identity', () => {
 		).toBeLessThan(0.5);
 	});
 
-	it('rejects 0.96 cosine when crop color is as far as olive vs black zip', () => {
+	it('keeps lighting-shift Δ above the ask floor and kills real color changes', () => {
+		// Same garment, different light (smoke: light jeans Δ0.09 @ cos 0.996, navy cap Δ0.166 @ 0.986).
 		expect(identityScore(0.96, 0.032)).toBeGreaterThan(0.5);
-		expect(identityScore(0.96, 0.134)).toBeLessThan(0.5);
+		expect(identityScore(0.996, 0.09)).toBeGreaterThan(0.5);
+		expect(identityScore(0.986, 0.166)).toBeGreaterThan(0.5);
+		// Different garments in the same slot observed at Δ ≥ 0.35 (hoodie vs leather, grey vs beige).
+		expect(identityScore(0.975, 0.352)).toBeLessThan(0.5);
+		expect(identityScore(0.97, 0.407)).toBeLessThan(0.5);
+	});
+
+	it('weights crop center over edges so wall/floor borders do not shift the color', () => {
+		const black = { r: 22, g: 22, b: 24 };
+		const floor = { r: 120, g: 130, b: 150 }; // cool grey-blue floor: passes skin + background filters
+		const size = 16;
+		const rgba = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++) {
+			for (let x = 0; x < size; x++) {
+				const edge = x < 3 || x >= size - 3 || y < 3 || y >= size - 3;
+				const c = edge ? floor : black;
+				rgba.set([c.r, c.g, c.b, 255], (y * size + x) * 4);
+			}
+		}
+		const flat = rgbaToColorSignature(rgba);
+		const weighted = rgbaToColorSignature(rgba, { width: size, height: size });
+		expect(weighted.l).toBeLessThan(flat.l);
+		expect(weighted.s).toBeLessThan(flat.s);
+		expect(isDarkNeutral(weighted)).toBe(true);
+	});
+
+	it('drops the floor band under footwear crops', () => {
+		const black = { r: 22, g: 22, b: 24 };
+		const floor = { r: 120, g: 130, b: 150 };
+		const size = 16;
+		const rgba = new Uint8Array(size * size * 4);
+		for (let y = 0; y < size; y++) {
+			for (let x = 0; x < size; x++) {
+				const c = y >= 12 ? floor : black;
+				rgba.set([c.r, c.g, c.b, 255], (y * size + x) * 4);
+			}
+		}
+		const generic = rgbaToColorSignature(rgba, { width: size, height: size, category: 'top' });
+		const footwear = rgbaToColorSignature(rgba, { width: size, height: size, category: 'footwear' });
+		expect(footwear.l).toBeLessThan(generic.l);
+		expect(footwear.l).toBeLessThan(0.12);
+		expect(footwear.s).toBeLessThan(0.1);
 	});
 
 	it('allows black vs dark-gray under lighting shift at high cosine', () => {

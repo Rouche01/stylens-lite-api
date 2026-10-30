@@ -1,5 +1,5 @@
 import { signDownloadUrlForKey } from '../../../utils/assets.utils';
-import { percentBoxToTrim, type PercentBox } from '../../../utils/bounding_box';
+import { identityEmbedBox, percentBoxToTrim, type PercentBox } from '../../../utils/bounding_box';
 import { cropJpegWithTrim, orientImageJpeg, resizeJpegMaxSide } from '../../../utils/cf_images.utils';
 import { getImageDimensions } from '../../../utils/image.utils';
 import { Logger, createLogger } from '../../../utils/logger.utils';
@@ -37,6 +37,10 @@ export type EmbedClosetCropParams = {
 	imageKey: string;
 	boundingBox: PercentBox;
 	signal?: AbortSignal;
+	/** Extract category; selects crop hygiene (footwear floor cut) and the Vectorize slot. */
+	category?: string;
+	/** Extract subcategory; brim-only hat boxes are expanded before cropping. */
+	subcategory?: string;
 	/** Optional child logger (e.g. with identity_run_id) for this embed/query. */
 	log?: Logger;
 };
@@ -304,8 +308,21 @@ export class CropEncoder {
 	}
 
 	private async embedCrop(params: EmbedClosetCropParams): Promise<EmbeddedCrop> {
-		const { imageKey, boundingBox, signal } = params;
+		const { imageKey, signal, category, subcategory } = params;
 		const log = (params.log ?? this.log).child({ image_key: imageKey, provider: this.embedder.name });
+
+		// Brim-only hat boxes grow to include the crown; other boxes pass through unchanged.
+		const boundingBox = identityEmbedBox(params.boundingBox, { category, subcategory }) ?? params.boundingBox;
+		if (boundingBox !== params.boundingBox) {
+			log.info('identity_embed_box_expanded', {
+				category,
+				subcategory,
+				from_h: params.boundingBox.height,
+				to_h: boundingBox.height,
+				from_w: params.boundingBox.width,
+				to_w: boundingBox.width,
+			});
+		}
 
 		const object = await getR2Object(this.bucket, imageKey);
 		if (!object?.body) {
@@ -332,7 +349,7 @@ export class CropEncoder {
 		let cropColor: CropColorSignature | null = null;
 		let cropBlurHash: string | null = null;
 		try {
-			const visuals = await extractCropVisuals(this.images, cropJpeg);
+			const visuals = await extractCropVisuals(this.images, cropJpeg, { category });
 			cropColor = visuals.color;
 			cropBlurHash = visuals.blurHash;
 		} catch (err) {

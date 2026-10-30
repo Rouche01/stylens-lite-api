@@ -57,6 +57,44 @@ export function isUsableIdentityBox(box: PercentBox, options?: UsableIdentityBox
 	return true;
 }
 
+/** Target height (percent of frame) when a brim-only hat box is expanded to include the crown. */
+export const IDENTITY_HAT_EXPAND_HEIGHT = 7;
+/** Share of the vertical growth placed above the brim (crown sits above the visor). */
+const HAT_EXPAND_UP_SHARE = 0.7;
+/** Horizontal growth per side as a fraction of box width. */
+const HAT_EXPAND_SIDE_FRACTION = 0.15;
+
+/**
+ * Box to embed for identity. Returns the Florence box when it is already usable.
+ * Brim-only hat strips are center-expanded (mostly upward) so the crown is in the
+ * crop instead of being skipped — a skipped hat can never be rewear-matched.
+ * Null when the crop is still unusable (tiny false boxes).
+ */
+export function identityEmbedBox(box: PercentBox, options?: UsableIdentityBoxOptions): PercentBox | null {
+	if (isUsableIdentityBox(box, options)) {
+		return box;
+	}
+	if (!isHatItem(options)) {
+		return null;
+	}
+	if (!Number.isFinite(box.width) || !Number.isFinite(box.height) || box.width <= 0 || box.height <= 0) {
+		return null;
+	}
+	if (box.width * box.height < IDENTITY_BOX_MIN_AREA) {
+		return null;
+	}
+	const targetHeight = Math.max(IDENTITY_HAT_EXPAND_HEIGHT, box.height);
+	const grow = targetHeight - box.height;
+	const side = box.width * HAT_EXPAND_SIDE_FRACTION;
+	const expanded = clampPercentBox({
+		x: box.x - side,
+		y: box.y - grow * HAT_EXPAND_UP_SHARE,
+		width: box.width + side * 2,
+		height: targetHeight,
+	});
+	return isUsableIdentityBox(expanded, options) ? expanded : null;
+}
+
 /** Extra percent of the box added on each side before converting to CF Images trim. */
 export type BoxPad = {
 	fraction: number;

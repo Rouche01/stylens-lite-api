@@ -301,6 +301,7 @@ function createRepairHarness(options: { visibleIds: string[]; staleProbe?: boole
 			user_id: 'u1',
 			label: 'olive shirt',
 			category: 'top',
+			subcategory: 'shirt',
 			vector_indexed_at: null as number | null,
 			index_status: 'committed',
 			index_attempts: 0,
@@ -309,6 +310,7 @@ function createRepairHarness(options: { visibleIds: string[]; staleProbe?: boole
 			user_id: string;
 			label: string;
 			category: string;
+			subcategory: string;
 			vector_indexed_at: number | null;
 			index_status: ClosetIndexStatus;
 			index_attempts: number;

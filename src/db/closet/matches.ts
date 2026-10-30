@@ -3,9 +3,10 @@ import type { ClosetItemExtractSnapshot, ClosetItemMatch, ClosetItemMatchWithOut
 import {
 	CLOSET_MATCH_GET_COLUMNS,
 	CLOSET_MATCH_LIST_COLUMNS,
+	parseClosetMatchProbeEmbed,
 	serializeClosetMatchProbeEmbed,
 } from './types';
-import { parseMatchWithOutfit, type ClosetItemMatchRow } from './parse';
+import { parseExtractSnapshot, parseMatchWithOutfit, type ClosetItemMatchRow } from './parse';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Ctor = new (...args: any[]) => import('./base').ClosetDBBase;
@@ -276,6 +277,83 @@ export function WithClosetMatches<TBase extends Ctor>(Base: TBase) {
 				.bind(userId)
 				.first<{ total: number }>();
 			return row?.total ?? 0;
+		}
+
+		/**
+		 * Pending ask probes for local identity scoring so later outfits can still
+		 * match a garment whose prior sighting only created a pending match (no tile).
+		 * Neighbor id is the candidate closet item (FK-safe ask target).
+		 */
+		async listRecentPendingMatchProbes(
+			userId: string,
+			params?: { limit?: number; maxAgeMs?: number }
+		): Promise<
+			Array<{
+				closetItemId: string;
+				category: string;
+				subcategory: string;
+				label: string;
+				probeEmbed: ClosetMatchProbeEmbed;
+				matchId: string;
+				createdAt: number;
+			}>
+		> {
+			const limit = params?.limit ?? 25;
+			const maxAgeMs = params?.maxAgeMs ?? 7 * 24 * 60 * 60 * 1000;
+			const minCreatedAt = Date.now() - maxAgeMs;
+			const result = await this.db
+				.prepare(
+					`
+					SELECT id, candidate_closet_item_id, extract_snapshot, probe_embed, created_at
+					FROM closet_item_matches
+					WHERE user_id = ?
+						AND status = 'pending'
+						AND probe_embed IS NOT NULL
+						AND created_at >= ?
+					ORDER BY created_at DESC
+					LIMIT ?
+					`
+				)
+				.bind(userId, minCreatedAt, limit)
+				.all<{
+					id: string;
+					candidate_closet_item_id: string;
+					extract_snapshot: string;
+					probe_embed: string;
+					created_at: number;
+				}>();
+
+			const rows: Array<{
+				closetItemId: string;
+				category: string;
+				subcategory: string;
+				label: string;
+				probeEmbed: ClosetMatchProbeEmbed;
+				matchId: string;
+				createdAt: number;
+			}> = [];
+			for (const row of result.results ?? []) {
+				const probeEmbed = parseClosetMatchProbeEmbed(row.probe_embed);
+				if (!probeEmbed) continue;
+				const candidateId = row.candidate_closet_item_id?.trim();
+				if (!candidateId) continue;
+				let snapshot: ClosetItemExtractSnapshot;
+				try {
+					snapshot = parseExtractSnapshot(row.extract_snapshot);
+				} catch {
+					continue;
+				}
+				rows.push({
+					closetItemId: candidateId,
+					category: snapshot.category,
+					subcategory: snapshot.subcategory,
+					label: snapshot.label,
+					probeEmbed,
+					matchId: row.id,
+					createdAt: row.created_at,
+				});
+			}
+			return rows;
 		}
 
 		async touchMatchAsk(userId: string, atMs = Date.now()): Promise<void> {
