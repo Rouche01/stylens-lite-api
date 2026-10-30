@@ -35,6 +35,8 @@ export type OutfitIdentityStore = Pick<
 	| 'listPendingIndexClosetItemIdsForUser'
 	| 'listRecentUnindexedProbes'
 	| 'listRecentPendingMatchProbes'
+	| 'listOutfitIdsForClosetItems'
+	| 'listOutfitTileProbes'
 >;
 
 export type ClosetVectorRepairScheduler = {
@@ -76,7 +78,7 @@ export type ResolveClosetMatchResult = {
 	closet_item_id: string | null;
 	candidate_closet_item_id: string | null;
 	identity_status: 'created' | 'ask' | 'failed';
-	identity_reason: IdentityCreateReason | 'ask' | 'same';
+	identity_reason: IdentityCreateReason | 'ask' | 'same' | 'outfit_prior';
 	identity_score: number | null;
 };
 
@@ -95,7 +97,7 @@ export type ProcessedOutfitItem = ClothingItem & {
 	closet_item_id: string | null;
 	is_new_closet_item: boolean;
 	identity_status: 'created' | 'ask' | 'failed';
-	identity_reason: IdentityCreateReason | 'ask';
+	identity_reason: IdentityCreateReason | 'ask' | 'outfit_prior';
 	match_id: string | null;
 	candidate_closet_item_id: string | null;
 	identity_score: number | null;

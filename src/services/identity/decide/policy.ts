@@ -133,6 +133,8 @@ export type IdentityDecision =
 			identityScore: number;
 			cosine: number;
 			colorDistance: number | null;
+			/** Default ask vs outfit co-occurrence prior rescue. */
+			reason?: 'ask' | 'outfit_prior';
 	  };
 
 export type CommitDecision =

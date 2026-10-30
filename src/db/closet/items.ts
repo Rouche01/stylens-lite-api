@@ -6,7 +6,7 @@ import type {
 	OutfitLinkedItem,
 } from './types';
 import { closetTileAspectRatio, mapOutfitRow, normalizeImageDimensions } from './parse';
-import { serializeClosetMatchProbeEmbed } from './types';
+import { parseClosetMatchProbeEmbed, serializeClosetMatchProbeEmbed } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Ctor = new (...args: any[]) => import('./base').ClosetDBBase;
@@ -381,6 +381,91 @@ export function WithClosetItems<TBase extends Ctor>(Base: TBase) {
 				bounding_box: JSON.parse(row.bounding_box),
 				confidence: row.confidence
 			}));
+		}
+
+		/**
+		 * Prior-outfit membership for closet tiles (excludes the current photo).
+		 * Used by the outfit co-occurrence prior.
+		 */
+		async listOutfitIdsForClosetItems(
+			userId: string,
+			closetItemIds: readonly string[],
+			excludeOutfitId?: string
+		): Promise<Array<{ closet_item_id: string; outfit_id: string }>> {
+			const ids = [...new Set(closetItemIds.map((id) => id.trim()).filter(Boolean))];
+			if (ids.length === 0) return [];
+			const placeholders = ids.map(() => '?').join(', ');
+			const exclude = excludeOutfitId?.trim();
+			const result = await this.db
+				.prepare(
+					`
+					SELECT oci.closet_item_id, oci.outfit_id
+					FROM outfit_clothing_items oci
+					JOIN outfits o ON o.id = oci.outfit_id
+					WHERE o.user_id = ?
+						AND oci.closet_item_id IN (${placeholders})
+						${exclude ? 'AND oci.outfit_id != ?' : ''}
+					`
+				)
+				.bind(...(exclude ? [userId, ...ids, exclude] : [userId, ...ids]))
+				.all<{ closet_item_id: string; outfit_id: string }>();
+			return (result.results ?? []).filter((row) => row.closet_item_id && row.outfit_id);
+		}
+
+		/** Closet tiles on an outfit that still have a usable identity probe. */
+		async listOutfitTileProbes(outfitId: string): Promise<
+			Array<{
+				closetItemId: string;
+				category: string;
+				subcategory: string;
+				label: string;
+				probeEmbed: ClosetMatchProbeEmbed;
+			}>
+		> {
+			const result = await this.db
+				.prepare(
+					`
+					SELECT
+						ci.id as closet_item_id,
+						ci.category,
+						ci.subcategory,
+						ci.label,
+						ci.probe_embed
+					FROM outfit_clothing_items oci
+					JOIN closet_items ci ON ci.id = oci.closet_item_id
+					WHERE oci.outfit_id = ?
+						AND ci.probe_embed IS NOT NULL
+					ORDER BY oci.created_at ASC
+					`
+				)
+				.bind(outfitId)
+				.all<{
+					closet_item_id: string;
+					category: string;
+					subcategory: string;
+					label: string;
+					probe_embed: string;
+				}>();
+
+			const out: Array<{
+				closetItemId: string;
+				category: string;
+				subcategory: string;
+				label: string;
+				probeEmbed: ClosetMatchProbeEmbed;
+			}> = [];
+			for (const row of result.results ?? []) {
+				const probeEmbed = parseClosetMatchProbeEmbed(row.probe_embed);
+				if (!probeEmbed) continue;
+				out.push({
+					closetItemId: row.closet_item_id,
+					category: row.category,
+					subcategory: row.subcategory,
+					label: row.label,
+					probeEmbed,
+				});
+			}
+			return out;
 		}
 	};
 }

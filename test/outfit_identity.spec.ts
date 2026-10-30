@@ -1766,6 +1766,38 @@ function createHarness(options: {
 			}));
 	}
 
+	async listOutfitIdsForClosetItems(
+		userId: string,
+		closetItemIds: readonly string[],
+		excludeOutfitId?: string
+	) {
+		const wanted = new Set(closetItemIds);
+		const rows: Array<{ closet_item_id: string; outfit_id: string }> = [];
+		for (const link of this.links) {
+			if (!wanted.has(link.closetItemId)) continue;
+			if (excludeOutfitId && link.outfitId === excludeOutfitId) continue;
+			const outfit = this.outfits.find((row) => row.id === link.outfitId);
+			if (!outfit || outfit.user_id !== userId) continue;
+			rows.push({ closet_item_id: link.closetItemId, outfit_id: link.outfitId });
+		}
+		return rows;
+	}
+
+	async listOutfitTileProbes(outfitId: string) {
+		return this.links
+			.filter((link) => link.outfitId === outfitId && Boolean(this.probeEmbeds[link.closetItemId]))
+			.map((link) => {
+				const item = this.items.find((row) => row.id === link.closetItemId)!;
+				return {
+					closetItemId: link.closetItemId,
+					category: item.category,
+					subcategory: item.subcategory,
+					label: item.label,
+					probeEmbed: this.probeEmbeds[link.closetItemId],
+				};
+			});
+	}
+
 	async createOutfit(
 		userId: string,
 		imageUrl: string,

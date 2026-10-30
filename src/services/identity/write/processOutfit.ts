@@ -13,6 +13,13 @@ import {
 	type IdentityDecision,
 } from '../decide/policy';
 import {
+	decideOutfitPriorAsk,
+	isOutfitPriorRescueable,
+	OUTFIT_PRIOR_HIT_MIN,
+	selectPriorOutfitId,
+	type OutfitPriorHit,
+} from '../decide/outfitPrior';
+import {
 	SEARCHABLE_GATE_POLL_MS,
 	SEARCHABLE_GATE_TIMEOUT_MS,
 	awaitPriorCreatesSearchable,
@@ -132,23 +139,139 @@ export class OutfitIdentityProcessor {
 				log: runLog,
 			});
 
-			const items: ProcessedOutfitItem[] = [];
-			for (const item of extracted.items) {
-				items.push(
-					await this.processItem(
-						{
-							userId: params.userId,
-							imageKey: params.imageKey,
-							outfitId: outfit.id,
-							item,
-							signal: params.signal,
-						},
-						runLog
-					)
+			const items: Array<ProcessedOutfitItem | null> = extracted.items.map(() => null);
+			const deferredCreates: Array<{
+				index: number;
+				item: ClothingItem;
+				prepared: PreparedClosetCrop;
+				decision: Extract<IdentityDecision, { action: 'create' }>;
+			}> = [];
+			const priorHits: OutfitPriorHit[] = [];
+
+			for (let index = 0; index < extracted.items.length; index++) {
+				const item = extracted.items[index]!;
+				const outcome = await this.processItem(
+					{
+						userId: params.userId,
+						imageKey: params.imageKey,
+						outfitId: outfit.id,
+						item,
+						signal: params.signal,
+					},
+					runLog
 				);
+				if (outcome.kind === 'defer_create') {
+					deferredCreates.push({
+						index,
+						item,
+						prepared: outcome.prepared,
+						decision: outcome.decision,
+					});
+					continue;
+				}
+				items[index] = outcome.item;
+				if (
+					outcome.item.identity_status === 'ask' &&
+					outcome.item.candidate_closet_item_id &&
+					(outcome.item.identity_score ?? 0) >= OUTFIT_PRIOR_HIT_MIN
+				) {
+					priorHits.push({
+						candidateClosetItemId: outcome.item.candidate_closet_item_id,
+						identityScore: outcome.item.identity_score ?? 0,
+					});
+				}
 			}
 
-			if (items.some((item) => item.identity_status === 'ask')) {
+			const priorOutfitId = await this.resolvePriorOutfitId(
+				params.userId,
+				outfit.id,
+				priorHits,
+				runLog
+			);
+			const priorProbes =
+				priorOutfitId != null ? await this.closet.listOutfitTileProbes(priorOutfitId) : [];
+
+			for (const deferred of deferredCreates) {
+				let decision: IdentityDecision = deferred.decision;
+				if (priorOutfitId && priorProbes.length > 0 && isOutfitPriorRescueable(deferred.decision)) {
+					const priorAsk = decideOutfitPriorAsk({
+						prepared: deferred.prepared,
+						probes: priorProbes,
+						category: deferred.item.category,
+					});
+					if (priorAsk) {
+						runLog.info('outfit_identity_outfit_prior', {
+							outfit_id: outfit.id,
+							prior_outfit_id: priorOutfitId,
+							label: deferred.item.label,
+							candidate_closet_item_id: priorAsk.candidateClosetItemId,
+							identity_score: priorAsk.identityScore,
+						});
+						decision = priorAsk;
+					}
+				}
+
+				const itemParams = {
+					userId: params.userId,
+					imageKey: params.imageKey,
+					outfitId: outfit.id,
+					item: deferred.item,
+					signal: params.signal,
+				};
+				if (decision.action === 'ask') {
+					try {
+						items[deferred.index] = await this.persistAsk(
+							itemParams,
+							decision,
+							deferred.prepared,
+							runLog
+						);
+					} catch (err) {
+						if (isSqliteForeignKeyError(err)) {
+							runLog.warn(
+								'outfit_identity_ask_fk_fallback',
+								{
+									outfit_id: outfit.id,
+									candidate_closet_item_id: decision.candidateClosetItemId,
+									identity_score: decision.identityScore,
+									label: deferred.item.label,
+								},
+								err
+							);
+							items[deferred.index] = await commitNewItem(
+								this.writeDeps(runLog),
+								itemParams,
+								deferred.prepared,
+								{
+									action: 'create',
+									reason: 'missing_candidate',
+									identityScore: decision.identityScore,
+									neighborClosetItemId: decision.candidateClosetItemId,
+									cosine: decision.cosine,
+									colorDistance: decision.colorDistance,
+								}
+							);
+						} else {
+							throw err;
+						}
+					}
+				} else {
+					items[deferred.index] = await commitNewItem(
+						this.writeDeps(runLog),
+						itemParams,
+						deferred.prepared,
+						decision
+					);
+				}
+			}
+
+			const finalized = items.map((item, index) => {
+				if (item) return item;
+				// Should not happen; keep a failed stub rather than crash the outfit.
+				return failedItem(extracted.items[index]!, 'identity_error');
+			});
+
+			if (finalized.some((item) => item.identity_status === 'ask')) {
 				await this.scheduleDigest(params.userId, runLog);
 			}
 
@@ -156,7 +279,7 @@ export class OutfitIdentityProcessor {
 				outfit_id: outfit.id,
 				image_key: params.imageKey,
 				extraction: extracted,
-				items,
+				items: finalized,
 			};
 		} finally {
 			await this.closet.releaseIdentityLock(params.userId, jobId);
@@ -215,7 +338,14 @@ export class OutfitIdentityProcessor {
 			signal?: AbortSignal;
 		},
 		log: Logger
-	): Promise<ProcessedOutfitItem> {
+	): Promise<
+		| { kind: 'final'; item: ProcessedOutfitItem }
+		| {
+				kind: 'defer_create';
+				prepared: PreparedClosetCrop;
+				decision: Extract<IdentityDecision, { action: 'create' }>;
+		  }
+	> {
 		const existing = await this.closet.findClosetItemForPhotoCrop(
 			params.userId,
 			params.imageKey,
@@ -237,16 +367,19 @@ export class OutfitIdentityProcessor {
 					label: params.item.label,
 				});
 				return {
-					...params.item,
-					closet_item_id: existing.id,
-					is_new_closet_item: false,
-					identity_status: 'created',
-					identity_reason: 'existing_crop',
-					match_id: null,
-					candidate_closet_item_id: null,
-					identity_score: null,
-					identity_cosine: null,
-					identity_color_distance: null,
+					kind: 'final',
+					item: {
+						...params.item,
+						closet_item_id: existing.id,
+						is_new_closet_item: false,
+						identity_status: 'created',
+						identity_reason: 'existing_crop',
+						match_id: null,
+						candidate_closet_item_id: null,
+						identity_score: null,
+						identity_cosine: null,
+						identity_color_distance: null,
+					},
 				};
 			} catch (err) {
 				// Stale closet id after eval reset / concurrent wipe — fall through to embed+create.
@@ -282,10 +415,13 @@ export class OutfitIdentityProcessor {
 				box_h: box?.height,
 				box_area: box ? box.width * box.height : undefined,
 			});
-			return commitUnindexedItem(this.writeDeps(log), params, {
-				action: 'create',
-				reason: 'skip_query',
-			});
+			return {
+				kind: 'final',
+				item: await commitUnindexedItem(this.writeDeps(log), params, {
+					action: 'create',
+					reason: 'skip_query',
+				}),
+			};
 		}
 
 		let prepared: PreparedClosetCrop;
@@ -310,13 +446,16 @@ export class OutfitIdentityProcessor {
 				},
 				err
 			);
-			return failedItem(params.item, 'embed_failed');
+			return { kind: 'final', item: failedItem(params.item, 'embed_failed') };
 		}
 
 		const decision = await this.decideItem(params, prepared, log);
 		if (decision.action === 'ask') {
 			try {
-				return await this.persistAsk(params, decision, prepared, log);
+				return {
+					kind: 'final',
+					item: await this.persistAsk(params, decision, prepared, log),
+				};
 			} catch (err) {
 				// Orphan candidate after wipe / race — fall through to create.
 				if (isSqliteForeignKeyError(err)) {
@@ -330,20 +469,66 @@ export class OutfitIdentityProcessor {
 						},
 						err
 					);
-					return commitNewItem(this.writeDeps(log), params, prepared, {
-						action: 'create',
-						reason: 'missing_candidate',
-						identityScore: decision.identityScore,
-						neighborClosetItemId: decision.candidateClosetItemId,
-						cosine: decision.cosine,
-						colorDistance: decision.colorDistance,
-					});
+					return {
+						kind: 'defer_create',
+						prepared,
+						decision: {
+							action: 'create',
+							reason: 'missing_candidate',
+							identityScore: decision.identityScore,
+							neighborClosetItemId: decision.candidateClosetItemId,
+							cosine: decision.cosine,
+							colorDistance: decision.colorDistance,
+						},
+					};
 				}
 				throw err;
 			}
 		}
 
-		return commitNewItem(this.writeDeps(log), params, prepared, decision);
+		// Defer only creates that outfit co-occurrence might rescue; commit the rest now
+		// so later crops in this photo can still see them in ANN.
+		if (isOutfitPriorRescueable(decision)) {
+			return { kind: 'defer_create', prepared, decision };
+		}
+		return {
+			kind: 'final',
+			item: await commitNewItem(this.writeDeps(log), params, prepared, decision),
+		};
+	}
+
+	private async resolvePriorOutfitId(
+		userId: string,
+		currentOutfitId: string,
+		hits: readonly OutfitPriorHit[],
+		log: Logger
+	): Promise<string | null> {
+		if (hits.length < 2) return null;
+		try {
+			const rows = await this.closet.listOutfitIdsForClosetItems(
+				userId,
+				hits.map((hit) => hit.candidateClosetItemId),
+				currentOutfitId
+			);
+			const memberships = new Map<string, string[]>();
+			for (const row of rows) {
+				const list = memberships.get(row.closet_item_id) ?? [];
+				list.push(row.outfit_id);
+				memberships.set(row.closet_item_id, list);
+			}
+			const priorOutfitId = selectPriorOutfitId(hits, memberships);
+			if (priorOutfitId) {
+				log.info('outfit_identity_prior_detected', {
+					outfit_id: currentOutfitId,
+					prior_outfit_id: priorOutfitId,
+					hit_count: hits.length,
+				});
+			}
+			return priorOutfitId;
+		} catch (err) {
+			log.warn('outfit_identity_prior_lookup_failed', { outfit_id: currentOutfitId }, err);
+			return null;
+		}
 	}
 
 	private async decideItem(
@@ -470,6 +655,7 @@ export class OutfitIdentityProcessor {
 			log.warn('closet_match_touch_ask_failed', { user_id: params.userId, match_id: matchId }, err);
 		}
 
+		const askReason = decision.reason === 'outfit_prior' ? 'outfit_prior' : 'ask';
 		log.info('outfit_identity_ask', {
 			outfit_id: params.outfitId,
 			match_id: matchId,
@@ -477,6 +663,7 @@ export class OutfitIdentityProcessor {
 			identity_score: decision.identityScore,
 			cosine: decision.cosine,
 			color_distance: decision.colorDistance,
+			identity_reason: askReason,
 			label: params.item.label,
 		});
 		return withIdentityProbe(
@@ -485,7 +672,7 @@ export class OutfitIdentityProcessor {
 				closet_item_id: null,
 				is_new_closet_item: false,
 				identity_status: 'ask',
-				identity_reason: 'ask',
+				identity_reason: askReason,
 				match_id: matchId,
 				candidate_closet_item_id: decision.candidateClosetItemId,
 				identity_score: decision.identityScore,
