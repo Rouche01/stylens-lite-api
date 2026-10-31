@@ -154,6 +154,34 @@ export function WithClosetItems<TBase extends Ctor>(Base: TBase) {
 		}
 
 		/**
+		 * User display rename. Updates `label` only — never used as an identity match key.
+		 * @returns updated label + timestamps, or null if missing / wrong user.
+		 */
+		async updateClosetItemLabel(
+			userId: string,
+			itemId: string,
+			label: string
+		): Promise<{ id: string; label: string; updated_at: number } | null> {
+			const now = Date.now();
+			const result = await this.db
+				.prepare(
+					`
+					UPDATE closet_items
+					SET label = ?, updated_at = ?
+					WHERE id = ? AND user_id = ?
+					`
+				)
+				.bind(label, now, itemId, userId)
+				.run();
+
+			if (!result.success || (result.meta?.changes ?? 0) < 1) {
+				return null;
+			}
+
+			return { id: itemId, label, updated_at: now };
+		}
+
+		/**
 		 * Links a closet item to an outfit with bounding box coordinates.
 		 */
 		async linkClosetItemToOutfit(params: {

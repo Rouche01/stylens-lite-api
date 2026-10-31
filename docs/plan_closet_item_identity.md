@@ -51,15 +51,11 @@ Targets are a starting bar; revise them here with the data that justifies the ch
 2. ~~Vendor-free structure: multi-prototype items (confirmed wears add vectors/color; score max over wears), outfit co-occurrence prior, soften the `subcategory` gate within closed-shoe families.~~ **Done**.
 3. ~~Masking (SAM2) for footwear/accessory crops~~ — **skipped** (measurement: proxies did not justify per-item cost).
 4. ~~Representation / color bake-off~~ — **done for now**: DINOv3 CLS stays; FashionSigLIP/MODA do not beat it under the safe color blend; `CHROMA_HUE_MIN_S` 0.12 → 0.28 shipped; wider color weight rejected (olive-black false asks). Cog scaffold only: `tools/moda-cog/`.
-5. **Grow the labeled corpus (next).** No more encoder or color-weight changes on Apr3 alone.
-   1. Fix remaining label noise (e.g. Apr3 bag-as-boots).
-   2. Add **1–2 new multi-photo sequences** that stress: same garment under hard lighting/WB/angle; near-identical basics in-slot; clean footwear + bag.
-   3. Smoke (`extract:smoke`, prefer `--reuse-extract`) → label in `eval:ui` → `labels.json`.
-   4. Offline `identity:replay` / `identity:bakeoff --sweep` on DINOv3 with current color rules; report recall / false-ask / false-merge before any knobs move.
-   5. **Batch tune only** after ~20–50 clear labels (protocol: [`docs/identity_calibration_review.md`](./identity_calibration_review.md)). There is no auto train/fix loop — human labels → replay → optional threshold PR.
-6. Auto-link band, calibrated on the larger replay corpus (≥ ~200 near-floor different-garment pairs; see Goals).
-7. Learned combiner over `[cos, Δcolor, subcategory_match, slot, …]` once ~100 labeled pairs exist — only if step 5 still leaves systematic misses that thresholds cannot absorb.
-8. Revisit encoder / Cog push (MODA) only if the larger set shows cosine separation that color cannot safely use under DINOv3.
+5. ~~Grow the labeled corpus~~ — **paused (2026-10-31).** Apr3 fixed + Christmas / IMG_2008–2010 smoked & labeled. Replay: Apr3 **7/8**, new seq **7/7** (false ask = near-identical olive→grey tee — correct). Stay on DINOv3 + `CHROMA_HUE_MIN_S=0.28`; **no** color-weight / ask-floor PR. Resume later with a hard lighting/WB same-garment sequence before any knobs. Protocol: [`docs/identity_calibration_review.md`](./identity_calibration_review.md).
+6. ~~Closet display rename~~ — **done.** `PATCH /closet/items/:id` `{ "label": "…" }` (auth + closet-browse). Overwrites Claude draft `label` on `closet_items`; identity match still ignores it (id + vectors + crop color only).
+7. Auto-link band, calibrated on a larger replay corpus (≥ ~200 near-floor different-garment pairs; see Goals).
+8. Learned combiner over `[cos, Δcolor, subcategory_match, slot, …]` once ~100 labeled pairs exist — only if systematic misses remain that thresholds cannot absorb.
+9. Revisit encoder / Cog push (MODA) only if the larger set shows cosine separation that color cannot safely use under DINOv3.
 
 Extraction hygiene (pixel-derived color labels, generic grounding phrases, pinned model / temperature 0) fits between steps. Out of scope: queue / writer / Vectorize / D1 flow, lowering the 0.5 ask floor.
 
