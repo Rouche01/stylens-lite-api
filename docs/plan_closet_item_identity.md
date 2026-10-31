@@ -47,12 +47,19 @@ Targets are a starting bar; revise them here with the data that justifies the ch
 
 **Roadmap (in order):**
 
-1. Measurement: per-garment ground-truth manifest ([`docs/identity_manifest.md`](./identity_manifest.md)), persisted probe artifacts (admin extract `identity_probe` + smoke crop download), offline replay + threshold sweep, extraction cache for re-smokes.
-2. Vendor-free structure: multi-prototype items (confirmed wears add vectors/color; score max over wears), outfit co-occurrence prior, soften the `subcategory` gate within closed-shoe and upper-layer families.
-3. Masking (SAM2) for footwear/accessory crops — adopt only if replay shows the gain justifies the per-item cost.
-4. Representation experiments via replay: fashion-tuned encoder bake-off (MODA, GR-Lite, Marqo-FashionSigLIP vs DINOv3), patch-token pooling / flip TTA, lighting-robust color histogram.
-5. Auto-link band, calibrated on replay.
-6. Learned combiner over `[cos, Δcolor, subcategory_match, slot, …]` once ~100 labeled pairs exist.
+1. ~~Measurement: per-garment ground-truth manifest ([`docs/identity_manifest.md`](./identity_manifest.md)), persisted probe artifacts (admin extract `identity_probe` + smoke crop download), offline replay + threshold sweep, extraction cache for re-smokes.~~ **Done** (`extract:smoke --reuse-extract`, `identity:replay`, `identity:bakeoff`).
+2. ~~Vendor-free structure: multi-prototype items (confirmed wears add vectors/color; score max over wears), outfit co-occurrence prior, soften the `subcategory` gate within closed-shoe families.~~ **Done**.
+3. ~~Masking (SAM2) for footwear/accessory crops~~ — **skipped** (measurement: proxies did not justify per-item cost).
+4. ~~Representation / color bake-off~~ — **done for now**: DINOv3 CLS stays; FashionSigLIP/MODA do not beat it under the safe color blend; `CHROMA_HUE_MIN_S` 0.12 → 0.28 shipped; wider color weight rejected (olive-black false asks). Cog scaffold only: `tools/moda-cog/`.
+5. **Grow the labeled corpus (next).** No more encoder or color-weight changes on Apr3 alone.
+   1. Fix remaining label noise (e.g. Apr3 bag-as-boots).
+   2. Add **1–2 new multi-photo sequences** that stress: same garment under hard lighting/WB/angle; near-identical basics in-slot; clean footwear + bag.
+   3. Smoke (`extract:smoke`, prefer `--reuse-extract`) → label in `eval:ui` → `labels.json`.
+   4. Offline `identity:replay` / `identity:bakeoff --sweep` on DINOv3 with current color rules; report recall / false-ask / false-merge before any knobs move.
+   5. **Batch tune only** after ~20–50 clear labels (protocol: [`docs/identity_calibration_review.md`](./identity_calibration_review.md)). There is no auto train/fix loop — human labels → replay → optional threshold PR.
+6. Auto-link band, calibrated on the larger replay corpus (≥ ~200 near-floor different-garment pairs; see Goals).
+7. Learned combiner over `[cos, Δcolor, subcategory_match, slot, …]` once ~100 labeled pairs exist — only if step 5 still leaves systematic misses that thresholds cannot absorb.
+8. Revisit encoder / Cog push (MODA) only if the larger set shows cosine separation that color cannot safely use under DINOv3.
 
 Extraction hygiene (pixel-derived color labels, generic grounding phrases, pinned model / temperature 0) fits between steps. Out of scope: queue / writer / Vectorize / D1 flow, lowering the 0.5 ask floor.
 
@@ -166,7 +173,9 @@ The vector is **pixels of the Florence crop only**. Do not concatenate text.
 
 Workers AI BGE/ResNet and CLIP/FashionSigLIP match “kind of garment,” not the physical piece. Current spike encoder is **DINOv3 CLS** (`dinov3-cls-v1`, 1024-d). It is a weak identity signal; slot + crop-color are required vetoes. Same JPEG can score ~0.97; a new photo of the same piece and a different jacket both land ~0.75.
 
-**Next encoder (new Vectorize index, new `encoder` id):** a fashion **instance** model trained on same-item different-photo pairs (DeepFashion in-shop / consumer-to-shop, GR-Lite, MODA-DeepFashion2). Do not reuse this 1024-d index. Host it (Replicate Cog / GPU worker); swap `IDENTITY_ENCODER` and recreate the index.
+**Next encoder (new Vectorize index, new `encoder` id):** a fashion **instance** model trained on same-item different-photo pairs (DeepFashion in-shop / consumer-to-shop, GR-Lite, MODA). Do not reuse this 1024-d index. Host it (Replicate Cog / GPU worker); swap `IDENTITY_ENCODER` and recreate the index.
+
+**Apr3 offline bake-off** (`npm run identity:bakeoff`, ask≥0.5): DINOv3 CLS / FashionSigLIP baseline **5/9**; MODA **4/9**. Color-param sweep (`--sweep`, 1440 configs): raising `CHROMA_HUE_MIN_S` 0.12 → **0.28** recovers the WB/hue-flipped jacket → **7/9** at same false-ask rate, and keeps olive-vs-black below ask. Configs that hit **8/9** (wider `COLOR_DISTANCE_FULL_PENALTY` and/or lower color blend weight) also score olive-black ≥ ask — do **not** ship those until a larger labeled set shows the false-ask trade is acceptable. Remaining 7→9 gap: photo3 bag labeled as boots (slot miss) + jeans sat-shift `cd≈0.35` (same Δ band as different garments). Cog scaffold: `tools/moda-cog/`.
 
 Optional later: extra `wear:{id}` vectors per photo, query max-sim, still one closet tile.
 

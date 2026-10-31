@@ -24,7 +24,7 @@ const MANIFEST_PATH = join(process.env.OUTFIT_EVAL_SET || DEFAULT_SET, 'manifest
 /** Mirrors src/services/identity/encode/cropColor.ts (keep in sync). */
 const COLOR_DISTANCE_FULL_PENALTY = 0.3;
 const COLOR_DISTANCE_FULL_PENALTY_DARK_NEUTRAL = 0.3;
-const CHROMA_HUE_MIN_S = 0.12;
+const CHROMA_HUE_MIN_S = 0.28;
 const IDENTITY_MATCH_MIN = 0.5;
 
 const SLOT_BY_CATEGORY = {

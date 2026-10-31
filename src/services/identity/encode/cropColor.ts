@@ -18,7 +18,13 @@ export type CropColorSignature = {
 export const COLOR_DISTANCE_FULL_PENALTY = 0.3;
 /** Dark-neutral pairs use the same ramp today; kept as a hook for a wider dark band. */
 export const COLOR_DISTANCE_FULL_PENALTY_DARK_NEUTRAL = 0.3;
-const CHROMA_HUE_MIN_S = 0.12;
+/**
+ * Hue only counts when both crops have chroma above this.
+ * Apr3 bake-off sweep (2026-10-30): 0.12 → 0.28 recovers WB/hue-flipped same-garment
+ * rewears (green jacket) without lifting olive-vs-black above ask. Wider penalty /
+ * weaker colorWeight that push Apr3 to 8/9 also false-ask different-color pairs.
+ */
+export const CHROMA_HUE_MIN_S = 0.28;
 
 /**
  * Center-weighted sampling: corners/edges of a Florence box are wall, floor,

@@ -13,6 +13,7 @@
 		"eval:reset": "node scripts/eval-reset.mjs",
 		"extract:smoke": "node scripts/extract-smoke.mjs",
 		"identity:replay": "node scripts/identity-replay.mjs",
+		"identity:bakeoff": "node scripts/identity-encoder-bakeoff.mjs",
 		"start": "wrangler dev",
 		"test": "vitest",
 		"cf-typegen": "wrangler types",

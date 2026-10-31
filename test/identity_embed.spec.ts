@@ -355,6 +355,18 @@ describe('crop color identity', () => {
 		expect(identityScore(0.97, 0.407)).toBeLessThan(0.5);
 	});
 
+	it('ignores hue for low-chroma pairs (WB flip) while keeping olive vs black hard', () => {
+		const warmDark = { h: 23, s: 0.14, l: 0.29 };
+		const coolDark = { h: 219, s: 0.24, l: 0.21 };
+		// Apr3 jacket-style signatures: large hue gap, modest L/S — must not floor-kill.
+		expect(cropColorDistance(warmDark, coolDark)).toBeLessThan(0.25);
+		expect(identityScore(0.999, cropColorDistance(warmDark, coolDark))).toBeGreaterThan(0.5);
+		const olive = rgbaToColorSignature(flatRgba(112, 128, 64));
+		const black = rgbaToColorSignature(flatRgba(24, 24, 28));
+		expect(cropColorDistance(olive, black)).toBeGreaterThan(0.35);
+		expect(identityScore(0.96, cropColorDistance(olive, black))).toBeLessThan(0.5);
+	});
+
 	it('weights crop center over edges so wall/floor borders do not shift the color', () => {
 		const black = { r: 22, g: 22, b: 24 };
 		const floor = { r: 120, g: 130, b: 150 }; // cool grey-blue floor: passes skin + background filters
