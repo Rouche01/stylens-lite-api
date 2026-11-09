@@ -1,6 +1,6 @@
 /**
  * System prompt for automated message classification.
- * Extracts session context tags from user and assistant messages.
+ * Extracts session context tags from user messages.
  */
 export const CLASSIFICATION_SYSTEM_PROMPT = `
 You are a context extraction system for a professional AI Personal Stylist.

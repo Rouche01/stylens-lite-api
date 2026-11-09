@@ -30,6 +30,7 @@ export class UsersDB {
 			name: row.name,
 			gender: row.gender,
 			email: row.email,
+			timezone: row.timezone ?? null,
 			created_at: row.created_at,
 			updated_at: row.updated_at,
 			is_active: row.is_active,
@@ -55,7 +56,7 @@ export class UsersDB {
 	}
 
 	async createUser(params: CreateUserParams): Promise<User> {
-		const { authId, name, gender, email } = params;
+		const { authId, name, gender, email, inviteLimits, inviteRedemption } = params;
 		const now = Date.now();
 		const userId = crypto.randomUUID();
 		const subscriptionId = crypto.randomUUID();
@@ -78,7 +79,55 @@ export class UsersDB {
 			)
 			.bind(subscriptionId, userId, SubscriptionTier.Free, null, null, null, 'active', null, now, now);
 
-		await this.db.batch([insertUserStmt, insertSubscriptionStmt]);
+		const statements: D1PreparedStatement[] = [insertUserStmt, insertSubscriptionStmt];
+
+		if (inviteLimits) {
+			const limitId = crypto.randomUUID();
+			statements.push(
+				this.db
+					.prepare(
+						`INSERT INTO user_limits (
+							id, user_id, session_count_limit, message_per_session_limit, image_per_session_limit,
+							trial_days, trial_session_limit, monthly_session_limit, created_at, updated_at
+						) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`
+					)
+					.bind(
+						limitId,
+						userId,
+						inviteLimits.message_per_session_limit ?? null,
+						inviteLimits.image_per_session_limit ?? null,
+						inviteLimits.trial_days ?? null,
+						inviteLimits.trial_session_limit ?? null,
+						inviteLimits.monthly_session_limit ?? null,
+						now,
+						now
+					)
+			);
+		}
+
+		if (inviteRedemption) {
+			statements.push(
+				this.db
+					.prepare(
+						`UPDATE invite_codes
+						 SET redemption_count = redemption_count + 1, updated_at = ?
+						 WHERE id = ?
+						   AND is_active = 1
+						   AND (expires_at IS NULL OR expires_at > ?)
+						   AND (max_redemptions IS NULL OR redemption_count < max_redemptions)`
+					)
+					.bind(now, inviteRedemption.inviteId, now)
+			);
+		}
+
+		const batchResults = await this.db.batch(statements);
+
+		if (inviteRedemption) {
+			const redemptionResult = batchResults[batchResults.length - 1];
+			if (!redemptionResult.success || (redemptionResult.meta?.changes ?? 0) === 0) {
+				throw new Error('Invite code could not be redeemed');
+			}
+		}
 
 		const user = await this.getUserById(userId);
 
@@ -100,7 +149,10 @@ export class UsersDB {
 		return result ? this.mapUserRow(result) : null;
 	}
 
-	async updateUser(id: string, updates: Partial<Pick<User, 'name' | 'gender' | 'email' | 'is_active'>>): Promise<User | null> {
+	async updateUser(
+		id: string,
+		updates: Partial<Pick<User, 'name' | 'gender' | 'email' | 'is_active' | 'timezone'>>
+	): Promise<User | null> {
 		const fields = [];
 		const values = [];
 		if (updates.name !== undefined) {
@@ -114,6 +166,10 @@ export class UsersDB {
 		if (updates.email !== undefined) {
 			fields.push('email = ?');
 			values.push(updates.email);
+		}
+		if (updates.timezone !== undefined) {
+			fields.push('timezone = ?');
+			values.push(updates.timezone);
 		}
 		if (updates.is_active !== undefined) {
 			fields.push('is_active = ?');

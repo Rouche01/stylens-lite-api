@@ -5,6 +5,9 @@ export type StyleAnalysisHistory = {
 	id: string;
 	user_id: string;
 	title: string;
+	image_url?: string | null;
+	image_key?: string | null;
+	image_blur_hash?: string | null;
 	created_at: number;
 	updated_at: number;
 	deleted_at: number | null;
@@ -69,10 +72,46 @@ export type User = {
 	name: string;
 	gender?: Gender;
 	email?: string;
+	/** IANA time zone (e.g. Europe/Amsterdam). Null/absent → treat as UTC. */
+	timezone?: string | null;
 	created_at: number;
 	updated_at: number;
 	is_active: 0 | 1;
 	subscription?: Subscription;
+};
+
+export type UserAvatarStatus = 'pending' | 'ready' | 'failed' | 'rejected_framing';
+
+export type UserAvatar = {
+	id: string;
+	user_id: string;
+	source_image_key: string;
+	source_image_url: string | null;
+	avatar_image_key: string | null;
+	status: UserAvatarStatus;
+	framing_confidence: string | null;
+	model: string | null;
+	error: string | null;
+	is_active: 0 | 1;
+	created_at: number;
+	updated_at: number;
+};
+
+/** Profile payload for GET /users/auth/:authId */
+export type UserAvatarPublic = {
+	status: 'pending' | 'ready' | 'failed';
+	image_url: string | null;
+	image_key: string | null;
+};
+
+export type UserEmailPrefs = {
+	id: string;
+	user_id: string;
+	marketing_opt_in: 0 | 1;
+	marketing_opt_in_at: number | null;
+	marketing_unsubscribed_at: number | null;
+	created_at: number;
+	updated_at: number;
 };
 
 export type Subscription = {
@@ -94,6 +133,18 @@ export type CreateUserParams = {
 	name: string;
 	gender?: Gender;
 	email?: string;
+	/** Pre-resolved invite code to apply as user_limits overrides at creation */
+	inviteLimits?: {
+		trial_days?: number | null;
+		trial_session_limit?: number | null;
+		monthly_session_limit?: number | null;
+		message_per_session_limit?: number | null;
+		image_per_session_limit?: number | null;
+	};
+	/** When redeeming an invite, include statements to bump redemption_count */
+	inviteRedemption?: {
+		inviteId: string;
+	};
 };
 
 export type UserLimit = {
@@ -102,6 +153,61 @@ export type UserLimit = {
 	session_count_limit: number | null;
 	message_per_session_limit: number | null;
 	image_per_session_limit: number | null;
+	trial_days: number | null;
+	trial_session_limit: number | null;
+	monthly_session_limit: number | null;
 	created_at: number;
 	updated_at: number;
+};
+
+export type InviteCode = {
+	id: string;
+	code: string;
+	trial_days: number | null;
+	trial_session_limit: number | null;
+	monthly_session_limit: number | null;
+	message_per_session_limit: number | null;
+	image_per_session_limit: number | null;
+	max_redemptions: number | null;
+	redemption_count: number;
+	expires_at: number | null;
+	is_active: 0 | 1;
+	created_at: number;
+	updated_at: number;
+};
+
+export type PushToken = {
+	id: string;
+	user_id: string;
+	token: string;
+	platform: 'ios' | 'android';
+	created_at: number;
+	updated_at: number;
+};
+
+
+export type StylistOpenerTag = 'with_image' | 'without_image';
+
+export type StylistOpenerMessageRow = {
+	id: string;
+	text: string;
+	tags_json: string;
+	created_at: number;
+};
+
+export type StylistOpenerMetaRow = {
+	id: number;
+	version: number;
+	updated_at: number;
+};
+
+export type StylistOpenerMessage = {
+	id: string;
+	text: string;
+	tags: StylistOpenerTag[];
+};
+
+export type StylistOpenersPayload = {
+	version: number;
+	messages: StylistOpenerMessage[];
 };

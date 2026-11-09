@@ -36,6 +36,8 @@
 
 		/* Skip type checking all .d.ts files. */
 		"skipLibCheck": true,
+		/* Silence TS 6 deprecation of baseUrl until paths migration. */
+		"ignoreDeprecations": "6.0",
 		"types": ["./worker-configuration.d.ts"],
 		"baseUrl": "./src"
 	},

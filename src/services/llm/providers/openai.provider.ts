@@ -1,5 +1,5 @@
 import { LLMProviderInput, LLMProviderOutputContent, MessageEntry, OpenAIContentBlock, OpenAILLMInput, OpenAILLMResponse, OpenAIMessage } from '../../../utils/types';
-import { regenerateSignedUrl } from '../../../utils/assets.utils';
+import { fetchImageAsBase64, regenerateSignedUrl } from '../../../utils/assets.utils';
 import { ILLMProvider } from './base.provider';
 import { handleSSEStream } from '../../../utils/llm_stream.utils';
 
@@ -10,7 +10,28 @@ export class OpenAIProvider implements ILLMProvider {
 		private model: string
 	) { }
 
-	async prepareMessagesForLLM(messages: MessageEntry[]): Promise<OpenAILLMInput> {
+	private async processImage(imgUrl: string, imageFormat: 'url' | 'base64'): Promise<OpenAIContentBlock> {
+		const freshSignedUrl = await regenerateSignedUrl(imgUrl);
+
+		if (imageFormat === 'base64') {
+			try {
+				const { base64, mediaType } = await fetchImageAsBase64(freshSignedUrl);
+				return {
+					type: 'input_image',
+					image_url: `data:${mediaType};base64,${base64}`,
+				};
+			} catch (e) {
+				console.error('Error fetching image for base64 conversion, falling back to url', e);
+			}
+		}
+
+		return {
+			type: 'input_image',
+			image_url: freshSignedUrl,
+		};
+	}
+
+	async prepareMessagesForLLM(messages: MessageEntry[], imageFormat: 'url' | 'base64' = 'url'): Promise<OpenAILLMInput> {
 		const processedMessages: OpenAIMessage[] = [];
 
 		for (const message of messages) {
@@ -23,11 +44,8 @@ export class OpenAIProvider implements ILLMProvider {
 
 				// Handle single image (legacy)
 				if (message.remoteImage) {
-					const freshSignedUrl = await regenerateSignedUrl(message.remoteImage.url);
-					content.push({
-						type: 'input_image',
-						image_url: freshSignedUrl,
-					});
+					const block = await this.processImage(message.remoteImage.url, imageFormat);
+					content.push(block);
 				}
 
 				// Handle multiple images
@@ -35,11 +53,8 @@ export class OpenAIProvider implements ILLMProvider {
 					for (const img of message.remoteImages) {
 						// Avoid duplication if the same image is in both
 						if (!message.remoteImage || message.remoteImage.url !== img.url) {
-							const freshSignedUrl = await regenerateSignedUrl(img.url);
-							content.push({
-								type: 'input_image',
-								image_url: freshSignedUrl,
-							});
+							const block = await this.processImage(img.url, imageFormat);
+							content.push(block);
 						}
 					}
 				}

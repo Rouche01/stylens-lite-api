@@ -4,6 +4,7 @@ import { isValidMessageEntry } from '../utils';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
 import { createStyleAnalysisService } from 'services/style_analysis.svc';
+import { logRouteError } from 'utils/error';
 
 type AddMessageToSessionBody = {
 	message: MessageEntry;
@@ -28,6 +29,7 @@ const addMessageToSessionHandler: RequestHandler<ProvisionedAuthRequest> = async
 		const result = await styleAnalysisService.addMessageToSession({
 			sessionId,
 			userId: request.user.dbId,
+			authId: request.user.authId,
 			message: body.message,
 			ctx
 		});
@@ -36,6 +38,7 @@ const addMessageToSessionHandler: RequestHandler<ProvisionedAuthRequest> = async
 			headers: { 'Content-Type': 'application/json' },
 		});
 	} catch (err) {
+		logRouteError(request.log, 'add_session_message_failed', err, { session_id: request.params.sessionId });
 		if (err instanceof Error) {
 			const statusCode = err.message.includes('NOT_FOUND') ? 404 : 400;
 			return error(statusCode, err.message);

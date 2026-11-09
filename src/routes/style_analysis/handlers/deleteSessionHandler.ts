@@ -2,6 +2,7 @@ import { error, RequestHandler } from 'itty-router';
 import { createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
+import { logRouteError } from 'utils/error';
 
 const deleteSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
@@ -28,6 +29,7 @@ const deleteSessionHandler: RequestHandler<ProvisionedAuthRequest> = async (requ
 			}
 		);
 	} catch (err) {
+		logRouteError(request.log, 'delete_session_failed', err, { session_id: request.params.sessionId });
 		if (err instanceof Error) {
 			return error(400, err.message);
 		}

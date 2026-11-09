@@ -21,6 +21,7 @@ export class AuthService {
                 createRemoteJWKSet(new URL(`${this.svcUrl}/auth/v1/.well-known/jwks.json`))
             );
         }
+
         this.JWKS = jwksCache.get(this.svcUrl)!;
     }
 

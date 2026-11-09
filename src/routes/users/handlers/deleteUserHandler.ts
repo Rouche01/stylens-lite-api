@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { createUsersDB } from 'db';
+import { createAvatarsDB, createUsersDB } from 'db';
 import { error, RequestHandler } from 'itty-router';
 import { createAuthService } from 'services/auth.svc';
 import { ProvisionedAuthRequest } from 'types';
@@ -32,7 +32,22 @@ const deleteUserHandler: RequestHandler<ProvisionedAuthRequest> = async (request
 			return error(500, 'Failed to delete authentication account. Please try again.');
 		}
 
-		// Then delete from our DB
+		const avatarsDB = createAvatarsDB(env.GOSTYLENS_DB);
+		const avatars = await avatarsDB.listByUser(userId);
+		for (const avatar of avatars) {
+			if (!avatar.avatar_image_key) continue;
+			try {
+				await env.OUTFIT_PHOTOS_BUCKET.delete(avatar.avatar_image_key);
+			} catch (r2Err) {
+				request.log.warn(
+					'avatar_r2_delete_failed',
+					{ user_id: userId, avatar_image_key: avatar.avatar_image_key },
+					r2Err
+				);
+			}
+		}
+
+		// Then delete from our DB (user_avatars rows cascade)
 		await usersDB.deleteUser(userId);
 
 		return new Response(

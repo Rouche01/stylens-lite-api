@@ -5,13 +5,69 @@
 	"compatibility_date": "2025-10-11",
 	"observability": {
 		"enabled": true
+		// head_sampling_rate defaults to 1 (100% of requests). Lower per-env in production if log volume grows.
 	},
-	// Shared non-secret vars (production defaults)
+	// Shared non-secret vars (dev defaults)
+	// FREE_TIER_*: trial window then monthly session quota (-1 = unlimited). See docs/subscription-limits.md
 	"vars": {
-		"ENV_NAME": "production",
-		"FREE_TIER_SESSION_LIMIT": "3"
+		"ENV_NAME": "dev",
+		"FREE_TIER_TRIAL_DAYS": "7",
+		"FREE_TIER_TRIAL_SESSION_LIMIT": "-1",
+		"FREE_TIER_MONTHLY_SESSION_LIMIT": "5",
+		"FREE_TIER_MESSAGE_PER_SESSION_LIMIT": "20",
+		"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10",
+		"POSTHOG_HOST": "https://us.i.posthog.com",
+		"EMAIL_PROVIDER": "resend",
+		"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
+		"EMAIL_API_BASE_URL": "http://127.0.0.1:8787",
+		"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
+		"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
+		"DAILY_STYLE_NUDGE_CRON_ENABLED": "false",
+		"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
+		"AVATAR_IMAGE_PROVIDER": "openai",
+		"SAM_SEGMENT_PROVIDER": "fal",
+		"CATALOG_SEARCH_PROVIDER": "serpapi",
+		"CLOSET_EMBED_PROVIDER": "dinov3",
+		"CLOSET_EMBED_MODEL": "noah-bjorner/dinov3-vit-large-distilled"
 	},
-	// Production bindings (default), to be changed for prod - these should be for staging
+	// Lifecycle marketing email — hourly activation_d0 segment
+	"triggers": {
+		"crons": ["0 * * * *"]
+	},
+	"queues": {
+		"producers": [
+			{
+				"binding": "AVATAR_GENERATION_QUEUE",
+				"queue": "avatar-generation"
+			},
+			{
+				"binding": "CLOSET_MATCH_DIGEST_QUEUE",
+				"queue": "closet-match-digest"
+			},
+			{
+				"binding": "CLOSET_IDENTITY_QUEUE",
+				"queue": "closet-identity"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "avatar-generation",
+				"max_batch_size": 1,
+				"max_retries": 2
+			},
+			{
+				"queue": "closet-match-digest",
+				"max_batch_size": 1,
+				"max_retries": 5
+			},
+			{
+				"queue": "closet-identity",
+				"max_batch_size": 1,
+				"max_retries": 25
+			}
+		]
+	},
+	// Dev bindings (default) - this makes tools like d1studio work seamlessly locally
 	"d1_databases": [
 		{
 			"binding": "GOSTYLENS_DB",
@@ -26,13 +82,89 @@
 			"remote": true
 		}
 	],
-	// ── Staging environment ──────────────────────────────
+	"images": {
+		"binding": "IMAGES"
+	},
+	// PostHog flag definitions for local evaluation (shared across isolates).
+	"kv_namespaces": [
+		{
+			"binding": "FLAG_DEFINITIONS",
+			"id": "__FLAG_DEFINITIONS_KV_ID__",
+			"preview_id": "__FLAG_DEFINITIONS_KV_PREVIEW_ID__"
+		}
+	],
+	// Closet item identity. DINOv3 CLS is 1024-d cosine. Do not reuse the 768-d CLIP index.
+	// Local/dev remote index; live Worker uses stylens-closet-items-dinov3-live under env.staging.
+	"vectorize": [
+		{
+			"binding": "CLOSET_ITEMS",
+			"index_name": "stylens-closet-items-dinov3",
+			"remote": true
+		}
+	],
+	"ai": {
+		"binding": "AI"
+	},
 	"env": {
+		// ── Staging environment ──────────────────────────────
 		"staging": {
 			"name": "stylens-lite-api-staging",
 			"vars": {
 				"ENV_NAME": "staging",
-				"FREE_TIER_SESSION_LIMIT": "3"
+				"FREE_TIER_TRIAL_DAYS": "7",
+				"FREE_TIER_TRIAL_SESSION_LIMIT": "-1",
+				"FREE_TIER_MONTHLY_SESSION_LIMIT": "5",
+				"FREE_TIER_MESSAGE_PER_SESSION_LIMIT": "20",
+				"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10",
+				"POSTHOG_HOST": "https://us.i.posthog.com",
+				"EMAIL_PROVIDER": "resend",
+				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
+				"EMAIL_API_BASE_URL": "https://api-staging.gostylens.app",
+				"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
+			"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
+			"DAILY_STYLE_NUDGE_CRON_ENABLED": "true",
+			"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
+			"AVATAR_IMAGE_PROVIDER": "openai",
+			"SAM_SEGMENT_PROVIDER": "fal",
+			"CATALOG_SEARCH_PROVIDER": "serpapi",
+			"CLOSET_EMBED_PROVIDER": "dinov3",
+			"CLOSET_EMBED_MODEL": "noah-bjorner/dinov3-vit-large-distilled"
+			},
+			"triggers": {
+				"crons": ["0 * * * *"]
+			},
+			"queues": {
+				"producers": [
+					{
+						"binding": "AVATAR_GENERATION_QUEUE",
+						"queue": "stylens-avatar-generation"
+					},
+					{
+						"binding": "CLOSET_MATCH_DIGEST_QUEUE",
+						"queue": "stylens-closet-match-digest"
+					},
+					{
+						"binding": "CLOSET_IDENTITY_QUEUE",
+						"queue": "stylens-closet-identity"
+					}
+				],
+				"consumers": [
+					{
+						"queue": "stylens-avatar-generation",
+						"max_batch_size": 1,
+						"max_retries": 2
+					},
+					{
+						"queue": "stylens-closet-match-digest",
+						"max_batch_size": 1,
+						"max_retries": 5
+					},
+					{
+						"queue": "stylens-closet-identity",
+						"max_batch_size": 1,
+						"max_retries": 25
+					}
+				]
 			},
 			"d1_databases": [
 				{
@@ -48,6 +180,108 @@
 					"remote": true
 				}
 			],
+			"images": {
+				"binding": "IMAGES"
+			},
+			"kv_namespaces": [
+				{
+					"binding": "FLAG_DEFINITIONS",
+					"id": "b862de34a5d4424daf5573a0c6684924"
+				}
+			],
+			"vectorize": [
+				{
+					"binding": "CLOSET_ITEMS",
+					"index_name": "stylens-closet-items-dinov3-live"
+				}
+			],
+			"ai": {
+				"binding": "AI"
+			}
+		},
+		// ── Production environment ──────────────────────────────
+		"production": {
+			"name": "stylens-lite-api-prod",
+			"vars": {
+				"ENV_NAME": "production",
+				"FREE_TIER_TRIAL_DAYS": "7",
+				"FREE_TIER_TRIAL_SESSION_LIMIT": "-1",
+				"FREE_TIER_MONTHLY_SESSION_LIMIT": "5",
+				"FREE_TIER_MESSAGE_PER_SESSION_LIMIT": "20",
+				"FREE_TIER_IMAGE_PER_SESSION_LIMIT": "10",
+				"POSTHOG_HOST": "https://us.i.posthog.com",
+				"EMAIL_PROVIDER": "resend",
+				"EMAIL_FROM": "GoStylens <hello@mail.gostylens.com>",
+				"EMAIL_API_BASE_URL": "https://api.gostylens.app",
+				"EMAIL_APP_DEEP_LINK": "https://gostylens.app",
+			"EMAIL_LIFECYCLE_CRON_ENABLED": "false",
+			"DAILY_STYLE_NUDGE_CRON_ENABLED": "false",
+			"OPENAI_IMAGE_MODEL_VERSION": "gpt-image-1",
+			"AVATAR_IMAGE_PROVIDER": "openai",
+			"SAM_SEGMENT_PROVIDER": "fal",
+			"CATALOG_SEARCH_PROVIDER": "serpapi",
+			"CLOSET_EMBED_PROVIDER": "dinov3",
+			"CLOSET_EMBED_MODEL": "noah-bjorner/dinov3-vit-large-distilled"
+			},
+			"triggers": {
+				"crons": ["0 * * * *"]
+			},
+			"queues": {
+				"producers": [
+					{
+						"binding": "AVATAR_GENERATION_QUEUE",
+						"queue": "avatar-generation"
+					},
+					{
+						"binding": "CLOSET_MATCH_DIGEST_QUEUE",
+						"queue": "closet-match-digest"
+					},
+					{
+						"binding": "CLOSET_IDENTITY_QUEUE",
+						"queue": "closet-identity"
+					}
+				],
+				"consumers": [
+					{
+						"queue": "avatar-generation",
+						"max_batch_size": 1,
+						"max_retries": 2
+					},
+					{
+						"queue": "closet-match-digest",
+						"max_batch_size": 1,
+						"max_retries": 5
+					},
+					{
+						"queue": "closet-identity",
+						"max_batch_size": 1,
+						"max_retries": 25
+					}
+				]
+			},
+			"d1_databases": [
+				{
+					"binding": "GOSTYLENS_DB",
+					"database_name": "__DB_NAME__",
+					"database_id": "__DB_ID__"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "OUTFIT_PHOTOS_BUCKET",
+					"bucket_name": "__R2_BUCKET__",
+					"remote": true
+				}
+			],
+			"images": {
+				"binding": "IMAGES"
+			},
+			"kv_namespaces": [
+				{
+					"binding": "FLAG_DEFINITIONS",
+					"id": "__FLAG_DEFINITIONS_KV_ID_PRODUCTION__"
+				}
+			]
 		}
 	}
 }

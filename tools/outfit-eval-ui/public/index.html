@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Outfit extract / identity labels</title>
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap"
+			rel="stylesheet"
+		/>
+		<link rel="stylesheet" href="/styles.css" />
+	</head>
+	<body>
+		<header class="top">
+			<div class="brand">
+				<span class="brand-mark">GoStylens</span>
+				<span class="brand-sub">extract / identity labels</span>
+			</div>
+			<div class="top-controls">
+				<label class="field">
+					<span>Smoke run</span>
+					<select id="smokeSelect"></select>
+				</label>
+				<div class="nav">
+					<button type="button" id="prevBtn" class="ghost">← Prev</button>
+					<span id="photoIndex" class="mono muted">—</span>
+					<button type="button" id="nextBtn" class="ghost">Next →</button>
+				</div>
+				<button type="button" id="saveBtn" class="primary">Save labels</button>
+				<span id="saveStatus" class="mono muted" aria-live="polite"></span>
+			</div>
+		</header>
+
+		<main class="stage">
+			<section class="preview" aria-label="Photo preview">
+				<div class="preview-toolbar">
+					<div class="zoom-controls" role="group" aria-label="Zoom">
+						<button type="button" id="zoomOut" class="ghost zoom-btn" title="Zoom out (−)">−</button>
+						<span id="zoomLevel" class="mono muted">100%</span>
+						<button type="button" id="zoomIn" class="ghost zoom-btn" title="Zoom in (+)">+</button>
+						<button type="button" id="zoomReset" class="ghost" title="Reset view (0)">Reset</button>
+					</div>
+					<p class="muted small zoom-hint">Scroll to zoom · drag to pan · double-click reset</p>
+				</div>
+				<div class="preview-frame" id="previewFrame">
+					<div class="preview-viewport" id="previewViewport">
+						<div class="preview-stage" id="previewStage">
+							<img id="photo" alt="Outfit photo" hidden />
+							<canvas id="overlay" hidden></canvas>
+						</div>
+					</div>
+					<p id="previewEmpty" class="empty">Load a smoke run to begin.</p>
+				</div>
+				<p id="photoName" class="mono muted photo-name"></p>
+			</section>
+
+			<aside class="panel" aria-label="Labels">
+				<div class="panel-head">
+					<h1 id="panelTitle">Extracted items</h1>
+					<p id="panelMeta" class="muted"></p>
+				</div>
+
+				<div id="itemList" class="item-list"></div>
+
+				<section class="photo-label">
+					<h2>Photo notes</h2>
+					<label class="field block">
+						<span>Missing items (not extracted)</span>
+						<input id="missingItems" type="text" placeholder="e.g. white sneakers, crossbody bag" />
+					</label>
+					<label class="field block">
+						<span>Notes</span>
+						<textarea id="photoNotes" rows="2" placeholder="Optional freeform notes (fixture filenames become links)"></textarea>
+					</label>
+					<p id="photoNoteLinks" class="note-links" hidden></p>
+				</section>
+
+				<section class="legend">
+					<h2>Keys</h2>
+					<p class="muted small">
+						<span class="kbd">←</span>/<span class="kbd">→</span> photos ·
+						<span class="kbd">↑</span>/<span class="kbd">↓</span> items ·
+						<span class="kbd">1</span>–<span class="kbd">3</span> extract ok / wrong / spurious ·
+						<span class="kbd">+</span>/<span class="kbd">−</span> zoom ·
+						<span class="kbd">0</span> reset view ·
+						<span class="kbd">S</span> save
+					</p>
+					<p class="muted small">
+						System pills are pipeline output (<code>created</code> / <code>ask</code> / <code>failed</code>). Assign a
+						<strong>ground truth garment</strong> so labels survive re-smokes (see <code>docs/identity_manifest.md</code>).
+					</p>
+				</section>
+			</aside>
+		</main>
+
+		<script type="module" src="/app.js"></script>
+	</body>
+</html>

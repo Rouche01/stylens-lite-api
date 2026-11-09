@@ -1,14 +1,90 @@
 import { LLMService, createLLMService } from './llm.svc';
 import { CLASSIFICATION_SYSTEM_PROMPT } from '../llm/prompts/classification';
 import { CLASSIFICATION_RESPONSE_FORMAT } from '../llm/schemas/classification.schema';
-import { MessageEntry, RemoteImage } from '../utils/types';
-import { StyleAnalysisDB } from '../db/style_analysis';
+import { MessageEntry, RemoteImage, type ClaudeContentBlock, type ClaudeLLMInput, type LLMProviderInput } from '../utils/types';
+import { createClosetDB, StyleAnalysisDB } from '../db';
 import { StyleEntryTag } from '../db/types';
+import { createVoltMemService, isVoltMemWriteTag, type VoltMemService } from './voltmem.svc';
+import { createAvatarService, type AvatarService } from './avatar';
+import { ModelProvider, ModelUseCase } from './model_config.svc';
+import {
+	enqueueClosetIdentityFromClassification,
+	type ClosetIdentityEnqueueResult,
+} from './identity/jobs/closetIdentityJob';
+import {
+	IdentityRunLogEvents,
+	joinImageKeysForLog,
+	type IdentityEnqueueSkipReason,
+} from './identity/logging/runLogging';
+import { runClosetIdentityProgress } from './identity/notify/progress';
+import { createRealtimeService } from './realtime.svc';
+import { Logger, createLogger } from '../utils/logger.utils';
+import { FeatureFlags } from '../config/featureFlags';
+import { isFeatureFlagEnabledForAuthId } from './featureFlagGate.svc';
+
+export type ClosetIdentityEnqueue = {
+	enqueue(params: {
+		userId: string;
+		message: MessageEntry;
+		tags: StyleEntryTag[];
+		sessionId?: string;
+		entryId: string;
+	}): Promise<ClosetIdentityEnqueueResult>;
+};
+
+/** Resolves whether closet identity may be enqueued for this PostHog distinct id. */
+export type ClosetBrowseGate = (authId: string) => Promise<boolean>;
+
+export type ClosetIdentityEnqueueGateResult =
+	| { action: 'enqueue' }
+	| { action: 'skip'; reason: 'missing_auth_id' | 'flag_gate_unavailable' | 'closet_browse_off' };
+
+export type ClosetIdentityEnqueuePrecheckResult =
+	| { action: 'continue' }
+	| { action: 'skip'; reason: Extract<IdentityEnqueueSkipReason, 'no_outfit_tag' | 'missing_user_or_enqueue'> };
+
+const OUTFIT_IMAGE_TAGS = new Set<StyleEntryTag['tag']>([
+	'session_state:primary_outfit_image',
+	'session_state:alt_outfit_image',
+]);
+
+/** Local pre-gate skips before closet-browse (outfit tag + enqueue wiring). */
+export function resolveClosetIdentityEnqueuePrecheck(params: {
+	userId: string | undefined;
+	hasIdentityEnqueue: boolean;
+	tags: StyleEntryTag[];
+}): ClosetIdentityEnqueuePrecheckResult {
+	const hasOutfitTag = params.tags.some((tag) => OUTFIT_IMAGE_TAGS.has(tag.tag));
+	if (!hasOutfitTag) return { action: 'skip', reason: 'no_outfit_tag' };
+	if (!params.userId?.trim() || !params.hasIdentityEnqueue) {
+		return { action: 'skip', reason: 'missing_user_or_enqueue' };
+	}
+	return { action: 'continue' };
+}
+
+/** Fail-closed closet-browse check before identity enqueue. */
+export async function resolveClosetIdentityEnqueueGate(params: {
+	authId: string | undefined;
+	closetBrowseEnabled: ClosetBrowseGate | null;
+}): Promise<ClosetIdentityEnqueueGateResult> {
+	const distinctId = params.authId?.trim();
+	if (!distinctId) return { action: 'skip', reason: 'missing_auth_id' };
+	if (!params.closetBrowseEnabled) return { action: 'skip', reason: 'flag_gate_unavailable' };
+
+	const browseOn = await params.closetBrowseEnabled(distinctId);
+	if (!browseOn) return { action: 'skip', reason: 'closet_browse_off' };
+	return { action: 'enqueue' };
+}
 
 export class ClassificationService {
 	constructor(
 		private llmService: LLMService,
-		private styleAnalysisDB: StyleAnalysisDB
+		private styleAnalysisDB: StyleAnalysisDB,
+		private voltmem: VoltMemService | null = null,
+		private avatarService: AvatarService | null = null,
+		private identityEnqueue: ClosetIdentityEnqueue | null = null,
+		private log: Logger = createLogger({ env: 'dev' }),
+		private closetBrowseEnabled: ClosetBrowseGate | null = null
 	) { }
 
 	/**
@@ -77,6 +153,10 @@ export class ClassificationService {
 	 * Classifies a message using the LLM and extracts relevant fashion context tags.
 	 */
 	async classifyMessage(message: MessageEntry, sessionId?: string, previousMessage?: MessageEntry): Promise<StyleEntryTag[]> {
+		if (message.role !== 'user') {
+			return [];
+		}
+
 		if (!message.prompt && (!message.remoteImages || message.remoteImages.length === 0) && !message.remoteImage) {
 			return [];
 		}
@@ -106,6 +186,14 @@ export class ClassificationService {
 
 			// Leverage provider-specific logic to wait for images, sign URLs, and format for the specific LLM
 			const preparedInput = await this.llmService.prepareMessagesForLLM(messagesForLLM);
+			const payload = summarizeClassificationPayload(preparedInput);
+			this.log.debug('classification_anthropic_payload', {
+				last_role: payload.last_role,
+				roles: payload.roles.join(','),
+				system_chars: payload.system_chars,
+				output_format: payload.output_format,
+				payload_json: JSON.stringify(payload.messages),
+			});
 
 			const res = await this.llmService.generateResponse(
 				preparedInput,
@@ -144,17 +232,28 @@ export class ClassificationService {
 
 			return response;
 		} catch (e) {
-			console.error('Failed to classify message:', e);
+			this.log.error('classification_failed', { session_id: sessionId }, e);
 			return [];
 		}
 	}
 
 	/**
-	 * Runs classification in the background using ctx.waitUntil to avoid blocking the main response.
+	 * Post-processes a saved message entry in the background via ctx.waitUntil:
+	 * classify → persist tags → VoltMem write-through → maybe enqueue avatar / closet identity.
 	 * @param previousMessage - Pass the previous message for context. Pass `null` to explicitly indicate
 	 *   no previous message exists. Pass `undefined` (or omit) to resolve from DB automatically.
+	 * @param userId - D1 users.id used as VoltMem namespace for cross-session write-through.
+	 * @param authId - JWT sub / PostHog distinct id for closet-browse. Required to enqueue identity.
 	 */
-	async tagEntryInBackground(entryId: string, message: MessageEntry, ctx: ExecutionContext, sessionId?: string, previousMessage?: MessageEntry | null) {
+	async postProcessEntryInBackground(
+		entryId: string,
+		message: MessageEntry,
+		ctx: ExecutionContext,
+		sessionId?: string,
+		previousMessage?: MessageEntry | null,
+		userId?: string,
+		authId?: string
+	) {
 		ctx.waitUntil((async () => {
 			try {
 				// null = caller knows there's no previous message, undefined = resolve from DB
@@ -173,22 +272,263 @@ export class ClassificationService {
 				const tags = await this.classifyMessage(message, sessionId, prevMsg);
 				if (tags.length > 0) {
 					await this.styleAnalysisDB.addEntryTags(entryId, tags);
+					await this.writeThroughVoltMem(userId, tags);
+					await this.maybeEnqueueAvatar(userId, message, tags);
+					await this.maybeEnqueueIdentity(userId, message, tags, sessionId, entryId, authId);
 				}
 			} catch (e) {
-				console.trace('Background classification failed:', e);
+				this.log.warn(
+					'classification_postprocess_failed',
+					{ entry_id: entryId, session_id: sessionId, user_id: userId },
+					e
+				);
 			}
 		})());
+	}
+
+	/**
+	 * Persist text prefs/constraints/occasions to VoltMem (fail-open, no outfit images).
+	 */
+	private async writeThroughVoltMem(userId: string | undefined, tags: StyleEntryTag[]) {
+		if (!userId || !this.voltmem) return;
+
+		for (const tag of tags) {
+			if (!isVoltMemWriteTag(tag.tag)) continue;
+			const summary = typeof tag.payload?.summary === 'string' ? tag.payload.summary : '';
+			if (!summary.trim()) continue;
+			await this.voltmem.rememberFromTag(userId, tag.tag, summary);
+		}
+	}
+
+	/**
+	 * First outfit-tagged tip photo may seed a user twin. Fail-open; never blocks classification.
+	 */
+	private async maybeEnqueueAvatar(
+		userId: string | undefined,
+		message: MessageEntry,
+		tags: StyleEntryTag[]
+	) {
+		if (!userId || !this.avatarService) return;
+
+		const hasOutfitImage = tags.some(
+			(tag) =>
+				tag.tag === 'session_state:primary_outfit_image' ||
+				tag.tag === 'session_state:alt_outfit_image'
+		);
+		if (!hasOutfitImage) return;
+
+		const image = this.resolveOutfitImage(message, tags);
+		if (!image) return;
+
+		try {
+			await this.avatarService.maybeEnqueueFromOutfitImage({
+				userId,
+				imageKey: image.key,
+				imageUrl: image.url,
+			});
+		} catch (e) {
+			this.log.warn('avatar_enqueue_failed', { user_id: userId }, e);
+		}
+	}
+
+	/**
+	 * Outfit-tagged photos enqueue extract+identity when closet-browse is on.
+	 * Fail-open for classification; fail-closed for the flag (default off).
+	 */
+	private async maybeEnqueueIdentity(
+		userId: string | undefined,
+		message: MessageEntry,
+		tags: StyleEntryTag[],
+		sessionId: string | undefined,
+		entryId: string,
+		authId?: string
+	) {
+		const precheck = resolveClosetIdentityEnqueuePrecheck({
+			userId,
+			hasIdentityEnqueue: Boolean(this.identityEnqueue),
+			tags,
+		});
+		if (precheck.action === 'skip') {
+			// no_outfit_tag is common on non-photo messages — debug only to avoid log noise.
+			if (precheck.reason === 'no_outfit_tag') {
+				this.log.debug(IdentityRunLogEvents.ENQUEUE_SKIPPED, {
+					entry_id: entryId,
+					session_id: sessionId,
+					user_id: userId,
+					reason: precheck.reason,
+				});
+			} else {
+				this.log.info(IdentityRunLogEvents.ENQUEUE_SKIPPED, {
+					entry_id: entryId,
+					session_id: sessionId,
+					user_id: userId,
+					reason: precheck.reason,
+				});
+			}
+			return;
+		}
+
+		try {
+			const gate = await resolveClosetIdentityEnqueueGate({
+				authId,
+				closetBrowseEnabled: this.closetBrowseEnabled,
+			});
+			if (gate.action === 'skip') {
+				this.log.info(IdentityRunLogEvents.ENQUEUE_SKIPPED, {
+					user_id: userId,
+					entry_id: entryId,
+					session_id: sessionId,
+					reason: gate.reason,
+				});
+				return;
+			}
+
+			const result = await this.identityEnqueue!.enqueue({
+				userId: userId!,
+				message,
+				tags,
+				sessionId,
+				entryId,
+			});
+			this.log.info(IdentityRunLogEvents.ENQUEUE_RESULT, {
+				user_id: userId,
+				entry_id: entryId,
+				session_id: sessionId,
+				enqueued: result.enqueued,
+				skipped: result.skipped,
+				image_keys: joinImageKeysForLog(result.image_keys),
+				identity_run_ids: joinImageKeysForLog(result.identity_run_ids),
+			});
+		} catch (e) {
+			this.log.warn(
+				IdentityRunLogEvents.ENQUEUE_FAILED,
+				{ user_id: userId, entry_id: entryId, session_id: sessionId },
+				e
+			);
+		}
+	}
+
+	private resolveOutfitImage(message: MessageEntry, tags: StyleEntryTag[]): RemoteImage | null {
+		for (const tag of tags) {
+			if (
+				tag.tag !== 'session_state:primary_outfit_image' &&
+				tag.tag !== 'session_state:alt_outfit_image'
+			) {
+				continue;
+			}
+			const payloadImages = tag.payload?.images as RemoteImage[] | undefined;
+			const fromPayload = this.withResolvedKey(payloadImages?.[0]);
+			if (fromPayload) return fromPayload;
+		}
+
+		return this.withResolvedKey(this.extractImages(message)[0]);
+	}
+
+	private withResolvedKey(image: RemoteImage | undefined): RemoteImage | null {
+		if (!image?.url && !image?.key) return null;
+
+		let key = image.key;
+		if (!key && image.url) {
+			try {
+				key = image.url.startsWith('http') ? new URL(image.url).pathname.slice(1) : image.url;
+			} catch {
+				key = image.url;
+			}
+		}
+
+		if (!key) return null;
+		return { url: image.url ?? '', key, blurHash: image.blurHash };
 	}
 }
 
 /**
  * Factory function to create the ClassificationService.
  */
-import { ModelUseCase } from './model_config.svc';
-
-export const createClassificationService = (database: D1Database) => {
+export const createClassificationService = (database: D1Database, env?: Env) => {
 	// Use the dedicated classification model configuration (usually a fast/cheap 'Mini' model)
-	const llmService = createLLMService({ useCase: ModelUseCase.CLASSIFICATION });
+	const llmService = createLLMService({ useCase: ModelUseCase.CLASSIFICATION, provider: ModelProvider.CLAUDE });
 	const styleAnalysisDB = new StyleAnalysisDB(database);
-	return new ClassificationService(llmService, styleAnalysisDB);
+	const voltmem = env ? createVoltMemService(env) : null;
+	const avatarService = env ? createAvatarService(env) : null;
+	const identityEnqueue: ClosetIdentityEnqueue | null = env
+		? {
+				enqueue: (params) => {
+					const closet = createClosetDB(env.GOSTYLENS_DB);
+					const log = createLogger({ env: env.ENV_NAME });
+					return enqueueClosetIdentityFromClassification({
+						queue: env.CLOSET_IDENTITY_QUEUE,
+						closet,
+						log,
+						...params,
+						syncProgress: (userId) =>
+							runClosetIdentityProgress({
+								userId,
+								closet,
+								realtime: createRealtimeService(),
+								log,
+								queue: env.CLOSET_IDENTITY_QUEUE,
+								scheduleOnRetry: true,
+							}),
+					});
+				},
+			}
+		: null;
+	const closetBrowseEnabled: ClosetBrowseGate | null = env
+		? (authId) => isFeatureFlagEnabledForAuthId(FeatureFlags.closetBrowse, authId, env)
+		: null;
+	const log = createLogger({ env: env?.ENV_NAME ?? 'dev' }).child({ service: 'classification' });
+	return new ClassificationService(
+		llmService,
+		styleAnalysisDB,
+		voltmem,
+		avatarService,
+		identityEnqueue,
+		log,
+		closetBrowseEnabled
+	);
 };
+
+function summarizeClassificationPayload(input: LLMProviderInput) {
+	const claude = input as ClaudeLLMInput;
+	const messages = Array.isArray(claude.messages) ? claude.messages : [];
+	const last = messages[messages.length - 1];
+	return {
+		last_role: last?.role ?? null,
+		roles: messages.map((message) => message.role),
+		system_chars: classificationSystemChars(claude.system),
+		output_format: CLASSIFICATION_RESPONSE_FORMAT.type,
+		messages: messages.map(summarizeClassificationMessage),
+	};
+}
+
+function summarizeClassificationMessage(message: ClaudeLLMInput['messages'][number]) {
+	if (typeof message.content === 'string') {
+		return { role: message.role, text: message.content, images: [] as string[] };
+	}
+
+	const text = message.content
+		.filter((block): block is Extract<ClaudeContentBlock, { type: 'text' }> => block.type === 'text')
+		.map((block) => block.text)
+		.join('\n');
+	const images = message.content.flatMap((block) => {
+		if (block.type !== 'image') return [];
+		if (block.source.type === 'url') return [stripUrlQuery(block.source.url)];
+		return [`base64:${block.source.media_type}`];
+	});
+	return { role: message.role, text, images };
+}
+
+function classificationSystemChars(system: ClaudeLLMInput['system']): number {
+	if (!system) return 0;
+	if (typeof system === 'string') return system.length;
+	return system.reduce((sum, block) => sum + (block.type === 'text' ? block.text.length : 0), 0);
+}
+
+function stripUrlQuery(url: string): string {
+	try {
+		const parsed = new URL(url);
+		return `${parsed.origin}${parsed.pathname}`;
+	} catch {
+		return url;
+	}
+}

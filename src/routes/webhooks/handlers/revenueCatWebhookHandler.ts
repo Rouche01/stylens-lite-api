@@ -1,8 +1,9 @@
 import { error } from 'itty-router';
 import { env } from 'cloudflare:workers';
 import { createSubscriptionsDB, createUsersDB } from 'db';
-import { SubscriptionTier } from 'types';
+import { ApiRequest, SubscriptionTier } from 'types';
 import { verifyTimingSafe } from 'utils/crypto';
+import { logRouteError } from 'utils/error';
 
 // RevenueCat Webhook Payload Type (Subset)
 type RevenueCatEvent = {
@@ -21,7 +22,9 @@ type RevenueCatWebhookBody = {
     event: RevenueCatEvent;
 };
 
-const revenueCatWebhookHandler = async (request: Request) => {
+const revenueCatWebhookHandler = async (request: ApiRequest) => {
+    const log = request.log.child({ service: 'revenuecat' });
+
     try {
         const authHeader = request.headers.get('Authorization');
         const webhookSecret = env.REVENUECAT_WEBHOOK_SECRET;
@@ -43,8 +46,14 @@ const revenueCatWebhookHandler = async (request: Request) => {
         const user = await userDB.getUserById(userId);
 
         if (!user) {
+            log.warn('revenuecat_user_not_found', { db_user_id: userId });
             return error(404, 'User not found');
         }
+
+        request.log = log.child({
+            auth_id: user.auth_id,
+            db_user_id: userId,
+        });
 
         const subscriptionsDB = createSubscriptionsDB(env.GOSTYLENS_DB);
         const existingSubscription = await subscriptionsDB.getSubscriptionByUserId(userId);
@@ -107,7 +116,7 @@ const revenueCatWebhookHandler = async (request: Request) => {
             status: 200,
         });
     } catch (err) {
-        console.error('RevenueCat Webhook Error:', err);
+        logRouteError(log, 'revenuecat_webhook_failed', err);
         if (err instanceof Error) {
             return error(400, err.message);
         }
