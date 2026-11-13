@@ -2,7 +2,12 @@ import { error, RequestHandler } from 'itty-router';
 import { createClosetDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
-import { getIsolatedItemUrl, signClosetOriginalUrl, CLOSET_TILE_ISOLATE_WIDTH } from 'utils/assets.utils';
+import {
+	getIsolatedItemUrl,
+	signClosetOriginalUrl,
+	CLOSET_TILE_ISOLATE_WIDTH,
+	parseIsolateCutout,
+} from 'utils/assets.utils';
 import { isClosetBrowseItem } from 'utils/closet_browse';
 import { logRouteError } from 'utils/error';
 
@@ -16,6 +21,8 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 		const requestUrl = new URL(request.url);
 		const domain = requestUrl.host;
 		const enhance = requestUrl.searchParams.get('enhance') === 'true';
+		// Default: foreground cutout PNG. `?cutout=0` keeps padded photo crops for fallback/debug.
+		const cutout = parseIsolateCutout(requestUrl.searchParams.get('cutout'));
 
 		const enrichedItems = await Promise.all(
 			items.map(async (item) => {
@@ -33,7 +40,7 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 						imageKey: item.image_key,
 						boundingBox: item.bounding_box,
 						width: CLOSET_TILE_ISOLATE_WIDTH,
-						cutout: false,
+						cutout,
 						category: item.category,
 						enhance,
 					}),

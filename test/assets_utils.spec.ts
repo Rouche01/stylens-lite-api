@@ -31,17 +31,19 @@ describe('parseIsolateWidth', () => {
 describe('getIsolatedItemUrl', () => {
 	const box = { x: 10, y: 20, width: 30, height: 40 };
 
-	it('emits a tile URL without dummy img size or enhance', () => {
+	it('emits a closet-tile cutout URL (default isolate; no cutout=0)', () => {
 		const url = getIsolatedItemUrl({
 			domain: 'api.example.com',
 			imageUrl: 'https://unused',
 			imageKey: 'users/u1/photo.jpg',
 			boundingBox: box,
 			width: CLOSET_TILE_ISOLATE_WIDTH,
+			category: 'tops',
 		});
 		expect(url).toBe(
-			'https://api.example.com/assets/isolate?key=users%2Fu1%2Fphoto.jpg&x=10&y=20&w=30&h=40&width=480'
+			'https://api.example.com/assets/isolate?key=users%2Fu1%2Fphoto.jpg&x=10&y=20&w=30&h=40&width=480&category=tops'
 		);
+		expect(url).not.toContain('cutout=');
 	});
 
 	it('keeps imgW/imgH when callers still pass dimensions', () => {
