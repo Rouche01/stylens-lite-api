@@ -174,6 +174,8 @@ const extractOutfitHandler: RequestHandler<ApiRequest> = async (request) => {
 	} catch (err) {
 		logRouteError(request.log, 'extract_outfit_failed', err);
 		if (err instanceof IdentityBusyError) {
+			// Eval/admin sync extract only — production capture uses the queue (auto-retry ~30s).
+			// Resolve HTTP never throws IdentityBusyError.
 			return error(409, err.message);
 		}
 		if (err instanceof Error) {

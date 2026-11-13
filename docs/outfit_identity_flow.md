@@ -36,8 +36,18 @@ flowchart TD
 
 - **same:** CAS + link wear  
 - **new:** CAS + D1 create + enqueue index (probe cache; Replicate only if probe missing/stale)  
-- Same decision again → 200; opposite → 409
+- Same decision again → 200; opposite → 409 (conflicting decision on the same match)
+
+## Writer busy (409 vs queue retry)
+
+| Path | Busy behavior |
+|------|----------------|
+| `CLOSET_IDENTITY_QUEUE` | `IdentityBusyError` → retry ~30s; give up after 5 attempts |
+| `POST /outfits/extract` (admin/eval) | **409** with busy message — client must retry; not used by app capture |
+| `POST .../resolve` | Never busy — stays off `identity_inflight` |
 
 ## Degraded window
 
-If Vectorize lags past the searchable-gate budget, tiles become `index_degraded` and the next outfit still runs. Local scoring against recent unindexed/degraded probes (`listRecentUnindexedProbes`) **and** pending-ask probes (`listRecentPendingMatchProbes`) prefers **ask** over silent duplicate creates. Pending asks store `probe_embed` but no closet tile; later outfits still score those crops (neighbor id = the pending match’s candidate tile) so mid-cycle rewear is not starved.
+If Vectorize lags past the searchable-gate budget, tiles become `index_degraded` and the next outfit still runs. Local scoring against recent unindexed/degraded probes (`listRecentUnindexedProbes`) **and** pending-ask probes (`listRecentPendingMatchProbes`) prefers **ask** over silent duplicate creates — including when the ANN query itself throws. Pending asks store `probe_embed` but no closet tile; later outfits still score those crops (neighbor id = the pending match’s candidate tile) so mid-cycle rewear is not starved.
+
+CF Images orient/crop/resize retries once on transient failures (5xx, 429, error **1031**, network timeouts). Per-item embed failure still fails that item only; the rest of the outfit continues.

@@ -543,6 +543,10 @@ export class OutfitIdentityProcessor {
 		if (!shouldQueryIdentity(params.item)) {
 			return { action: 'create', reason: 'skip_query' };
 		}
+		const decideOpts = {
+			category: params.item.category,
+			subcategory: params.item.subcategory,
+		};
 		try {
 			const queried = await this.identity.queryPreparedCrop(prepared, {
 				imageKey: params.imageKey,
@@ -559,10 +563,7 @@ export class OutfitIdentityProcessor {
 				log
 			);
 			const neighbors = mergeIdentityNeighbors(queried.neighbors, localNeighbors);
-			return decideIdentityFromNeighbors(neighbors, {
-				category: params.item.category,
-				subcategory: params.item.subcategory,
-			});
+			return decideIdentityFromNeighbors(neighbors, decideOpts);
 		} catch (err) {
 			log.warn(
 				'outfit_identity_query_failed',
@@ -573,6 +574,23 @@ export class OutfitIdentityProcessor {
 				},
 				err
 			);
+			// ANN down / lag: still score D1 unindexed + pending probes so we prefer ask
+			// over a silent duplicate create.
+			const localNeighbors = await this.scoreLocalUnindexed(
+				params.userId,
+				prepared,
+				params.item.category,
+				params.item.subcategory,
+				log
+			);
+			if (localNeighbors.length > 0) {
+				log.info('outfit_identity_query_local_fallback', {
+					image_key: params.imageKey,
+					label: params.item.label,
+					local_neighbor_count: localNeighbors.length,
+				});
+				return decideIdentityFromNeighbors(localNeighbors, decideOpts);
+			}
 			return { action: 'create', reason: 'identity_error' };
 		}
 	}

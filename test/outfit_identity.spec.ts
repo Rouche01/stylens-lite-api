@@ -248,7 +248,7 @@ describe('decideIdentityFromNeighbors', () => {
 		});
 	});
 
-	it('still allows cross-subcategory asks on upper (Claude jacket/top swaps)', () => {
+	it('rejects upper outer↔inner asks (held-out B2 jacket≠shirt)', () => {
 		expect(
 			decideIdentityFromNeighbors(
 				[
@@ -258,6 +258,27 @@ describe('decideIdentityFromNeighbors', () => {
 					}),
 				],
 				{ category: 'top', subcategory: 'shirt' }
+			)
+		).toEqual({
+			action: 'create',
+			reason: 'below_threshold',
+			identityScore: 0.77,
+			neighborClosetItemId: 'c1',
+			cosine: 0.96,
+			colorDistance: 0.03,
+		});
+	});
+
+	it('still allows same-layer upper Claude swaps (jacket↔cardigan)', () => {
+		expect(
+			decideIdentityFromNeighbors(
+				[
+					neighbor({
+						d1_subcategory: 'cardigan',
+						identity_score: 0.77,
+					}),
+				],
+				{ category: 'outerwear', subcategory: 'jacket' }
 			)
 		).toEqual({
 			action: 'ask',
@@ -628,6 +649,40 @@ describe('OutfitIdentityProcessor', () => {
 		expect(harness.closet.items).toHaveLength(1);
 		expect(harness.identity.prepares).toBe(1);
 		expect(harness.closet.matches).toHaveLength(0);
+	});
+
+	it('asks from local unindexed probes when ANN query throws', async () => {
+		const harness = createHarness({ queryError: new Error('vectorize query down') });
+		harness.closet.items.push({
+			id: 'prior-1',
+			user_id: 'u1',
+			label: 'olive shirt',
+			category: 'top',
+			subcategory: 'shirt',
+			color: 'olive',
+			pattern: 'solid',
+			style_tags: [],
+			created_at: Date.now(),
+			updated_at: Date.now(),
+			vector_indexed_at: null,
+			index_status: 'index_degraded',
+			index_attempts: 3,
+		});
+		harness.closet.probeEmbeds['prior-1'] = closetMatchProbeFromPrepared(PREPARED)!;
+
+		const result = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/next.jpg',
+		});
+
+		expect(result?.items[0]).toMatchObject({
+			identity_status: 'ask',
+			candidate_closet_item_id: 'prior-1',
+			is_new_closet_item: false,
+		});
+		expect(harness.closet.items.filter((item) => item.id !== 'prior-1')).toHaveLength(0);
+		expect(harness.closet.matches).toHaveLength(1);
 	});
 
 	it('creates a closet tile even when vector upsert fails (index retries later)', async () => {

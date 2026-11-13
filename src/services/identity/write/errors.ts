@@ -14,7 +14,9 @@ export class ClosetMatchResolvedError extends Error {
 
 export class IdentityBusyError extends Error {
 	constructor(userId: string) {
-		super(`Identity already in progress for user ${userId}`);
+		super(
+			`Identity already in progress for user ${userId}; queue retries in ~30s (resolve stays off this lock)`
+		);
 		this.name = 'IdentityBusyError';
 	}
 }
