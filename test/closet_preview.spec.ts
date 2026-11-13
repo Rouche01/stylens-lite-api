@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { escapeHtml, renderClosetPreviewHtml, renderClosetScreenHtml } from '../src/routes/closet/handlers/closetPreviewHtml';
+import {
+	escapeHtml,
+	renderClosetFaceCompareHtml,
+	renderClosetPreviewHtml,
+	renderClosetScreenHtml,
+} from '../src/routes/closet/handlers/closetPreviewHtml';
 
 describe('escapeHtml', () => {
 	it('escapes markup in labels', () => {
@@ -129,5 +134,60 @@ describe('renderClosetScreenHtml', () => {
 		expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
 		expect(html).toContain('aspect 4/5 fallback');
 		expect(html).toContain('blurhash missing');
+	});
+});
+
+describe('renderClosetFaceCompareHtml', () => {
+	it('shows crop, CF, SAM, and packshot columns without embedding secrets', () => {
+		const html = renderClosetFaceCompareHtml({
+			title: 'Pink tee',
+			subtitle: 'pink t-shirt',
+			itemId: 'item-1',
+			label: 'Pink tee',
+			cropUrl: 'http://127.0.0.1:8787/assets/isolate?key=p.jpg&cutout=0&width=960',
+			cfCutoutUrl: 'http://127.0.0.1:8787/assets/isolate?key=p.jpg&width=480',
+			samFaceUrl: 'https://example.com/cutouts/scratch/face.png',
+			samNote: 'SAM + BiRefNet ok',
+			samModel: 'fal-ai/sam-3/image+birefnet',
+			packshotUrl: 'https://example.com/cutouts/scratch/pack.png',
+			packshotNote: 'Nano Banana flat-lay ok',
+			packshotModel: 'fal-ai/nano-banana/edit',
+			aspectRatio: 0.8,
+		});
+
+		expect(html).toContain('A · Product default');
+		expect(html).toContain('B · CF Images');
+		expect(html).toContain('C · Tier 1 spike');
+		expect(html).toContain('D · Tier 3 spike');
+		expect(html).toContain('cutout=0');
+		expect(html).toContain('face.png');
+		expect(html).toContain('pack.png');
+		expect(html).toContain('SAM + BiRefNet ok');
+		expect(html).toContain('fal-ai/nano-banana/edit');
+		expect(html).toContain('Run packshot');
+		expect(html).not.toContain('admin_key');
+		expect(html).not.toContain('X-Amz-Signature');
+	});
+
+	it('shows SAM failure note when face URL is empty', () => {
+		const html = renderClosetFaceCompareHtml({
+			title: 'Item',
+			subtitle: 'n',
+			itemId: 'a',
+			label: '<script>x</script>',
+			cropUrl: '',
+			cfCutoutUrl: '',
+			samFaceUrl: '',
+			samNote: 'SAM 3 found no matching concept',
+			samModel: '',
+			packshotUrl: '',
+			packshotNote: 'Append &packshot=1',
+			packshotModel: '',
+			aspectRatio: 0,
+		});
+		expect(html).toContain('SAM 3 found no matching concept');
+		expect(html).toContain('Append &amp;packshot=1');
+		expect(html).not.toContain('<script>x</script>');
+		expect(html).toContain('&lt;script&gt;x&lt;/script&gt;');
 	});
 });

@@ -37,6 +37,25 @@ export type ClosetItemFocusPage = {
 
 export const CLOSET_SCREEN_FALLBACK_ASPECT = 4 / 5;
 
+/** Admin face spike: padded crop vs CF vs SAM(+matte) vs optional Nano Banana packshot. */
+export type ClosetFaceComparePage = {
+	title: string;
+	subtitle: string;
+	itemId: string;
+	label: string;
+	cropUrl: string;
+	cfCutoutUrl: string;
+	/** Signed scratch PNG (SAM, optionally BiRefNet-matted). Empty when generation failed. */
+	samFaceUrl: string;
+	samNote: string;
+	samModel: string;
+	/** Generative flat-lay (Tier 3). Empty until `&packshot=1` or on failure. */
+	packshotUrl: string;
+	packshotNote: string;
+	packshotModel: string;
+	aspectRatio: number;
+};
+
 export function escapeHtml(value: string): string {
 	return value
 		.replace(/&/g, '&amp;')
@@ -238,6 +257,140 @@ export function renderClosetScreenHtml(page: ClosetItemFocusPage): string {
       img.data.set(pixels);
       ctx.putImageData(img, 0, 0);
     }).catch(function () {});
+  });
+</script>
+</body>
+</html>`;
+}
+
+export function renderClosetFaceCompareHtml(page: ClosetFaceComparePage): string {
+	const ratio = page.aspectRatio > 0 ? page.aspectRatio : CLOSET_SCREEN_FALLBACK_ASPECT;
+	const crop = page.cropUrl
+		? `<img class="face-img fill" src="${escapeHtml(page.cropUrl)}" alt="padded crop"/>`
+		: `<div class="ph">no crop</div>`;
+	const cf = page.cfCutoutUrl
+		? `<img class="face-img fill" src="${escapeHtml(page.cfCutoutUrl)}" alt="CF segment"/>`
+		: `<div class="ph">no CF isolate</div>`;
+	const sam = page.samFaceUrl
+		? `<img class="face-img contain" src="${escapeHtml(page.samFaceUrl)}" alt="SAM face"/>`
+		: `<div class="ph">${escapeHtml(page.samNote || 'SAM face missing')}</div>`;
+	const packshot = page.packshotUrl
+		? `<img class="face-img contain" src="${escapeHtml(page.packshotUrl)}" alt="packshot"/>`
+		: `<div class="ph">${escapeHtml(page.packshotNote || 'Packshot missing')}</div>`;
+	const meta = [
+		`id ${page.itemId}`,
+		`aspect ${page.aspectRatio > 0 ? page.aspectRatio : '4/5'}`,
+		page.samModel ? `sam ${page.samModel}` : 'sam —',
+		page.packshotModel ? `packshot ${page.packshotModel}` : 'packshot —',
+		page.samNote ? page.samNote : 'SAM ok',
+	].join(' · ');
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>${escapeHtml(page.title)} — face compare</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-display@600&amp;f[]=satoshi@500,600&amp;display=swap"/>
+<style>
+  :root {
+    --green: #3d4a3d;
+    --lime: #b8e994;
+    --mist: #e8f5e8;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Satoshi, ui-sans-serif, system-ui, sans-serif; background: #dfe9dc; color: #2c352c; }
+  header { padding: 12px 16px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  h1 { font-family: "Clash Display", sans-serif; font-size: 18px; margin: 0; font-weight: 600; color: var(--green); }
+  p { margin: 0; color: #5a675a; font-size: 13px; }
+  button { background: var(--green); color: var(--lime); border: 0; border-radius: 999px; padding: 8px 12px; cursor: pointer; font: 600 13px Satoshi, sans-serif; }
+  .meta { padding: 0 16px 12px; font-size: 12px; color: #7a8a7a; }
+  .page { display: grid; gap: 20px; padding: 8px 16px 40px; max-width: 1200px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .card h2 { font-family: "Clash Display", sans-serif; font-size: 15px; margin: 0 0 4px; color: var(--green); }
+  .kicker { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #6d7d6d; margin: 0 0 8px; }
+  .note { font-size: 12px; color: #7a8a7a; margin: 0 0 10px; line-height: 1.4; }
+  .hero {
+    position: relative; border-radius: var(--radius); overflow: hidden;
+    background: #cfdccf; aspect-ratio: ${ratio}; max-width: 320px;
+  }
+  .hero.mint { background: var(--mist); }
+  .face-img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .face-img.fill { object-fit: cover; object-position: top center; }
+  .face-img.contain { object-fit: contain; object-position: center; padding: 10px; }
+  .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; text-align: center; color: #7a8a7a; font-size: 12px; }
+  .hero figcaption {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding: 24px 12px 10px;
+    background: linear-gradient(transparent, color-mix(in srgb, var(--green) 72%, black));
+    color: #fff; font-size: 12px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>${escapeHtml(page.title)}</h1>
+  <p>${escapeHtml(page.subtitle)}</p>
+  <button type="button" id="to-closet">Tile layout</button>
+  <button type="button" id="to-boxes">Photo boxes</button>
+  <button type="button" id="run-packshot">Run packshot</button>
+</header>
+<p class="meta">${escapeHtml(meta)}</p>
+<div class="page">
+  <section class="card">
+    <p class="kicker">A · Product default</p>
+    <h2>Padded crop</h2>
+    <p class="note">Current closet tile face (<code>cutout=0</code>). Readable fabric; room may show.</p>
+    <figure class="hero">
+      ${crop}
+      <figcaption>${escapeHtml(page.label)}</figcaption>
+    </figure>
+  </section>
+  <section class="card">
+    <p class="kicker">B · CF Images</p>
+    <h2>Foreground segment</h2>
+    <p class="note">Isolate default (<code>segment: foreground</code>). Often a dark person silhouette.</p>
+    <figure class="hero mint">
+      ${cf}
+      <figcaption>${escapeHtml(page.label)}</figcaption>
+    </figure>
+  </section>
+  <section class="card">
+    <p class="kicker">C · Tier 1 spike</p>
+    <h2>SAM + BiRefNet</h2>
+    <p class="note">Fal SAM cutout, then BiRefNet matting when available. Mint card, contain fit.</p>
+    <figure class="hero mint">
+      ${sam}
+      <figcaption>${escapeHtml(page.label)}</figcaption>
+    </figure>
+  </section>
+  <section class="card">
+    <p class="kicker">D · Tier 3 spike</p>
+    <h2>Nano Banana flat-lay</h2>
+    <p class="note">Generative packshot via <code>fal-ai/nano-banana/edit</code>. Opt in with <code>&amp;packshot=1</code> (slow / paid).</p>
+    <figure class="hero mint">
+      ${packshot}
+      <figcaption>${escapeHtml(page.label)}</figcaption>
+    </figure>
+  </section>
+</div>
+<script>
+  document.getElementById('to-closet')?.addEventListener('click', function () {
+    var u = new URL(location.href);
+    u.searchParams.set('layout', 'closet');
+    u.searchParams.delete('packshot');
+    location.href = u.toString();
+  });
+  document.getElementById('to-boxes')?.addEventListener('click', function () {
+    var u = new URL(location.href);
+    u.searchParams.delete('layout');
+    u.searchParams.delete('packshot');
+    location.href = u.toString();
+  });
+  document.getElementById('run-packshot')?.addEventListener('click', function () {
+    var u = new URL(location.href);
+    u.searchParams.set('layout', 'face');
+    u.searchParams.set('packshot', '1');
+    location.href = u.toString();
   });
 </script>
 </body>

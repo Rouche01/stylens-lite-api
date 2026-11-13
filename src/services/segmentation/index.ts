@@ -7,3 +7,5 @@ export {
 	type SegmentBoxResult,
 	type BoxPx,
 } from './providers';
+export { falBirefnetMatte } from './providers/fal_birefnet';
+export { falNanoBananaFlatlay, flatlayPromptForLabel } from './providers/fal_nano_banana_flatlay';

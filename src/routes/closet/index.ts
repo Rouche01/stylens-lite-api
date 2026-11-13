@@ -35,7 +35,7 @@ router.get(
 	requireClosetBrowse,
 	getClosetIdentityStatusHandler
 );
-router.get('/items/:id/preview', adminApiKeyQueryMiddleware, previewClosetItemHandler); // `?layout=closet` = padded tile vs person-centered native-aspect crop + dim
+router.get('/items/:id/preview', adminApiKeyQueryMiddleware, previewClosetItemHandler); // closet | face (+ optional &packshot=1)
 router.get('/items', authMiddleware, dbIdMiddleware, requireClosetBrowse, getClosetItemsHandler);
 router.get('/items/:id', authMiddleware, dbIdMiddleware, requireClosetBrowse, getClosetItemDetailsHandler);
 /** User display rename — updates `label` only; not used for identity matching. */

@@ -2,12 +2,19 @@ import { error, RequestHandler } from 'itty-router';
 import { createClosetDB } from 'db';
 import { OutfitLinkedItem } from 'db/closet';
 import { env } from 'cloudflare:workers';
+import {
+	createCutoutService,
+	falBirefnetMatte,
+	falNanoBananaFlatlay,
+	SegmentError,
+} from 'services/segmentation';
 import { ApiRequest } from 'types';
 import {
 	CLOSET_PREVIEW_CROP_WIDTH,
 	CLOSET_TILE_ISOLATE_WIDTH,
 	getIsolatedItemUrl,
 	signClosetOriginalUrl,
+	signDownloadUrlForKey,
 } from 'utils/assets.utils';
 import { boxInCrop, closetTilePad, nativeAspectFocusWindow, padPercentBox } from 'utils/bounding_box';
 import { getImageDimensions } from 'utils/image.utils';
@@ -15,6 +22,7 @@ import { logRouteError } from 'utils/error';
 import {
 	CLOSET_SCREEN_FALLBACK_ASPECT,
 	PreviewBox,
+	renderClosetFaceCompareHtml,
 	renderClosetPreviewHtml,
 	renderClosetScreenHtml,
 } from './closetPreviewHtml';
@@ -29,7 +37,10 @@ const previewClosetItemHandler: RequestHandler<ApiRequest> = async (request) => 
 		const requestUrl = new URL(request.url);
 		const showAll = requestUrl.searchParams.get('all') === '1';
 		const outfitIdParam = requestUrl.searchParams.get('outfit_id')?.trim() || undefined;
-		const closetLayout = requestUrl.searchParams.get('layout') === 'closet';
+		const layout = requestUrl.searchParams.get('layout');
+		const closetLayout = layout === 'closet';
+		const faceLayout = layout === 'face';
+		const wantPackshot = requestUrl.searchParams.get('packshot') === '1';
 		const enhance = requestUrl.searchParams.get('enhance') === 'true';
 
 		const closetDB = createClosetDB(env.GOSTYLENS_DB);
@@ -49,6 +60,69 @@ const previewClosetItemHandler: RequestHandler<ApiRequest> = async (request) => 
 		const imageUrl = await signClosetOriginalUrl(wear.image_key, wear.original_image_url);
 		if (!imageUrl) {
 			return error(404, 'No outfit photo linked to this closet item');
+		}
+
+		if (faceLayout) {
+			const catalog = await closetDB.getClosetItems(details.user_id);
+			const listed = catalog.find((item) => item.id === itemId);
+			const ratio =
+				listed?.tile_aspect_ratio != null && listed.tile_aspect_ratio > 0
+					? listed.tile_aspect_ratio
+					: CLOSET_SCREEN_FALLBACK_ASPECT;
+			const cropUrl = getIsolatedItemUrl({
+				domain: requestUrl.origin,
+				imageUrl,
+				imageKey: wear.image_key,
+				boundingBox: wear.bounding_box,
+				width: CLOSET_PREVIEW_CROP_WIDTH,
+				cutout: false,
+				category: details.category,
+			});
+			const cfCutoutUrl = getIsolatedItemUrl({
+				domain: requestUrl.origin,
+				imageUrl,
+				imageKey: wear.image_key,
+				boundingBox: wear.bounding_box,
+				width: CLOSET_TILE_ISOLATE_WIDTH,
+				enhance,
+				category: details.category,
+			});
+
+			const face = await buildSamFace({
+				imageKey: wear.image_key,
+				label: details.label,
+				boundingBox: wear.bounding_box,
+				log: request.log,
+			});
+
+			const packshot = wantPackshot
+				? await buildPackshotFace({
+						sourceUrl: face.url || (await signDownloadUrlForKey(wear.image_key)),
+						label: details.label,
+						log: request.log,
+					})
+				: {
+						url: '',
+						note: 'Append &packshot=1 or tap Run packshot (Nano Banana edit; slow / billed).',
+						model: '',
+					};
+
+			const html = renderClosetFaceCompareHtml({
+				title: details.label,
+				subtitle: `${details.color} ${details.subcategory}`.trim(),
+				itemId,
+				label: details.label,
+				cropUrl,
+				cfCutoutUrl,
+				samFaceUrl: face.url,
+				samNote: face.note,
+				samModel: face.model,
+				packshotUrl: packshot.url,
+				packshotNote: packshot.note,
+				packshotModel: packshot.model,
+				aspectRatio: ratio,
+			});
+			return previewHtml(html);
 		}
 
 		if (closetLayout) {
@@ -151,6 +225,90 @@ const previewClosetItemHandler: RequestHandler<ApiRequest> = async (request) => 
 		return error(500, 'Internal Server Error');
 	}
 };
+
+async function buildPackshotFace(params: {
+	sourceUrl: string;
+	label: string;
+	log: ApiRequest['log'];
+}): Promise<{ url: string; note: string; model: string }> {
+	if (!params.sourceUrl) {
+		return { url: '', note: 'No source image for packshot', model: '' };
+	}
+	try {
+		const result = await falNanoBananaFlatlay({
+			apiKey: env.FAL_KEY,
+			imageUrl: params.sourceUrl,
+			label: params.label,
+		});
+		const key = `cutouts/scratch/face-packshot-${crypto.randomUUID()}.png`;
+		await env.OUTFIT_PHOTOS_BUCKET.put(key, result.pngBytes, {
+			httpMetadata: { contentType: 'image/png' },
+		});
+		return {
+			url: await signDownloadUrlForKey(key),
+			note: `Nano Banana flat-lay ok (${result.model})`,
+			model: result.model,
+		};
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : 'Packshot failed';
+		params.log.warn('preview_face_packshot_failed', { error: msg });
+		return { url: '', note: msg.slice(0, 200), model: '' };
+	}
+}
+
+async function buildSamFace(params: {
+	imageKey: string;
+	label: string;
+	boundingBox: { x: number; y: number; width: number; height: number };
+	log: ApiRequest['log'];
+}): Promise<{ url: string; note: string; model: string }> {
+	try {
+		const cutoutService = createCutoutService(env, params.log);
+		const result = await cutoutService.cutoutFromR2({
+			imageKey: params.imageKey,
+			label: params.label,
+			boundingBox: params.boundingBox,
+		});
+
+		const samKey = `cutouts/scratch/face-sam-${crypto.randomUUID()}.png`;
+		await env.OUTFIT_PHOTOS_BUCKET.put(samKey, result.pngBytes, {
+			httpMetadata: { contentType: 'image/png' },
+		});
+		const samUrl = await signDownloadUrlForKey(samKey);
+
+		let faceBytes = result.pngBytes;
+		let note = `SAM ok (${result.model}${result.promptUsed ? `; prompt ${result.promptUsed}` : ''})`;
+		let model = result.model;
+
+		try {
+			faceBytes = await falBirefnetMatte({
+				apiKey: env.FAL_KEY,
+				imageUrl: samUrl,
+			});
+			const matteKey = `cutouts/scratch/face-matte-${crypto.randomUUID()}.png`;
+			await env.OUTFIT_PHOTOS_BUCKET.put(matteKey, faceBytes, {
+				httpMetadata: { contentType: 'image/png' },
+			});
+			model = `${result.model}+birefnet`;
+			note = `SAM + BiRefNet ok (${result.model})`;
+			return { url: await signDownloadUrlForKey(matteKey), note, model };
+		} catch (matteErr) {
+			const matteMsg = matteErr instanceof Error ? matteErr.message : 'BiRefNet failed';
+			params.log?.warn('preview_face_birefnet_failed', { error: matteMsg });
+			note = `SAM ok; BiRefNet skipped (${matteMsg.slice(0, 120)})`;
+			return { url: samUrl, note, model };
+		}
+	} catch (err) {
+		const msg =
+			err instanceof SegmentError
+				? err.message
+				: err instanceof Error
+					? err.message
+					: 'SAM cutout failed';
+		params.log?.warn('preview_face_sam_failed', { error: msg });
+		return { url: '', note: msg.slice(0, 200), model: '' };
+	}
+}
 
 async function outfitPhotoSize(
 	imageKey: string | undefined,
