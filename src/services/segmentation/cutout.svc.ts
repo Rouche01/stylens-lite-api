@@ -1,7 +1,17 @@
+import { cropJpegWithTrim } from '../../utils/cf_images.utils';
+import { percentBoxToTrim } from '../../utils/bounding_box';
 import { signDownloadUrlForKey } from '../../utils/assets.utils';
 import { getImageDimensions } from '../../utils/image.utils';
 import { Logger, createLogger } from '../../utils/logger.utils';
 import { BoxPx, SegmentProvider, createSegmentProvider } from './providers';
+import {
+	cropLocalBoxPx,
+	evaluateFaceCutoutPng,
+	faceCutoutPad,
+	passesFaceQuality,
+	type FaceQualityMetrics,
+	type FaceQualityVerdict,
+} from './face_quality';
 
 export type PercentBox = {
 	x: number;
@@ -25,6 +35,18 @@ export type CutoutResult = {
 	model: string;
 	promptUsed?: string;
 	promptsTried?: string[];
+	maskScore?: number;
+};
+
+export type FaceCutoutFromR2Params = CutoutFromR2Params & {
+	/** Closet category for pad (footwear/accessory tightened). */
+	category?: string | null;
+};
+
+export type FaceCutoutResult = CutoutResult & {
+	quality: FaceQualityMetrics;
+	verdict: FaceQualityVerdict;
+	cropImageKey: string;
 };
 
 /**
@@ -60,6 +82,7 @@ export class CutoutService {
 	constructor(
 		private provider: SegmentProvider,
 		private bucket: R2Bucket,
+		private images: ImagesBinding,
 		private log: Logger
 	) {}
 
@@ -106,6 +129,7 @@ export class CutoutService {
 			model: segmented.model,
 			prompt_used: segmented.promptUsed || '',
 			prompts_tried: (segmented.promptsTried || []).join('|'),
+			mask_score: segmented.maskScore ?? null,
 		});
 
 		return {
@@ -116,6 +140,104 @@ export class CutoutService {
 			model: segmented.model,
 			promptUsed: segmented.promptUsed,
 			promptsTried: segmented.promptsTried,
+			maskScore: segmented.maskScore,
+		};
+	}
+
+	/**
+	 * Crop-then-SAM face path: padded crop → SAM2 box-first on crop → quality gate.
+	 * On quality fail with a label, retries SAM3 on the same crop. Does not discard closet items.
+	 */
+	async cutoutFaceFromR2(params: FaceCutoutFromR2Params): Promise<FaceCutoutResult> {
+		const { imageKey, boundingBox, label, category } = params;
+		const log = this.log.child({ image_key: imageKey, provider: this.provider.name, face: true });
+
+		if (!boundingBox) {
+			throw new Error('cutoutFaceFromR2 requires boundingBox');
+		}
+
+		const object = await this.bucket.get(imageKey);
+		if (!object) {
+			throw new Error(`Outfit image not found in R2: ${imageKey}`);
+		}
+
+		const image = await object.arrayBuffer();
+		const fullDims = await getImageDimensions(image);
+		const trim = percentBoxToTrim(boundingBox, fullDims.width, fullDims.height, faceCutoutPad(category));
+		const cropJpeg = await cropJpegWithTrim(this.images, image, trim);
+		const cropDims = await getImageDimensions(cropJpeg);
+
+		const cropImageKey = `cutouts/scratch/face-crop-${crypto.randomUUID()}.jpg`;
+		await this.bucket.put(cropImageKey, cropJpeg, {
+			httpMetadata: { contentType: 'image/jpeg' },
+		});
+		const cropUrl = await signDownloadUrlForKey(cropImageKey);
+		const localBox = cropLocalBoxPx(cropDims.width, cropDims.height);
+
+		log.info('cutout_face_crop_ok', {
+			crop_image_key: cropImageKey,
+			crop_width: cropDims.width,
+			crop_height: cropDims.height,
+			label: label || '',
+			category: category || '',
+		});
+
+		const trySegment = async (preferBoxFirst: boolean) => {
+			log.info('cutout_face_segment_start', {
+				prefer_box_first: preferBoxFirst,
+				box_px: localBox.join(','),
+				label: label || '',
+			});
+			const segmented = await this.provider.segmentBox({
+				image: cropJpeg,
+				boxPx: localBox,
+				imageUrl: cropUrl,
+				label,
+				preferBoxFirst,
+			});
+			const quality = await evaluateFaceCutoutPng(segmented.pngBytes, segmented.maskScore ?? null);
+			const verdict = passesFaceQuality(quality);
+			log.info('cutout_face_segment_ok', {
+				bytes: segmented.pngBytes.byteLength,
+				model: segmented.model,
+				prompt_used: segmented.promptUsed || '',
+				prompts_tried: (segmented.promptsTried || []).join('|'),
+				mask_score: segmented.maskScore ?? null,
+				opaque_frac: Number(quality.opaqueFrac.toFixed(4)),
+				opaque_bbox_frac: Number(quality.opaqueBboxFrac.toFixed(4)),
+				quality_ok: verdict.ok,
+				quality_reason: verdict.reason,
+			});
+			return { segmented, quality, verdict };
+		};
+
+		let best = await trySegment(true);
+		if (!best.verdict.ok && label?.trim()) {
+			log.info('cutout_face_retry_sam3', { reason: best.verdict.reason });
+			try {
+				const retry = await trySegment(false);
+				if (retry.verdict.ok || retry.quality.opaqueFrac > best.quality.opaqueFrac) {
+					best = retry;
+				}
+			} catch (err) {
+				log.warn('cutout_face_sam3_retry_failed', {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+
+		return {
+			pngBytes: best.segmented.pngBytes,
+			imageKey,
+			boxPx: localBox,
+			imageDimensions: cropDims,
+			model: best.segmented.model,
+			promptUsed: best.segmented.promptUsed,
+			promptsTried: best.segmented.promptsTried,
+			maskScore: best.segmented.maskScore,
+			quality: best.quality,
+			verdict: best.verdict,
+			cropImageKey,
 		};
 	}
 }
@@ -125,6 +247,7 @@ export const createCutoutService = (envBindings: Env, log?: Logger) => {
 	return new CutoutService(
 		createSegmentProvider(envBindings),
 		envBindings.OUTFIT_PHOTOS_BUCKET,
+		envBindings.IMAGES,
 		logger
 	);
 };

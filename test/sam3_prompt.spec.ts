@@ -27,4 +27,10 @@ describe('sam3PromptCandidates', () => {
 			't-shirt',
 		]);
 	});
+
+	it('maps boots toward boot then shoe', () => {
+		const prompts = sam3PromptCandidates('black boots');
+		expect(prompts[0]).toBe('black shoe');
+		expect(prompts).toContain('shoe');
+	});
 });

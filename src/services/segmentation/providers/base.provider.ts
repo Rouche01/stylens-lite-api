@@ -7,6 +7,11 @@ export type SegmentBoxInput = {
 	imageUrl?: string;
 	/** Extract label e.g. "olive green overshirt". Routes Fal to SAM 3 (concept; box optional). */
 	label?: string;
+	/**
+	 * Face / crop path: try SAM 2 box (+ center point) before SAM 3 text.
+	 * Wrong non-empty SAM 3 masks no longer skip the box path.
+	 */
+	preferBoxFirst?: boolean;
 };
 
 export type SegmentBoxResult = {
@@ -15,6 +20,8 @@ export type SegmentBoxResult = {
 	/** SAM 3 concept that produced the mask; empty for SAM 2. */
 	promptUsed?: string;
 	promptsTried?: string[];
+	/** Best Fal mask score when `include_scores` was requested (0–1). */
+	maskScore?: number;
 };
 
 export class SegmentError extends Error {

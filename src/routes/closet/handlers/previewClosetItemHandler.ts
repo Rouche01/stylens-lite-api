@@ -4,8 +4,10 @@ import { OutfitLinkedItem } from 'db/closet';
 import { env } from 'cloudflare:workers';
 import {
 	createCutoutService,
+	evaluateFaceCutoutPng,
 	falBirefnetMatte,
 	falNanoBananaFlatlay,
+	passesFaceQuality,
 	SegmentError,
 } from 'services/segmentation';
 import { ApiRequest } from 'types';
@@ -92,6 +94,7 @@ const previewClosetItemHandler: RequestHandler<ApiRequest> = async (request) => 
 				imageKey: wear.image_key,
 				label: details.label,
 				boundingBox: wear.bounding_box,
+				category: details.category,
 				log: request.log,
 			});
 
@@ -260,15 +263,36 @@ async function buildSamFace(params: {
 	imageKey: string;
 	label: string;
 	boundingBox: { x: number; y: number; width: number; height: number };
+	category?: string | null;
 	log: ApiRequest['log'];
 }): Promise<{ url: string; note: string; model: string }> {
 	try {
 		const cutoutService = createCutoutService(env, params.log);
-		const result = await cutoutService.cutoutFromR2({
+		const result = await cutoutService.cutoutFaceFromR2({
 			imageKey: params.imageKey,
 			label: params.label,
 			boundingBox: params.boundingBox,
+			category: params.category,
 		});
+
+		const qualityNote = `opaque=${result.quality.opaqueFrac.toFixed(3)} bbox=${result.quality.opaqueBboxFrac.toFixed(3)}${
+			result.maskScore != null ? ` score=${result.maskScore.toFixed(3)}` : ''
+		}`;
+
+		if (!result.verdict.ok) {
+			params.log?.warn('preview_face_quality_reject', {
+				reason: result.verdict.reason,
+				opaque_frac: result.quality.opaqueFrac,
+				opaque_bbox_frac: result.quality.opaqueBboxFrac,
+				mask_score: result.maskScore ?? null,
+				model: result.model,
+			});
+			return {
+				url: '',
+				note: `Face quality reject (${result.verdict.reason}; ${qualityNote}). Keep padded crop.`,
+				model: result.model,
+			};
+		}
 
 		const samKey = `cutouts/scratch/face-sam-${crypto.randomUUID()}.png`;
 		await env.OUTFIT_PHOTOS_BUCKET.put(samKey, result.pngBytes, {
@@ -276,26 +300,35 @@ async function buildSamFace(params: {
 		});
 		const samUrl = await signDownloadUrlForKey(samKey);
 
-		let faceBytes = result.pngBytes;
-		let note = `SAM ok (${result.model}${result.promptUsed ? `; prompt ${result.promptUsed}` : ''})`;
+		let note = `SAM ok (${result.model}${result.promptUsed ? `; prompt ${result.promptUsed}` : ''}; ${qualityNote})`;
 		let model = result.model;
 
 		try {
-			faceBytes = await falBirefnetMatte({
+			const faceBytes = await falBirefnetMatte({
 				apiKey: env.FAL_KEY,
 				imageUrl: samUrl,
 			});
+			const matteQuality = await evaluateFaceCutoutPng(faceBytes, result.maskScore ?? null);
+			const matteVerdict = passesFaceQuality(matteQuality);
+			if (!matteVerdict.ok) {
+				params.log?.warn('preview_face_matte_quality_reject', {
+					reason: matteVerdict.reason,
+					opaque_frac: matteQuality.opaqueFrac,
+				});
+				note = `SAM ok; BiRefNet rejected (${matteVerdict.reason}). Using SAM. ${qualityNote}`;
+				return { url: samUrl, note, model };
+			}
 			const matteKey = `cutouts/scratch/face-matte-${crypto.randomUUID()}.png`;
 			await env.OUTFIT_PHOTOS_BUCKET.put(matteKey, faceBytes, {
 				httpMetadata: { contentType: 'image/png' },
 			});
 			model = `${result.model}+birefnet`;
-			note = `SAM + BiRefNet ok (${result.model})`;
+			note = `SAM + BiRefNet ok (${result.model}; ${qualityNote})`;
 			return { url: await signDownloadUrlForKey(matteKey), note, model };
 		} catch (matteErr) {
 			const matteMsg = matteErr instanceof Error ? matteErr.message : 'BiRefNet failed';
 			params.log?.warn('preview_face_birefnet_failed', { error: matteMsg });
-			note = `SAM ok; BiRefNet skipped (${matteMsg.slice(0, 120)})`;
+			note = `SAM ok; BiRefNet skipped (${matteMsg.slice(0, 120)}). ${qualityNote}`;
 			return { url: samUrl, note, model };
 		}
 	} catch (err) {

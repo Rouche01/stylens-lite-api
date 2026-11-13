@@ -144,45 +144,69 @@ export class FalSegmentProvider implements SegmentProvider {
 			throw new SegmentError('SAM 2 requires boxPx; pass a label to use SAM 3 without a box');
 		}
 
-		if (useSam3) {
-			const prompts = sam3PromptCandidates(label as string);
-			if (prompts.length === 0) {
-				throw new SegmentError('SAM 3 prompt is empty after normalizing the label');
-			}
+		const prompts = label ? sam3PromptCandidates(label) : [];
+		if (label && prompts.length === 0) {
+			throw new SegmentError('SAM 3 prompt is empty after normalizing the label');
+		}
 
+		// Face / crop path: box-guided SAM 2 first so wrong SAM 3 concepts cannot win.
+		if (input.preferBoxFirst && boxPx) {
+			this.activeModel = 'fal-ai/sam2/image';
+			const sam2 = await this.runFal({
+				endpoint: FAL_SAM2_ENDPOINT,
+				model: this.activeModel,
+				imageUrl,
+				boxPx,
+				centerPoint: true,
+			});
+			if (sam2) {
+				return {
+					pngBytes: sam2.pngBytes,
+					model: this.activeModel,
+					promptUsed: '',
+					promptsTried: prompts,
+					maskScore: sam2.maskScore,
+				};
+			}
+		}
+
+		if (useSam3) {
 			this.activeModel = 'fal-ai/sam-3/image';
 			for (const prompt of prompts) {
-				const pngBytes = await this.runFal({
+				const sam3 = await this.runFal({
 					endpoint: FAL_SAM3_ENDPOINT,
 					model: this.activeModel,
 					imageUrl,
 					boxPx,
 					prompt,
 				});
-				if (pngBytes) {
+				if (sam3) {
 					return {
-						pngBytes,
+						pngBytes: sam3.pngBytes,
 						model: this.activeModel,
 						promptUsed: prompt,
 						promptsTried: prompts,
+						maskScore: sam3.maskScore,
 					};
 				}
 			}
 
-			if (boxPx) {
+			if (boxPx && !input.preferBoxFirst) {
 				this.activeModel = 'fal-ai/sam2/image';
-				const pngBytes = await this.runFal({
+				const sam2 = await this.runFal({
 					endpoint: FAL_SAM2_ENDPOINT,
 					model: this.activeModel,
 					imageUrl,
 					boxPx,
+					centerPoint: true,
 				});
-				if (pngBytes) {
+				if (sam2) {
 					return {
-						pngBytes,
+						pngBytes: sam2.pngBytes,
 						model: this.activeModel,
 						promptUsed: '',
 						promptsTried: prompts,
+						maskScore: sam2.maskScore,
 					};
 				}
 			}
@@ -194,16 +218,21 @@ export class FalSegmentProvider implements SegmentProvider {
 		}
 
 		this.activeModel = 'fal-ai/sam2/image';
-		const pngBytes = await this.runFal({
+		const sam2 = await this.runFal({
 			endpoint: FAL_SAM2_ENDPOINT,
 			model: this.activeModel,
 			imageUrl,
 			boxPx,
+			centerPoint: true,
 		});
-		if (!pngBytes) {
+		if (!sam2) {
 			throw new SegmentError('fal-ai/sam2/image returned no mask image', 422);
 		}
-		return { pngBytes, model: this.activeModel };
+		return {
+			pngBytes: sam2.pngBytes,
+			model: this.activeModel,
+			maskScore: sam2.maskScore,
+		};
 	}
 
 	private async runFal(params: {
@@ -212,7 +241,8 @@ export class FalSegmentProvider implements SegmentProvider {
 		imageUrl: string;
 		boxPx?: SegmentBoxInput['boxPx'];
 		prompt?: string;
-	}): Promise<Uint8Array | null> {
+		centerPoint?: boolean;
+	}): Promise<{ pngBytes: Uint8Array; maskScore?: number } | null> {
 		const payload: Record<string, unknown> = {
 			image_url: params.imageUrl,
 			apply_mask: true,
@@ -221,6 +251,11 @@ export class FalSegmentProvider implements SegmentProvider {
 		if (params.boxPx) {
 			const [x1, y1, x2, y2] = params.boxPx;
 			payload.box_prompts = [{ x_min: x1, y_min: y1, x_max: x2, y_max: y2, object_id: 0 }];
+			if (params.centerPoint) {
+				const cx = Math.round((x1 + x2) / 2);
+				const cy = Math.round((y1 + y2) / 2);
+				payload.prompts = [{ x: cx, y: cy, label: 1 }];
+			}
 		}
 		if (params.prompt) {
 			payload.prompt = params.prompt;
@@ -256,10 +291,41 @@ export class FalSegmentProvider implements SegmentProvider {
 			);
 		}
 
-		const resultImageUrl = extractFalImageUrl(json);
-		if (!resultImageUrl) return null;
+		const picked = pickFalMask(json);
+		if (!picked?.url) return null;
 
-		const pngBuffer = await fetchImageAsArrayBuffer(resultImageUrl);
-		return new Uint8Array(pngBuffer);
+		const pngBuffer = await fetchImageAsArrayBuffer(picked.url);
+		return { pngBytes: new Uint8Array(pngBuffer), maskScore: picked.score };
 	}
+}
+
+function pickFalMask(json: FalSegmentResponse | null): { url: string; score?: number } | null {
+	if (!json) return null;
+
+	const masks = json.masks;
+	if (Array.isArray(masks) && masks.length > 0) {
+		const scores = Array.isArray(json.scores) ? json.scores : [];
+		let bestIdx = 0;
+		let bestScore = Number.NEGATIVE_INFINITY;
+		for (let i = 0; i < masks.length; i++) {
+			if (!findFalImageUrl(masks[i])) continue;
+			const score = typeof scores[i] === 'number' ? scores[i] : 0;
+			if (score > bestScore) {
+				bestScore = score;
+				bestIdx = i;
+			}
+		}
+		const url = findFalImageUrl(masks[bestIdx]) ?? findFalImageUrl(masks);
+		if (!url) return null;
+		return {
+			url,
+			score: Number.isFinite(bestScore) && bestScore !== Number.NEGATIVE_INFINITY ? bestScore : undefined,
+		};
+	}
+
+	const url = extractFalImageUrl(json);
+	if (!url) return null;
+	const scores = Array.isArray(json.scores) ? json.scores : [];
+	const score = typeof scores[0] === 'number' ? scores[0] : undefined;
+	return { url, score };
 }
