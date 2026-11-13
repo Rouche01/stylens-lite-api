@@ -1,7 +1,13 @@
-import { percentBoxIou, type PercentBox } from './bounding_box';
+import { identityEmbedBox, percentBoxIou, type PercentBox } from './bounding_box';
 
 /** Near-identical crops after Florence often collapse layered garments onto one box. */
 export const EXTRACT_BOX_DEDUPE_IOU = 0.85;
+
+/**
+ * Accessories that are large enough / identity-useful to extract for now.
+ * Everything else (socks, eyewear, belt, scarf, jewelry, watch, gloves, other) is dropped.
+ */
+export const EXTRACT_ACCESSORY_KEEP = new Set(['bag', 'hat', 'cap']);
 
 export type ExtractHygieneItem = {
 	label?: string;
@@ -14,6 +20,15 @@ export type ExtractHygieneItem = {
 /** Area as % of the frame (width% × height% / 100). */
 export function extractBoxAreaPercent(box: PercentBox): number {
 	return (box.width * box.height) / 100;
+}
+
+function normalizeSubcategory(subcategory?: string): string {
+	return subcategory?.trim().toLowerCase() ?? '';
+}
+
+/** True when an accessory subcategory is on the v1 keep allowlist (bag / hat / cap). */
+export function isKeptExtractAccessory(subcategory?: string): boolean {
+	return EXTRACT_ACCESSORY_KEEP.has(normalizeSubcategory(subcategory));
 }
 
 function maxAreaPercent(category: string): number {
@@ -36,12 +51,12 @@ function maxAreaPercent(category: string): number {
 }
 
 function maxHeightPercent(category: string, subcategory?: string): number {
+	const sub = normalizeSubcategory(subcategory);
 	switch (category) {
 		case 'footwear':
 			return 22;
 		case 'accessory':
-			if (subcategory === 'socks') return 12;
-			if (subcategory === 'hat') return 18;
+			if (sub === 'hat' || sub === 'cap') return 18;
 			return 50;
 		case 'top':
 			return 42;
@@ -57,14 +72,23 @@ function maxHeightPercent(category: string, subcategory?: string): number {
 }
 
 /**
- * Reject Florence/LLM boxes that swallow most of the torso (e.g. under-layer
- * spanning sweater+pants) or are otherwise too large for the category.
+ * Reject Florence/LLM boxes that swallow most of the torso, fail identity embed
+ * mins (after hat expand), or are otherwise too large for the category.
  */
 export function isPlausibleExtractBox(item: ExtractHygieneItem): boolean {
 	const box = item.bounding_box;
 	if (!(box.width > 0) || !(box.height > 0)) return false;
 	if (box.height > maxHeightPercent(item.category, item.subcategory)) return false;
 	if (extractBoxAreaPercent(box) > maxAreaPercent(item.category)) return false;
+	// Align with identity: drop crops that would only create skip_query / unusable tiles.
+	if (
+		!identityEmbedBox(box, {
+			category: item.category,
+			subcategory: item.subcategory,
+		})
+	) {
+		return false;
+	}
 	return true;
 }
 
@@ -77,7 +101,7 @@ function confidenceRank(confidence?: string): number {
 
 /** Higher wins when two items share nearly the same crop. */
 export function extractItemKeepScore(item: ExtractHygieneItem): number {
-	const subcategory = item.subcategory?.toLowerCase();
+	const subcategory = normalizeSubcategory(item.subcategory);
 	let categoryScore = 20;
 	switch (item.category) {
 		case 'outerwear':
@@ -96,21 +120,28 @@ export function extractItemKeepScore(item: ExtractHygieneItem): number {
 			categoryScore = 35;
 			break;
 		case 'accessory':
-			categoryScore = subcategory === 'socks' ? 5 : subcategory === 'hat' ? 30 : 25;
+			categoryScore = subcategory === 'hat' || subcategory === 'cap' ? 30 : subcategory === 'bag' ? 28 : 10;
 			break;
 	}
 	const areaPenalty = extractBoxAreaPercent(item.bounding_box) / 100;
 	return categoryScore * 10 + confidenceRank(item.confidence) * 3 - areaPenalty;
 }
 
+function shouldKeepExtractItem(item: ExtractHygieneItem): boolean {
+	if (item.category === 'accessory' && !isKeptExtractAccessory(item.subcategory)) {
+		return false;
+	}
+	return isPlausibleExtractBox(item);
+}
+
 /**
- * Drop absurd boxes, then collapse near-duplicate crops to the preferred item
- * (outerwear over top, footwear over socks, etc.). Preserves relative order.
+ * Drop minor accessories and absurd boxes, then collapse near-duplicate crops
+ * to the preferred item (outerwear over top, etc.). Preserves relative order.
  */
 export function sanitizeExtractedItems<T extends ExtractHygieneItem>(items: T[]): T[] {
 	const plausible = items
 		.map((item, index) => ({ item, index }))
-		.filter(({ item }) => isPlausibleExtractBox(item));
+		.filter(({ item }) => shouldKeepExtractItem(item));
 
 	const ranked = [...plausible].sort(
 		(a, b) => extractItemKeepScore(b.item) - extractItemKeepScore(a.item) || a.index - b.index

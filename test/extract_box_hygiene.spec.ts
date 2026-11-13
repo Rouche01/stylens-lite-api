@@ -2,9 +2,24 @@ import { describe, it, expect } from 'vitest';
 import {
 	extractBoxAreaPercent,
 	extractItemKeepScore,
+	isKeptExtractAccessory,
 	isPlausibleExtractBox,
 	sanitizeExtractedItems,
 } from '../src/utils/extract_box_hygiene';
+
+describe('isKeptExtractAccessory', () => {
+	it('keeps bag and hat/cap only', () => {
+		expect(isKeptExtractAccessory('bag')).toBe(true);
+		expect(isKeptExtractAccessory('hat')).toBe(true);
+		expect(isKeptExtractAccessory('cap')).toBe(true);
+		expect(isKeptExtractAccessory('socks')).toBe(false);
+		expect(isKeptExtractAccessory('eyewear')).toBe(false);
+		expect(isKeptExtractAccessory('belt')).toBe(false);
+		expect(isKeptExtractAccessory('scarf')).toBe(false);
+		expect(isKeptExtractAccessory('watch')).toBe(false);
+		expect(isKeptExtractAccessory('other')).toBe(false);
+	});
+});
 
 describe('isPlausibleExtractBox', () => {
 	it('rejects torso-tall under-layer boxes from smoke', () => {
@@ -33,6 +48,26 @@ describe('isPlausibleExtractBox', () => {
 			})
 		).toBe(true);
 	});
+
+	it('rejects observe-run tiny socks box that fails identity embed mins', () => {
+		expect(
+			isPlausibleExtractBox({
+				category: 'accessory',
+				subcategory: 'socks',
+				bounding_box: { x: 40, y: 90, width: 5.3, height: 3.1 },
+			})
+		).toBe(false);
+	});
+
+	it('keeps brim-only hat boxes that identity expands', () => {
+		expect(
+			isPlausibleExtractBox({
+				category: 'accessory',
+				subcategory: 'hat',
+				bounding_box: { x: 32.5, y: 45.1, width: 6.6, height: 3.2 },
+			})
+		).toBe(true);
+	});
 });
 
 describe('sanitizeExtractedItems', () => {
@@ -57,7 +92,7 @@ describe('sanitizeExtractedItems', () => {
 		expect(items.map((item) => item.label)).toEqual(['black leather jacket']);
 	});
 
-	it('keeps footwear over socks on the same foot crop', () => {
+	it('drops socks even when footwear shares the crop', () => {
 		const box = { x: 33.7, y: 84.4, width: 7.7, height: 5.2 };
 		const items = sanitizeExtractedItems([
 			{
@@ -76,6 +111,24 @@ describe('sanitizeExtractedItems', () => {
 			},
 		]);
 		expect(items.map((item) => item.label)).toEqual(['white sneakers']);
+	});
+
+	it('drops minor accessories with large boxes', () => {
+		const box = { x: 40, y: 40, width: 12, height: 10 };
+		const items = sanitizeExtractedItems([
+			{ label: 'sunglasses', category: 'accessory', subcategory: 'eyewear', confidence: 'high', bounding_box: box },
+			{ label: 'leather belt', category: 'accessory', subcategory: 'belt', confidence: 'high', bounding_box: box },
+			{ label: 'wool scarf', category: 'accessory', subcategory: 'scarf', confidence: 'high', bounding_box: box },
+			{ label: 'watch', category: 'accessory', subcategory: 'watch', confidence: 'high', bounding_box: box },
+			{
+				label: 'crossbody bag',
+				category: 'accessory',
+				subcategory: 'bag',
+				confidence: 'high',
+				bounding_box: { x: 55, y: 50, width: 14, height: 18 },
+			},
+		]);
+		expect(items.map((item) => item.label)).toEqual(['crossbody bag']);
 	});
 
 	it('preserves distinct garments with low overlap', () => {
