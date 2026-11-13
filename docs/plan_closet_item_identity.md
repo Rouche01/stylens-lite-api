@@ -37,6 +37,8 @@ Every identity plan, policy change, or scoring change should state which of thes
 
 Targets are a starting bar; revise them here with the data that justifies the change.
 
+**Progress toward ask-first ship / flag-widen:** [`identity_ship_checklist.md`](./identity_ship_checklist.md).
+
 **Definitions and limits:**
 
 - **Recall denominator** is garments the extractor returned. A worn item Claude never extracted (hidden socks, a covered belt) is an extraction miss, tracked separately, not an identity miss.
@@ -65,7 +67,7 @@ Extraction hygiene (pixel-derived color labels, generic grounding phrases, pinne
 
 1. **Identity grain is the closet item**, not the whole outfit. An outfit vector answers “have I worn this look?” An item vector answers “is this the same olive shirt?” This plan is the second question.
 2. **Embed the oriented bounding-box crop** (Florence box on the EXIF-baked JPEG), not the full selfie. Background walls must not dominate the vector.
-3. **Attributes are filters and labels**, not the merge key. Coarse **slot** (`upper` | `lower` | `full_body` | `footwear` | `accessory`) scopes the search so jeans never rank against jackets. Map `top` and `outerwear` both to `upper` so Claude’s jacket-vs-top swap still matches. Color/pattern/label can disagree and still be the same piece. Never filter on the exact extract `category` string. **Exception:** within `accessory` and `footwear`, gate on `subcategory` before ask (hat must not ask vs socks). Closed shoes (`boots` / `sneakers` / `loafers`) are soft-compatible with a ×0.85 score penalty; open vs closed footwear stays hard-blocked. Confirmed `same` adds a wear prototype vector (`wear:{matchId}`) so later photos score max over wears.
+3. **Attributes are filters and labels**, not the merge key. Coarse **slot** (`upper` | `lower` | `full_body` | `footwear` | `accessory`) scopes the search so jeans never rank against jackets. Map `top` and `outerwear` both to `upper` so Claude’s jacket-vs-top swap still matches. Color/pattern/label can disagree and still be the same piece. Never filter on the exact extract `category` string. **Exception:** within `accessory` and `footwear`, gate on `subcategory` before ask (hat must not ask vs socks). Closed shoes (`boots` / `sneakers` / `loafers`) are soft-compatible with a ×0.85 score penalty; open vs closed footwear stays hard-blocked. Within `upper`, hard-reject **outer** (`jacket` / `coat` / `cardigan` / …) vs **inner** (`shirt` / `tee` / `hoodie` / …) so a bomber cannot ask a white shirt; same-layer Claude swaps stay open. Confirmed `same` adds a wear prototype vector (`wear:{matchId}`) so later photos score max over wears.
 4. **Outfit co-occurrence prior.** After the first pass, if ≥2 items ask at score ≥0.8 to tiles that share one prior outfit, re-score remaining soft misses (`below_threshold` / `missing_candidate`) only against that outfit’s tile probes (slot filter on, subcategory gate off, ask floor 0.4). Emit `ask` with reason `outfit_prior`. Never auto-link from the prior.
 5. **A duplicate is a new wear, not a new tile.** Always persist the outfit photo. Merge vs create is only about `closet_items`.
 6. **The user is the async decider in the gray zone.** High similarity merges silently (auto-link band — not yet enabled; see Goals). Mid similarity stays off the grid as a second tile and asks. Low similarity creates a new item.

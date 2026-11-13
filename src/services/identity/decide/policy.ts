@@ -11,6 +11,34 @@ const SUBCATEGORY_STRICT_SLOTS: ReadonlySet<IdentitySlot> = new Set(['accessory'
 /** Closed shoes: soft-compatible (×{@link SUBCATEGORY_FAMILY_PENALTY}); open vs closed stays hard-blocked. */
 const CLOSED_SHOE_SUBCATEGORIES: ReadonlySet<string> = new Set(['boots', 'sneakers', 'loafers']);
 
+/**
+ * Upper outer layer — hard-rejected against {@link UPPER_INNER_SUBCATEGORIES}.
+ * Claude still swaps jacket↔cardigan within outer; those stay open.
+ */
+const UPPER_OUTER_SUBCATEGORIES: ReadonlySet<string> = new Set([
+	'jacket',
+	'coat',
+	'blazer',
+	'cardigan',
+	'bomber',
+	'parka',
+	'vest',
+	'outerwear',
+]);
+
+/** Upper inner layer — hard-rejected against {@link UPPER_OUTER_SUBCATEGORIES}. */
+const UPPER_INNER_SUBCATEGORIES: ReadonlySet<string> = new Set([
+	'shirt',
+	't-shirt',
+	'tee',
+	'sweater',
+	'sweatshirt',
+	'hoodie',
+	'top',
+	'henley',
+	'blouse',
+]);
+
 /** Multiplicative score penalty when subcategory differs but shares a soft family. */
 export const SUBCATEGORY_FAMILY_PENALTY = 0.85;
 
@@ -30,22 +58,41 @@ function closedShoeFamily(sub: string): boolean {
 	return CLOSED_SHOE_SUBCATEGORIES.has(sub);
 }
 
+function upperOuterFamily(sub: string): boolean {
+	return UPPER_OUTER_SUBCATEGORIES.has(sub);
+}
+
+function upperInnerFamily(sub: string): boolean {
+	return UPPER_INNER_SUBCATEGORIES.has(sub);
+}
+
 /**
  * How probe vs neighbor subcategory relate for identity gating.
  * - exact / open → keep score
  * - family → allow with {@link SUBCATEGORY_FAMILY_PENALTY}
- * - reject → drop neighbor (hat≠socks; boots≠sandals)
+ * - reject → drop neighbor (hat≠socks; boots≠sandals; jacket≠shirt)
  */
 export function identitySubcategoryRelation(
 	probeSubcategory?: string | null,
 	neighborSubcategory?: string | null,
 	slot?: IdentitySlot | null
 ): IdentitySubcategoryRelation {
-	if (!slot || !SUBCATEGORY_STRICT_SLOTS.has(slot)) return 'open';
+	if (!slot) return 'open';
 	const probe = normalizeIdentitySubcategory(probeSubcategory);
 	const neighbor = normalizeIdentitySubcategory(neighborSubcategory);
 	if (!probe || !neighbor) return 'open';
 	if (probe === neighbor) return 'exact';
+
+	// Upper: hard-block outer vs inner so a bomber cannot ask a white shirt (held-out B2).
+	// Same-layer Claude swaps (jacket↔cardigan, tee↔sweater) stay open.
+	if (slot === 'upper') {
+		const cross =
+			(upperOuterFamily(probe) && upperInnerFamily(neighbor)) ||
+			(upperInnerFamily(probe) && upperOuterFamily(neighbor));
+		return cross ? 'reject' : 'open';
+	}
+
+	if (!SUBCATEGORY_STRICT_SLOTS.has(slot)) return 'open';
 	if (slot === 'footwear' && closedShoeFamily(probe) && closedShoeFamily(neighbor)) {
 		return 'family';
 	}
@@ -54,7 +101,8 @@ export function identitySubcategoryRelation(
 
 /**
  * Within accessory/footwear, reject cross-subcategory neighbors (cap must not ask vs socks).
- * Closed shoes (boots/sneakers/loafers) are soft-compatible. Upper/lower stay open (Claude swaps).
+ * Closed shoes (boots/sneakers/loafers) are soft-compatible.
+ * Upper: reject outer↔inner; lower stays open.
  */
 export function identitySubcategoryCompatible(
 	probeSubcategory?: string | null,

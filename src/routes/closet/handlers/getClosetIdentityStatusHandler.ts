@@ -7,8 +7,12 @@ import { logRouteError } from 'utils/error';
 const getClosetIdentityStatusHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
 	try {
 		const closetDB = createClosetDB(env.GOSTYLENS_DB);
-		const counts = await closetDB.countIdentityJobsByStatus(request.user.dbId);
-		return new Response(JSON.stringify(closetIdentityStatusPayload(counts)), {
+		const userId = request.user.dbId;
+		const [counts, progress] = await Promise.all([
+			closetDB.countIdentityJobsByStatus(userId),
+			closetDB.getIdentityProgressState(userId),
+		]);
+		return new Response(JSON.stringify(closetIdentityStatusPayload(counts, progress)), {
 			headers: { 'Content-Type': 'application/json' },
 			status: 200,
 		});

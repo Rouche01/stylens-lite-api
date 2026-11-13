@@ -47,6 +47,27 @@ const SUBCATEGORY_STRICT_SLOTS = new Set(['accessory', 'footwear']);
 const CLOSED_SHOE_SUBCATEGORIES = new Set(['boots', 'sneakers', 'loafers']);
 /** Keep in sync with src/services/identity/decide/policy.ts */
 const SUBCATEGORY_FAMILY_PENALTY = 0.85;
+const UPPER_OUTER_SUBCATEGORIES = new Set([
+	'jacket',
+	'coat',
+	'blazer',
+	'cardigan',
+	'bomber',
+	'parka',
+	'vest',
+	'outerwear',
+]);
+const UPPER_INNER_SUBCATEGORIES = new Set([
+	'shirt',
+	't-shirt',
+	'tee',
+	'sweater',
+	'sweatshirt',
+	'hoodie',
+	'top',
+	'henley',
+	'blouse',
+]);
 
 function parseArgs(argv) {
 	const flags = new Set();
@@ -136,11 +157,18 @@ function normalizeSubcategory(value) {
 }
 
 function subcategoryRelation(probeSub, neighborSub, slot) {
-	if (!slot || !SUBCATEGORY_STRICT_SLOTS.has(slot)) return 'open';
+	if (!slot) return 'open';
 	const probe = normalizeSubcategory(probeSub);
 	const neighbor = normalizeSubcategory(neighborSub);
 	if (!probe || !neighbor) return 'open';
 	if (probe === neighbor) return 'exact';
+	if (slot === 'upper') {
+		const cross =
+			(UPPER_OUTER_SUBCATEGORIES.has(probe) && UPPER_INNER_SUBCATEGORIES.has(neighbor)) ||
+			(UPPER_INNER_SUBCATEGORIES.has(probe) && UPPER_OUTER_SUBCATEGORIES.has(neighbor));
+		return cross ? 'reject' : 'open';
+	}
+	if (!SUBCATEGORY_STRICT_SLOTS.has(slot)) return 'open';
 	if (slot === 'footwear' && CLOSED_SHOE_SUBCATEGORIES.has(probe) && CLOSED_SHOE_SUBCATEGORIES.has(neighbor)) {
 		return 'family';
 	}

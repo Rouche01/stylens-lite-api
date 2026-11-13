@@ -77,4 +77,4 @@ export {
 	AvatarsDB,
 	DailyStyleNudgeDB,
 };
-export { closetIdentityStatusPayload, identityJobsProcessing } from './closet';
+export { closetIdentityStatusPayload, identityJobsProcessing, identityWaveOpen } from './closet';

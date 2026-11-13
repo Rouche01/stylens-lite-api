@@ -208,15 +208,34 @@ export function identityJobsProcessing(counts: ClosetIdentityJobCounts): boolean
 	return counts.queued + counts.running > 0;
 }
 
-/** Client payload for GET /closet/identity/status. Failed is counted but does not keep processing on. */
-export function closetIdentityStatusPayload(counts: ClosetIdentityJobCounts): {
+/**
+ * Wait chrome stays up after jobs drain until `settled` (quiet window).
+ * Without this, GET status returns processing:false mid-window and catch-up clears the chip.
+ */
+export function identityWaveOpen(
+	progress: Pick<ClosetIdentityProgressRow, 'last_started_at' | 'last_settled_at'> | null | undefined
+): boolean {
+	const startedAt = progress?.last_started_at;
+	if (startedAt == null) return false;
+	const settledAt = progress?.last_settled_at;
+	return settledAt == null || startedAt > settledAt;
+}
+
+/**
+ * Client payload for GET /closet/identity/status and progress broadcasts.
+ * Failed jobs alone do not keep processing on; an open wave (started, not settled) does.
+ */
+export function closetIdentityStatusPayload(
+	counts: ClosetIdentityJobCounts,
+	progress?: Pick<ClosetIdentityProgressRow, 'last_started_at' | 'last_settled_at'> | null
+): {
 	processing: boolean;
 	queued: number;
 	running: number;
 	failed: number;
 } {
 	return {
-		processing: identityJobsProcessing(counts),
+		processing: identityJobsProcessing(counts) || identityWaveOpen(progress),
 		queued: counts.queued,
 		running: counts.running,
 		failed: counts.failed,

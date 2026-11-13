@@ -262,7 +262,12 @@ function memoryProgress(opts: {
 		},
 		async getIdentityProgressState(): Promise<ClosetIdentityProgressRow | null> {
 			if (!opts.state) return null;
-			return { user_id: 'u1', ...opts.state };
+			return {
+				user_id: 'u1',
+				last_activity_at: opts.state.last_activity_at,
+				last_started_at: this.startedAt ?? opts.state.last_started_at,
+				last_settled_at: this.settledAt ?? opts.state.last_settled_at,
+			};
 		},
 		async markIdentityProgressStarted(_userId: string, atMs: number) {
 			this.startedAt = atMs;

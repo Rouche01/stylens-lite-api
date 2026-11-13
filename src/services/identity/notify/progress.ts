@@ -149,6 +149,7 @@ export async function runClosetIdentityProgress(params: {
 async function broadcastProgress(
 	params: {
 		userId: string;
+		closet: Pick<ClosetDB, 'getIdentityProgressState'>;
 		realtime: {
 			notifyClosetIdentityUpdated(userId: string, payload: ClosetIdentityRealtimePayload): Promise<void>;
 		};
@@ -158,8 +159,9 @@ async function broadcastProgress(
 	phase: ClosetIdentityProgressPhase
 ): Promise<void> {
 	try {
+		const progress = await params.closet.getIdentityProgressState(params.userId);
 		await params.realtime.notifyClosetIdentityUpdated(params.userId, {
-			...closetIdentityStatusPayload(counts),
+			...closetIdentityStatusPayload(counts, progress),
 			phase,
 		});
 	} catch (err) {
