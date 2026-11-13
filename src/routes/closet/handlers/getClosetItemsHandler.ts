@@ -21,8 +21,10 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 		const requestUrl = new URL(request.url);
 		const domain = requestUrl.host;
 		const enhance = requestUrl.searchParams.get('enhance') === 'true';
-		// Default: foreground cutout PNG. `?cutout=0` keeps padded photo crops for fallback/debug.
-		const cutout = parseIsolateCutout(requestUrl.searchParams.get('cutout'));
+		// Default: padded photo crop (readable fabric/color). Opt in to CF cutouts with `?cutout=1`
+		// once segment quality is good enough for the grid.
+		const cutoutParam = requestUrl.searchParams.get('cutout');
+		const cutout = cutoutParam == null || cutoutParam === '' ? false : parseIsolateCutout(cutoutParam);
 
 		const enrichedItems = await Promise.all(
 			items.map(async (item) => {
