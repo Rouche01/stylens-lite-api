@@ -78,7 +78,7 @@ Identity / Vectorize **always** use real padded crops. Cutout and packshot are p
 | Cutout / packshot | Separate `closet-garment-face` queue | After create / resolve; flag-gated; never pending ask |
 | Progress / catalog realtime | Identity queue path | HTTP extract does **not** broadcast catalog |
 | Resolve same/new | Sync HTTP, **no** writer lock | May enqueue packshot |
-| Admin `POST /outfits/extract` | Full `process()` **in-request** | Eval/smoke; 409 on busy |
+| Admin `POST /outfits/extract` | Full `process()` **in-request** | Eval/smoke; 409 on busy; enqueues cutout+packshot for creates (same helper as queue) |
 
 ## Writer busy (409 vs queue retry)
 

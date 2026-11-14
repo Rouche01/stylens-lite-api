@@ -206,3 +206,49 @@ export async function maybeEnqueueGarmentFacePackshot(
 	log?.info('garment_face_packshot_enqueued', { closet_item_id: job.closetItemId });
 	return true;
 }
+
+type CreatedFaceItem = {
+	identity_status?: string;
+	is_new_closet_item?: boolean;
+	closet_item_id?: string | null;
+	label?: string;
+	category?: string | null;
+	bounding_box?: GarmentFaceJob['boundingBox'] | null;
+};
+
+/**
+ * After identity create (queue or admin HTTP extract): enqueue cutout + packshot
+ * for each new tile. Flag-gated; safe no-op when disabled / unbound.
+ */
+export async function enqueueGarmentFacesForCreatedItems(
+	env: Env,
+	params: {
+		userId: string;
+		imageKey: string;
+		items: CreatedFaceItem[];
+	},
+	log?: Logger
+): Promise<void> {
+	for (const item of params.items) {
+		if (
+			item.identity_status !== 'created' ||
+			!item.is_new_closet_item ||
+			!item.closet_item_id ||
+			!item.bounding_box ||
+			!item.label
+		) {
+			continue;
+		}
+		const faceJob: Omit<GarmentFaceJob, 'type'> = {
+			userId: params.userId,
+			closetItemId: item.closet_item_id,
+			imageKey: params.imageKey,
+			sourceImageKey: params.imageKey,
+			label: item.label,
+			category: item.category,
+			boundingBox: item.bounding_box,
+		};
+		await maybeEnqueueGarmentFaceCutout(env, faceJob, log);
+		await maybeEnqueueGarmentFacePackshot(env, faceJob, log);
+	}
+}

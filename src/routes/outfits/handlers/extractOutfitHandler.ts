@@ -12,6 +12,7 @@ import {
 	persistIdentityRunArtifact,
 } from 'services/identity/logging/runArtifact';
 import { getIsolatedItemUrl, signDownloadUrlForKey } from 'utils/assets.utils';
+import { enqueueGarmentFacesForCreatedItems } from 'services/closet_face';
 import { createUsersDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ApiRequest, AuthRequest } from 'types';
@@ -114,6 +115,24 @@ const extractOutfitHandler: RequestHandler<ApiRequest> = async (request) => {
 		if (!processed) {
 			request.log.warn('outfit_extraction_empty_result', { identity_run_id: identityRunId });
 			return error(400, 'Failed to extract outfit items');
+		}
+
+		// Parity with closet_identity queue: smoke/admin sync extract also gets faces.
+		try {
+			await enqueueGarmentFacesForCreatedItems(
+				env,
+				{
+					userId,
+					imageKey,
+					items: processed.items,
+				},
+				request.log
+			);
+		} catch (err) {
+			request.log.warn('garment_face_enqueue_hook_failed', {
+				outfit_id: processed.outfit_id,
+				error_message: err instanceof Error ? err.message : String(err),
+			});
 		}
 
 		const summary = summarizeIdentityRunItems(processed.items);

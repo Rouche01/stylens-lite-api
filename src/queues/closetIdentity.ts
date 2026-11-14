@@ -18,10 +18,7 @@ import {
 import { createOutfitIdentityService } from '../services/identity/outfitIdentity.svc';
 import { persistIdentityRunArtifact } from '../services/identity/logging/runArtifact';
 import { notifyClosetCatalogIfChanged } from '../services/identity/notify/catalogBroadcast';
-import {
-	maybeEnqueueGarmentFaceCutout,
-	maybeEnqueueGarmentFacePackshot,
-} from '../services/closet_face/garmentFace.svc';
+import { enqueueGarmentFacesForCreatedItems } from '../services/closet_face/garmentFace.svc';
 import { createRealtimeService } from '../services/realtime.svc';
 import type { Logger } from '../utils/logger.utils';
 
@@ -57,8 +54,11 @@ export async function handleClosetIdentityQueue(
 			continue;
 		}
 
+		// Remaining union member after settle/repair guards.
+		const identityJob = message.body as ClosetIdentityQueueJob;
+
 		const decision = await runClosetIdentityJob({
-			job: message.body,
+			job: identityJob,
 			closet,
 			process: (params) => identity.process(params),
 			log,
@@ -79,28 +79,15 @@ export async function handleClosetIdentityQueue(
 					log,
 				}),
 			enqueueGarmentFaces: async (result) => {
-				for (const item of result.items) {
-					if (
-						item.identity_status !== 'created' ||
-						!item.is_new_closet_item ||
-						!item.closet_item_id ||
-						!item.bounding_box
-					) {
-						continue;
-					}
-					const faceJob = {
-						userId: message.body.userId,
-						closetItemId: item.closet_item_id,
+				await enqueueGarmentFacesForCreatedItems(
+					env,
+					{
+						userId: identityJob.userId,
 						imageKey: result.image_key,
-						label: item.label,
-						category: item.category,
-						boundingBox: item.bounding_box,
-						sourceImageKey: result.image_key,
-					};
-					// New tile: faithful cutout + generative display packshot (each flag-gated).
-					await maybeEnqueueGarmentFaceCutout(env, faceJob, log);
-					await maybeEnqueueGarmentFacePackshot(env, faceJob, log);
-				}
+						items: result.items,
+					},
+					log
+				);
 			},
 		});
 
@@ -110,7 +97,7 @@ export async function handleClosetIdentityQueue(
 			message.ack();
 		}
 
-		const userId = message.body?.userId?.trim();
+		const userId = identityJob.userId?.trim();
 		if (!userId) continue;
 		try {
 			await runClosetIdentityProgress({

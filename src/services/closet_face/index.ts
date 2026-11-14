@@ -1,6 +1,7 @@
 export {
 	createGarmentFaceService,
 	enqueueGarmentFacePackshot,
+	enqueueGarmentFacesForCreatedItems,
 	maybeEnqueueGarmentFaceCutout,
 	maybeEnqueueGarmentFacePackshot,
 	type GarmentFaceJob,
