@@ -3,14 +3,17 @@ import { createLogger } from '../utils/logger.utils';
 import { handleAvatarGenerationQueue } from './avatar';
 import { handleClosetIdentityQueue, type ClosetIdentityQueueMessage } from './closetIdentity';
 import { handleClosetMatchDigestQueue } from './closetMatchDigest';
+import { handleClosetGarmentFaceQueue } from './closetGarmentFace';
 import type { ClosetMatchDigestJob } from '../services/identity/notify/digest';
 import type { AvatarGenerationJob } from '../services/avatar';
+import type { GarmentFaceJob } from '../services/closet_face/garmentFace.svc';
 
 /** Bare queue names (local / top-level). Remote env uses `stylens-${name}`. */
 export const QUEUE_NAME = {
 	AVATAR_GENERATION: 'avatar-generation',
 	CLOSET_MATCH_DIGEST: 'closet-match-digest',
 	CLOSET_IDENTITY: 'closet-identity',
+	CLOSET_GARMENT_FACE: 'closet-garment-face',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAME)[keyof typeof QUEUE_NAME];
@@ -30,6 +33,10 @@ export function isAvatarGenerationQueue(queueName: string): boolean {
 
 export function isClosetIdentityQueue(queueName: string): boolean {
 	return isNamedQueue(queueName, QUEUE_NAME.CLOSET_IDENTITY);
+}
+
+export function isClosetGarmentFaceQueue(queueName: string): boolean {
+	return isNamedQueue(queueName, QUEUE_NAME.CLOSET_GARMENT_FACE);
 }
 
 export async function dispatchQueue(
@@ -54,6 +61,10 @@ export async function dispatchQueue(
 		}
 		if (isClosetIdentityQueue(batch.queue)) {
 			await handleClosetIdentityQueue(batch as MessageBatch<ClosetIdentityQueueMessage>, env, log);
+			return;
+		}
+		if (isClosetGarmentFaceQueue(batch.queue)) {
+			await handleClosetGarmentFaceQueue(batch as MessageBatch<GarmentFaceJob>, env, log);
 			return;
 		}
 		if (isAvatarGenerationQueue(batch.queue)) {

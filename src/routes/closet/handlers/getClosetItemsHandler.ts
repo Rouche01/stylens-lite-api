@@ -5,10 +5,12 @@ import { ProvisionedAuthRequest } from 'types';
 import {
 	getIsolatedItemUrl,
 	signClosetOriginalUrl,
+	signDownloadUrlForKey,
 	CLOSET_TILE_ISOLATE_WIDTH,
 	parseIsolateCutout,
 } from 'utils/assets.utils';
 import { isClosetBrowseItem } from 'utils/closet_browse';
+import { closetFaceImageKey, resolveClosetFaceSource } from 'utils/closet_face';
 import { logRouteError } from 'utils/error';
 
 const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
@@ -33,19 +35,27 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 					return { ...item, original_image_url: originalImageUrl };
 				}
 
+				const faceSource = resolveClosetFaceSource(item);
+				const faceKey = closetFaceImageKey(item);
+				const faceUrl = faceKey ? await signDownloadUrlForKey(faceKey) : null;
+				const cropIsolateUrl = getIsolatedItemUrl({
+					domain,
+					imageUrl: originalImageUrl,
+					imageKey: item.image_key,
+					boundingBox: item.bounding_box,
+					width: CLOSET_TILE_ISOLATE_WIDTH,
+					cutout,
+					category: item.category,
+					enhance,
+				});
+
 				return {
 					...item,
 					original_image_url: originalImageUrl,
-					isolated_image_url: getIsolatedItemUrl({
-						domain,
-						imageUrl: originalImageUrl,
-						imageKey: item.image_key,
-						boundingBox: item.bounding_box,
-						width: CLOSET_TILE_ISOLATE_WIDTH,
-						cutout,
-						category: item.category,
-						enhance,
-					}),
+					face_source: faceSource,
+					// Hybrid: stored flatlay/cutout when present; else padded crop isolate.
+					isolated_image_url: faceUrl || cropIsolateUrl,
+					crop_image_url: cropIsolateUrl,
 				};
 			})
 		);

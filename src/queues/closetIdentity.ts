@@ -18,6 +18,7 @@ import {
 import { createOutfitIdentityService } from '../services/identity/outfitIdentity.svc';
 import { persistIdentityRunArtifact } from '../services/identity/logging/runArtifact';
 import { notifyClosetCatalogIfChanged } from '../services/identity/notify/catalogBroadcast';
+import { maybeEnqueueGarmentFaceCutout } from '../services/closet_face/garmentFace.svc';
 import { createRealtimeService } from '../services/realtime.svc';
 import type { Logger } from '../utils/logger.utils';
 
@@ -74,6 +75,30 @@ export async function handleClosetIdentityQueue(
 					realtime,
 					log,
 				}),
+			enqueueGarmentFaces: async (result) => {
+				for (const item of result.items) {
+					if (
+						item.identity_status !== 'created' ||
+						!item.is_new_closet_item ||
+						!item.closet_item_id ||
+						!item.bounding_box
+					) {
+						continue;
+					}
+					await maybeEnqueueGarmentFaceCutout(
+						env,
+						{
+							userId: message.body.userId,
+							closetItemId: item.closet_item_id,
+							imageKey: result.image_key,
+							label: item.label,
+							category: item.category,
+							boundingBox: item.bounding_box,
+						},
+						log
+					);
+				}
+			},
 		});
 
 		if (decision.action === 'retry') {

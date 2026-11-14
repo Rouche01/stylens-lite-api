@@ -210,6 +210,8 @@ export async function runClosetIdentityJob(params: {
 	}) => Promise<unknown>;
 	/** Optional local-review hook (e.g. persist JSON artifact when ENV_NAME=dev). Fail-open. */
 	onRunCompleted?: (artifact: IdentityRunArtifact) => Promise<unknown>;
+	/** Optional: enqueue gated SAM cutouts for newly created closet items. */
+	enqueueGarmentFaces?: (result: ProcessOutfitImageResult) => Promise<void>;
 	envName?: string;
 }): Promise<ClosetIdentityRunDecision> {
 	const userId = params.job.userId?.trim();
@@ -320,6 +322,16 @@ export async function runClosetIdentityJob(params: {
 			} catch (err) {
 				runLog.debug('identity_run_artifact_hook_failed', {
 					identity_run_id: identityRunId,
+					error_message: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+		if (params.enqueueGarmentFaces) {
+			try {
+				await params.enqueueGarmentFaces(result);
+			} catch (err) {
+				runLog.warn('garment_face_enqueue_hook_failed', {
+					outfit_id: result.outfit_id,
 					error_message: err instanceof Error ? err.message : String(err),
 				});
 			}

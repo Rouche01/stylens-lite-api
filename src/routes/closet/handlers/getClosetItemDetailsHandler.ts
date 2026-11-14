@@ -2,7 +2,8 @@ import { error, RequestHandler } from 'itty-router';
 import { createClosetDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
-import { getIsolatedItemUrl, signClosetOriginalUrl } from 'utils/assets.utils';
+import { getIsolatedItemUrl, signClosetOriginalUrl, signDownloadUrlForKey } from 'utils/assets.utils';
+import { closetFaceImageKey, resolveClosetFaceSource } from 'utils/closet_face';
 import { logRouteError } from 'utils/error';
 
 const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
@@ -26,9 +27,13 @@ const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = asyn
 
 		const originalImageUrl = await signClosetOriginalUrl(details.image_key, details.original_image_url);
 
-		let isolatedImageUrl: string | undefined;
+		const faceSource = resolveClosetFaceSource(details);
+		const faceKey = closetFaceImageKey(details);
+		const faceUrl = faceKey ? await signDownloadUrlForKey(faceKey) : null;
+
+		let cropIsolateUrl: string | undefined;
 		if (originalImageUrl && details.bounding_box) {
-			isolatedImageUrl = getIsolatedItemUrl({
+			cropIsolateUrl = getIsolatedItemUrl({
 				domain,
 				imageUrl: originalImageUrl,
 				imageKey: details.image_key,
@@ -36,9 +41,10 @@ const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = asyn
 				dimensions: { width: 1000, height: 1000 },
 				enhance,
 				color: details.color,
-				subcategory: details.subcategory
+				subcategory: details.subcategory,
 			});
 		}
+		const isolatedImageUrl = faceUrl || cropIsolateUrl;
 
 		const enrichedHistory = await Promise.all(
 			details.wear_history.map(async (event) => {
@@ -60,8 +66,10 @@ const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = asyn
 		const enrichedDetails = {
 			...details,
 			original_image_url: originalImageUrl,
+			face_source: faceSource,
 			isolated_image_url: isolatedImageUrl,
-			wear_history: enrichedHistory
+			crop_image_url: cropIsolateUrl,
+			wear_history: enrichedHistory,
 		};
 
 		return new Response(JSON.stringify(enrichedDetails), {

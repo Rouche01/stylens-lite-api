@@ -7,6 +7,7 @@ import type {
 } from './types';
 import { closetTileAspectRatio, mapOutfitRow, normalizeImageDimensions } from './parse';
 import { parseClosetMatchProbeEmbed, serializeClosetMatchProbeEmbed } from './types';
+import { faceSourceFromKeys, type ClosetFaceSource } from '../../utils/closet_face';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Ctor = new (...args: any[]) => import('./base').ClosetDBBase;
@@ -150,7 +151,81 @@ export function WithClosetItems<TBase extends Ctor>(Base: TBase) {
 				vector_indexed_at: null,
 				index_status: 'committed',
 				index_attempts: 0,
+				cutout_image_key: null,
+				flatlay_image_key: null,
+				face_source: 'crop',
+				face_updated_at: null,
 			};
+		}
+
+		async getClosetItemFace(
+			userId: string,
+			closetItemId: string
+		): Promise<{
+			cutout_image_key: string | null;
+			flatlay_image_key: string | null;
+			face_source: ClosetFaceSource;
+		} | null> {
+			const row = await this.db
+				.prepare(
+					`
+					SELECT cutout_image_key, flatlay_image_key, face_source
+					FROM closet_items
+					WHERE id = ? AND user_id = ?
+					LIMIT 1
+					`
+				)
+				.bind(closetItemId, userId)
+				.first<{
+					cutout_image_key: string | null;
+					flatlay_image_key: string | null;
+					face_source: string | null;
+				}>();
+			if (!row) return null;
+			return {
+				cutout_image_key: row.cutout_image_key,
+				flatlay_image_key: row.flatlay_image_key,
+				face_source: faceSourceFromKeys({
+					cutoutImageKey: row.cutout_image_key,
+					flatlayImageKey: row.flatlay_image_key,
+				}),
+			};
+		}
+
+		async updateClosetItemFace(params: {
+			userId: string;
+			closetItemId: string;
+			cutoutImageKey?: string | null;
+			flatlayImageKey?: string | null;
+		}): Promise<boolean> {
+			const now = Date.now();
+			const faceSource = faceSourceFromKeys({
+				cutoutImageKey: params.cutoutImageKey,
+				flatlayImageKey: params.flatlayImageKey,
+			});
+			const result = await this.db
+				.prepare(
+					`
+					UPDATE closet_items
+					SET cutout_image_key = ?,
+						flatlay_image_key = ?,
+						face_source = ?,
+						face_updated_at = ?,
+						updated_at = ?
+					WHERE id = ? AND user_id = ?
+					`
+				)
+				.bind(
+					params.cutoutImageKey?.trim() || null,
+					params.flatlayImageKey?.trim() || null,
+					faceSource,
+					now,
+					now,
+					params.closetItemId,
+					params.userId
+				)
+				.run();
+			return Boolean(result.success && (result.meta?.changes ?? 0) > 0);
 		}
 
 		/**
@@ -276,7 +351,14 @@ export function WithClosetItems<TBase extends Ctor>(Base: TBase) {
 					pattern: row.pattern,
 					style_tags: row.style_tags ? JSON.parse(row.style_tags) : [],
 					created_at: row.created_at,
-					updated_at: row.updated_at
+					updated_at: row.updated_at,
+					cutout_image_key: row.cutout_image_key ?? null,
+					flatlay_image_key: row.flatlay_image_key ?? null,
+					face_source: faceSourceFromKeys({
+						cutoutImageKey: row.cutout_image_key,
+						flatlayImageKey: row.flatlay_image_key,
+					}),
+					face_updated_at: row.face_updated_at ?? null,
 				};
 
 				if (row.original_image_url) {
@@ -362,8 +444,15 @@ export function WithClosetItems<TBase extends Ctor>(Base: TBase) {
 				original_image_url: latestWear?.original_image_url,
 				image_key: latestWear?.image_key,
 				bounding_box: latestWear?.bounding_box,
+				cutout_image_key: itemRow.cutout_image_key ?? null,
+				flatlay_image_key: itemRow.flatlay_image_key ?? null,
+				face_source: faceSourceFromKeys({
+					cutoutImageKey: itemRow.cutout_image_key,
+					flatlayImageKey: itemRow.flatlay_image_key,
+				}),
+				face_updated_at: itemRow.face_updated_at ?? null,
 				wear_count: wearCount,
-				wear_history: wearHistory
+				wear_history: wearHistory,
 			};
 		}
 

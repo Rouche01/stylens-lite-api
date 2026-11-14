@@ -47,6 +47,10 @@
 			{
 				"binding": "CLOSET_IDENTITY_QUEUE",
 				"queue": "closet-identity"
+			},
+			{
+				"binding": "CLOSET_GARMENT_FACE_QUEUE",
+				"queue": "closet-garment-face"
 			}
 		],
 		"consumers": [
@@ -64,6 +68,11 @@
 				"queue": "closet-identity",
 				"max_batch_size": 1,
 				"max_retries": 25
+			},
+			{
+				"queue": "closet-garment-face",
+				"max_batch_size": 1,
+				"max_retries": 3
 			}
 		]
 	},
@@ -146,6 +155,10 @@
 					{
 						"binding": "CLOSET_IDENTITY_QUEUE",
 						"queue": "stylens-closet-identity"
+					},
+					{
+						"binding": "CLOSET_GARMENT_FACE_QUEUE",
+						"queue": "stylens-closet-garment-face"
 					}
 				],
 				"consumers": [
@@ -163,6 +176,11 @@
 						"queue": "stylens-closet-identity",
 						"max_batch_size": 1,
 						"max_retries": 25
+					},
+					{
+						"queue": "stylens-closet-garment-face",
+						"max_batch_size": 1,
+						"max_retries": 3
 					}
 				]
 			},
@@ -239,6 +257,10 @@
 					{
 						"binding": "CLOSET_IDENTITY_QUEUE",
 						"queue": "closet-identity"
+					},
+					{
+						"binding": "CLOSET_GARMENT_FACE_QUEUE",
+						"queue": "closet-garment-face"
 					}
 				],
 				"consumers": [
@@ -256,6 +278,11 @@
 						"queue": "closet-identity",
 						"max_batch_size": 1,
 						"max_retries": 25
+					},
+					{
+						"queue": "closet-garment-face",
+						"max_batch_size": 1,
+						"max_retries": 3
 					}
 				]
 			},

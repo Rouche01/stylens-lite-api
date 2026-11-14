@@ -26,6 +26,13 @@ export interface ClosetItem {
 	vector_indexed_at?: number | null;
 	index_status?: ClosetIndexStatus | null;
 	index_attempts?: number;
+	/** R2 key for quality-gated SAM cutout face (optional). */
+	cutout_image_key?: string | null;
+	/** R2 key for generative packshot after confirm (optional). */
+	flatlay_image_key?: string | null;
+	/** Declared presentation source; prefer keys via resolveClosetFaceSource. */
+	face_source?: 'crop' | 'cutout' | 'flatlay';
+	face_updated_at?: number | null;
 }
 
 export interface Outfit {
