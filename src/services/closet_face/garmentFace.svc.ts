@@ -4,6 +4,7 @@ import {
 	evaluateFaceCutoutPng,
 	falBirefnetMatte,
 	falNanoBananaFlatlay,
+	packshotRequiresTrustedCutout,
 	passesFaceQuality,
 } from '../segmentation';
 import { faceSourceFromKeys } from '../../utils/closet_face';
@@ -88,7 +89,13 @@ export class GarmentFaceService {
 				opaque_frac: result.quality.opaqueFrac,
 				mean_luma: result.quality.meanLuma,
 			});
-			await this.enqueueFollowPackshot(job, log);
+			await this.enqueueFollowPackshot(job, log, { cutoutTrusted: false });
+			return;
+		}
+
+		if (!result.pngBytes.length) {
+			log.info('garment_face_cutout_rejected', { reason: 'empty_png' });
+			await this.enqueueFollowPackshot(job, log, { cutoutTrusted: false });
 			return;
 		}
 
@@ -103,13 +110,13 @@ export class GarmentFaceService {
 				imageUrl: await signDownloadUrlForKey(samKey),
 			});
 			const matteQuality = await evaluateFaceCutoutPng(matte, result.maskScore ?? null);
-			const matteVerdict = passesFaceQuality(matteQuality);
+			const matteVerdict = passesFaceQuality(matteQuality, { category: job.category });
 			if (matteVerdict.ok) {
 				pngBytes = matte;
 			} else {
 				// Quality reject is terminal (ack) — same crop will not magically pass.
 				log.info('garment_face_matte_rejected', { reason: matteVerdict.reason });
-				await this.enqueueFollowPackshot(job, log);
+				await this.enqueueFollowPackshot(job, log, { cutoutTrusted: false });
 				return;
 			}
 		} catch (err) {
@@ -132,15 +139,26 @@ export class GarmentFaceService {
 		});
 		if (!updated) {
 			log.warn('garment_face_cutout_persist_missed', { cutout_image_key: cutoutKey });
-			await this.enqueueFollowPackshot(job, log);
+			await this.enqueueFollowPackshot(job, log, { cutoutTrusted: false });
 			return;
 		}
 		log.info('garment_face_cutout_stored', { cutout_image_key: cutoutKey });
-		await this.enqueueFollowPackshot(job, log);
+		await this.enqueueFollowPackshot(job, log, { cutoutTrusted: true });
 	}
 
-	private async enqueueFollowPackshot(job: GarmentFaceJob, log: Logger): Promise<void> {
+	private async enqueueFollowPackshot(
+		job: GarmentFaceJob,
+		log: Logger,
+		opts: { cutoutTrusted: boolean }
+	): Promise<void> {
 		if (!job.followWithPackshot) return;
+		if (packshotRequiresTrustedCutout(job.category) && !opts.cutoutTrusted) {
+			log.info('garment_face_packshot_skipped_untrusted_cutout', {
+				closet_item_id: job.closetItemId,
+				category: job.category || '',
+			});
+			return;
+		}
 		const { followWithPackshot: _follow, type: _type, ...rest } = job;
 		// Cutout already settled (store or reject) — do not defer packshot back into cutout.
 		await maybeEnqueueGarmentFacePackshot(this.env, rest, log, { afterCutoutSettled: true });
@@ -162,13 +180,21 @@ export class GarmentFaceService {
 		}
 
 		const cutoutKey = existing?.cutout_image_key?.trim() || '';
+		if (packshotRequiresTrustedCutout(job.category) && !cutoutKey) {
+			// Footwear: no high-confidence cutout → do not store an untrusted flatlay for browse.
+			log.info('garment_face_packshot_skipped_needs_cutout', {
+				category: job.category || '',
+			});
+			return;
+		}
+
 		let sourceKey: string;
 		let sourceKind: 'cutout' | 'padded_crop';
 		if (cutoutKey) {
 			sourceKey = cutoutKey;
 			sourceKind = 'cutout';
 		} else {
-			// Never feed the full outfit photo into Nano Banana — padded crop only.
+			// Apparel: never feed the full outfit photo — padded crop only.
 			const cutout = createCutoutService(this.env, log);
 			const cropped = await cutout.cropFaceJpegFromR2({
 				imageKey: job.sourceImageKey || job.imageKey,

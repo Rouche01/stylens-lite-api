@@ -4,6 +4,7 @@ import {
 	evaluateFaceRgba,
 	faceCutoutPad,
 	facePrefersSam3First,
+	packshotRequiresTrustedCutout,
 	passesFaceQuality,
 } from '../src/services/segmentation/face_quality';
 import { sam3PromptCandidates } from '../src/services/segmentation/sam3_prompt';
@@ -83,6 +84,26 @@ describe('evaluateFaceRgba / passesFaceQuality', () => {
 		const metrics = evaluateFaceRgba(rgba, 40, 40, 0.2);
 		expect(passesFaceQuality(metrics).ok).toBe(false);
 		expect(passesFaceQuality(metrics).reason).toMatch(/mask_score/);
+	});
+
+	it('applies stricter footwear thresholds (mid quality passes default, fails footwear)', () => {
+		// Solid mid-tone block: clears default gate; mask_score 0.50 fails footwear (min 0.55).
+		const rgba = rgbaFrame(100, 100, (x, y) => {
+			if (x < 20 || x >= 80 || y < 10 || y >= 90) return [0, 0, 0, 0];
+			const tone = 70 + ((x + y) % 40);
+			return [tone, tone - 5, tone + 5, 255];
+		});
+		const metrics = evaluateFaceRgba(rgba, 100, 100, 0.5);
+		expect(passesFaceQuality(metrics).ok).toBe(true);
+		const footwear = passesFaceQuality(metrics, { category: 'footwear' });
+		expect(footwear.ok).toBe(false);
+		expect(footwear.reason).toMatch(/mask_score/);
+	});
+
+	it('requires trusted cutout only for footwear packshots', () => {
+		expect(packshotRequiresTrustedCutout('footwear')).toBe(true);
+		expect(packshotRequiresTrustedCutout('top')).toBe(false);
+		expect(packshotRequiresTrustedCutout('accessory')).toBe(false);
 	});
 });
 

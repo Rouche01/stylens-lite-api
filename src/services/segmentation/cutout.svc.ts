@@ -7,9 +7,11 @@ import { BoxPx, SegmentProvider, createSegmentProvider } from './providers';
 import {
 	cropLocalBoxPx,
 	evaluateFaceCutoutPng,
+	FACE_FOOTWEAR_MIN_CROP_SIDE,
 	faceCutoutPad,
 	facePrefersSam3First,
 	faceQualityRank,
+	isFootwearCategory,
 	passesFaceQuality,
 	type FaceQualityMetrics,
 	type FaceQualityVerdict,
@@ -212,6 +214,40 @@ export class CutoutService {
 			category: category || '',
 		});
 
+		if (
+			isFootwearCategory(category) &&
+			Math.min(cropDims.width, cropDims.height) < FACE_FOOTWEAR_MIN_CROP_SIDE
+		) {
+			const quality = {
+				width: cropDims.width,
+				height: cropDims.height,
+				opaqueFrac: 0,
+				opaqueBboxFrac: 0,
+				meanLuma: 0,
+				lumaStd: 0,
+				fillDensity: 0,
+				maskScore: null,
+			};
+			log.info('cutout_face_crop_too_small', {
+				min_side: Math.min(cropDims.width, cropDims.height),
+				required: FACE_FOOTWEAR_MIN_CROP_SIDE,
+			});
+			return {
+				pngBytes: new Uint8Array(0),
+				imageKey,
+				boxPx: localBox,
+				imageDimensions: cropDims,
+				model: 'crop-size-gate',
+				quality,
+				verdict: {
+					ok: false,
+					reason: `footwear_crop_side ${Math.min(cropDims.width, cropDims.height)} < ${FACE_FOOTWEAR_MIN_CROP_SIDE}`,
+					metrics: quality,
+				},
+				cropImageKey,
+			};
+		}
+
 		const trySegment = async (preferBoxFirst: boolean) => {
 			log.info('cutout_face_segment_start', {
 				prefer_box_first: preferBoxFirst,
@@ -227,7 +263,7 @@ export class CutoutService {
 				preferBoxFirst,
 			});
 			const quality = await evaluateFaceCutoutPng(segmented.pngBytes, segmented.maskScore ?? null);
-			const verdict = passesFaceQuality(quality);
+			const verdict = passesFaceQuality(quality, { category });
 			log.info('cutout_face_segment_ok', {
 				bytes: segmented.pngBytes.byteLength,
 				model: segmented.model,

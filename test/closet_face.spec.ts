@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	closetFaceImageKey,
 	faceSourceFromKeys,
+	isClosetPackshotReady,
 	resolveClosetFaceSource,
 } from '../src/utils/closet_face';
 
@@ -37,5 +38,11 @@ describe('closet_face prefer order', () => {
 	it('treats whitespace-only keys as missing', () => {
 		expect(resolveClosetFaceSource({ cutout_image_key: '  ', flatlay_image_key: '\t' })).toBe('crop');
 		expect(closetFaceImageKey({ cutout_image_key: '   ' })).toBeNull();
+	});
+
+	it('isClosetPackshotReady only when flatlay key is set', () => {
+		expect(isClosetPackshotReady({ flatlay_image_key: 'cutouts/x.png' })).toBe(true);
+		expect(isClosetPackshotReady({ flatlay_image_key: '  ' })).toBe(false);
+		expect(isClosetPackshotReady({})).toBe(false);
 	});
 });

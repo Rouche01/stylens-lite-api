@@ -29,6 +29,19 @@ export const FACE_MIN_LUMA_STD = 10;
 /** opaque_count / opaque_bbox_area — hollow edge outlines score low. */
 export const FACE_MIN_FILL_DENSITY = 0.22;
 
+/**
+ * Footwear cutouts that barely clear the default gate are still junk (boots smoke).
+ * Stricter thresholds before we trust a matte enough to drive generative packshot.
+ */
+export const FACE_FOOTWEAR_MIN_OPAQUE_FRAC = 0.12;
+export const FACE_FOOTWEAR_MIN_OPAQUE_BBOX_FRAC = 0.18;
+export const FACE_FOOTWEAR_MIN_FILL_DENSITY = 0.35;
+export const FACE_FOOTWEAR_MIN_MEAN_LUMA = 28;
+export const FACE_FOOTWEAR_MIN_LUMA_STD = 14;
+export const FACE_FOOTWEAR_MIN_MASK_SCORE = 0.55;
+/** Reject tiny on-foot crops before SAM — not enough signal for a trusted shoe matte. */
+export const FACE_FOOTWEAR_MIN_CROP_SIDE = 96;
+
 export type FaceQualityMetrics = {
 	width: number;
 	height: number;
@@ -86,6 +99,51 @@ export function faceCutoutPad(category?: string | null): BoxPad {
 /** Categories where box-first SAM2 often grabs person/floor — prefer SAM3 label on crop. */
 export function facePrefersSam3First(category?: string | null): boolean {
 	return category === 'footwear' || category === 'accessory';
+}
+
+export function isFootwearCategory(category?: string | null): boolean {
+	return (category || '').trim().toLowerCase() === 'footwear';
+}
+
+/**
+ * Generative packshot for these categories is only trusted when fed a high-confidence cutout.
+ * Apparel may still packshot from a padded crop.
+ */
+export function packshotRequiresTrustedCutout(category?: string | null): boolean {
+	return isFootwearCategory(category);
+}
+
+export type FaceQualityThresholds = {
+	minOpaqueFrac: number;
+	maxOpaqueFrac: number;
+	minOpaqueBboxFrac: number;
+	minFillDensity: number;
+	minMeanLuma: number;
+	minLumaStd: number;
+	minMaskScore: number;
+};
+
+export function faceQualityThresholds(category?: string | null): FaceQualityThresholds {
+	if (isFootwearCategory(category)) {
+		return {
+			minOpaqueFrac: FACE_FOOTWEAR_MIN_OPAQUE_FRAC,
+			maxOpaqueFrac: FACE_MAX_OPAQUE_FRAC,
+			minOpaqueBboxFrac: FACE_FOOTWEAR_MIN_OPAQUE_BBOX_FRAC,
+			minFillDensity: FACE_FOOTWEAR_MIN_FILL_DENSITY,
+			minMeanLuma: FACE_FOOTWEAR_MIN_MEAN_LUMA,
+			minLumaStd: FACE_FOOTWEAR_MIN_LUMA_STD,
+			minMaskScore: FACE_FOOTWEAR_MIN_MASK_SCORE,
+		};
+	}
+	return {
+		minOpaqueFrac: FACE_MIN_OPAQUE_FRAC,
+		maxOpaqueFrac: FACE_MAX_OPAQUE_FRAC,
+		minOpaqueBboxFrac: FACE_MIN_OPAQUE_BBOX_FRAC,
+		minFillDensity: FACE_MIN_FILL_DENSITY,
+		minMeanLuma: FACE_MIN_MEAN_LUMA,
+		minLumaStd: FACE_MIN_LUMA_STD,
+		minMaskScore: FACE_MIN_MASK_SCORE,
+	};
 }
 
 /** Near-full-frame box on a crop so SAM2 focuses on the garment, not the outfit. */
@@ -191,54 +249,58 @@ export function faceQualityRank(metrics: FaceQualityMetrics): number {
 	return metrics.meanLuma * metrics.opaqueFrac * Math.max(metrics.fillDensity, 0.01);
 }
 
-export function passesFaceQuality(metrics: FaceQualityMetrics): FaceQualityVerdict {
+export function passesFaceQuality(
+	metrics: FaceQualityMetrics,
+	options?: { category?: string | null }
+): FaceQualityVerdict {
+	const t = faceQualityThresholds(options?.category);
 	const { opaqueFrac, opaqueBboxFrac, meanLuma, lumaStd, fillDensity, maskScore } = metrics;
-	if (maskScore != null && Number.isFinite(maskScore) && maskScore < FACE_MIN_MASK_SCORE) {
+	if (maskScore != null && Number.isFinite(maskScore) && maskScore < t.minMaskScore) {
 		return {
 			ok: false,
-			reason: `mask_score ${maskScore.toFixed(3)} < ${FACE_MIN_MASK_SCORE}`,
+			reason: `mask_score ${maskScore.toFixed(3)} < ${t.minMaskScore}`,
 			metrics,
 		};
 	}
-	if (opaqueFrac < FACE_MIN_OPAQUE_FRAC) {
+	if (opaqueFrac < t.minOpaqueFrac) {
 		return {
 			ok: false,
-			reason: `opaque_frac ${opaqueFrac.toFixed(3)} < ${FACE_MIN_OPAQUE_FRAC}`,
+			reason: `opaque_frac ${opaqueFrac.toFixed(3)} < ${t.minOpaqueFrac}`,
 			metrics,
 		};
 	}
-	if (opaqueFrac > FACE_MAX_OPAQUE_FRAC) {
+	if (opaqueFrac > t.maxOpaqueFrac) {
 		return {
 			ok: false,
-			reason: `opaque_frac ${opaqueFrac.toFixed(3)} > ${FACE_MAX_OPAQUE_FRAC}`,
+			reason: `opaque_frac ${opaqueFrac.toFixed(3)} > ${t.maxOpaqueFrac}`,
 			metrics,
 		};
 	}
-	if (opaqueBboxFrac < FACE_MIN_OPAQUE_BBOX_FRAC) {
+	if (opaqueBboxFrac < t.minOpaqueBboxFrac) {
 		return {
 			ok: false,
-			reason: `opaque_bbox_frac ${opaqueBboxFrac.toFixed(3)} < ${FACE_MIN_OPAQUE_BBOX_FRAC}`,
+			reason: `opaque_bbox_frac ${opaqueBboxFrac.toFixed(3)} < ${t.minOpaqueBboxFrac}`,
 			metrics,
 		};
 	}
-	if (fillDensity < FACE_MIN_FILL_DENSITY) {
+	if (fillDensity < t.minFillDensity) {
 		return {
 			ok: false,
-			reason: `fill_density ${fillDensity.toFixed(3)} < ${FACE_MIN_FILL_DENSITY}`,
+			reason: `fill_density ${fillDensity.toFixed(3)} < ${t.minFillDensity}`,
 			metrics,
 		};
 	}
-	if (meanLuma < FACE_MIN_MEAN_LUMA) {
+	if (meanLuma < t.minMeanLuma) {
 		return {
 			ok: false,
-			reason: `mean_luma ${meanLuma.toFixed(1)} < ${FACE_MIN_MEAN_LUMA}`,
+			reason: `mean_luma ${meanLuma.toFixed(1)} < ${t.minMeanLuma}`,
 			metrics,
 		};
 	}
-	if (lumaStd < FACE_MIN_LUMA_STD) {
+	if (lumaStd < t.minLumaStd) {
 		return {
 			ok: false,
-			reason: `luma_std ${lumaStd.toFixed(1)} < ${FACE_MIN_LUMA_STD}`,
+			reason: `luma_std ${lumaStd.toFixed(1)} < ${t.minLumaStd}`,
 			metrics,
 		};
 	}

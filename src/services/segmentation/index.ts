@@ -19,8 +19,12 @@ export {
 	faceCutoutPad,
 	facePrefersSam3First,
 	faceQualityRank,
+	faceQualityThresholds,
+	isFootwearCategory,
+	packshotRequiresTrustedCutout,
 	passesFaceQuality,
 	type FaceQualityMetrics,
+	type FaceQualityThresholds,
 	type FaceQualityVerdict,
 } from './face_quality';
 export { falBirefnetMatte } from './providers/fal_birefnet';

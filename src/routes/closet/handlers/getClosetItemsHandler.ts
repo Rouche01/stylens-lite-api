@@ -10,7 +10,7 @@ import {
 	parseIsolateCutout,
 } from 'utils/assets.utils';
 import { isClosetBrowseItem } from 'utils/closet_browse';
-import { closetFaceImageKey, resolveClosetFaceSource } from 'utils/closet_face';
+import { closetFaceImageKey, isClosetPackshotReady, resolveClosetFaceSource } from 'utils/closet_face';
 import { logRouteError } from 'utils/error';
 
 const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
@@ -18,7 +18,13 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 		const closetDB = createClosetDB(env.GOSTYLENS_DB);
 		const userId = request.user.dbId;
 
-		const items = (await closetDB.getClosetItems(userId)).filter(isClosetBrowseItem);
+		const requirePackshot =
+			String(env.GARMENT_FACE_PACKSHOT_ENABLED || '').toLowerCase() === 'true';
+		let items = (await closetDB.getClosetItems(userId)).filter(isClosetBrowseItem);
+		// Packshot-only grid: omit tiles until a trusted flatlay exists (footwear may never qualify).
+		if (requirePackshot) {
+			items = items.filter(isClosetPackshotReady);
+		}
 
 		const requestUrl = new URL(request.url);
 		const domain = requestUrl.host;

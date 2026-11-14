@@ -33,3 +33,11 @@ export function faceSourceFromKeys(params: {
 		flatlay_image_key: params.flatlayImageKey,
 	});
 }
+
+/**
+ * Trusted packshot ready for packshot-only browse.
+ * Untrusted footwear never persists flatlay_image_key (see garment face trust gate).
+ */
+export function isClosetPackshotReady(item: { flatlay_image_key?: string | null }): boolean {
+	return Boolean(item.flatlay_image_key?.trim());
+}

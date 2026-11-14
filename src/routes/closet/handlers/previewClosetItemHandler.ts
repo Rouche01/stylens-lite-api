@@ -336,7 +336,7 @@ async function buildSamFace(params: {
 				imageUrl: samUrl,
 			});
 			const matteQuality = await evaluateFaceCutoutPng(faceBytes, result.maskScore ?? null);
-			const matteVerdict = passesFaceQuality(matteQuality);
+			const matteVerdict = passesFaceQuality(matteQuality, { category: params.category });
 			if (!matteVerdict.ok) {
 				params.log?.warn('preview_face_matte_quality_reject', {
 					reason: matteVerdict.reason,
