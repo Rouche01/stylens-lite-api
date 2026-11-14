@@ -147,15 +147,17 @@ export class CutoutService {
 	}
 
 	/**
-	 * Crop-then-SAM face path: padded crop → SAM2 box-first on crop → quality gate.
-	 * On quality fail with a label, retries SAM3 on the same crop. Does not discard closet items.
+	 * Padded garment crop only (no SAM) — packshot fallback when cutout is missing/rejected.
 	 */
-	async cutoutFaceFromR2(params: FaceCutoutFromR2Params): Promise<FaceCutoutResult> {
-		const { imageKey, boundingBox, label, category } = params;
-		const log = this.log.child({ image_key: imageKey, provider: this.provider.name, face: true });
-
+	async cropFaceJpegFromR2(params: FaceCutoutFromR2Params): Promise<{
+		cropImageKey: string;
+		cropJpeg: ArrayBuffer;
+		cropWidth: number;
+		cropHeight: number;
+	}> {
+		const { imageKey, boundingBox, category } = params;
 		if (!boundingBox) {
-			throw new Error('cutoutFaceFromR2 requires boundingBox');
+			throw new Error('cropFaceJpegFromR2 requires boundingBox');
 		}
 
 		const object = await this.bucket.get(imageKey);
@@ -175,6 +177,30 @@ export class CutoutService {
 		await this.bucket.put(cropImageKey, cropJpeg, {
 			httpMetadata: { contentType: 'image/jpeg' },
 		});
+		return {
+			cropImageKey,
+			cropJpeg,
+			cropWidth: cropDims.width,
+			cropHeight: cropDims.height,
+		};
+	}
+
+	/**
+	 * Crop-then-SAM face path: padded crop → SAM2 box-first on crop → quality gate.
+	 * On quality fail with a label, retries SAM3 on the same crop. Does not discard closet items.
+	 */
+	async cutoutFaceFromR2(params: FaceCutoutFromR2Params): Promise<FaceCutoutResult> {
+		const { imageKey, boundingBox, label, category } = params;
+		const log = this.log.child({ image_key: imageKey, provider: this.provider.name, face: true });
+
+		if (!boundingBox) {
+			throw new Error('cutoutFaceFromR2 requires boundingBox');
+		}
+
+		const cropped = await this.cropFaceJpegFromR2(params);
+		const cropImageKey = cropped.cropImageKey;
+		const cropJpeg = cropped.cropJpeg;
+		const cropDims = { width: cropped.cropWidth, height: cropped.cropHeight };
 		const cropUrl = await signDownloadUrlForKey(cropImageKey);
 		const localBox = cropLocalBoxPx(cropDims.width, cropDims.height);
 

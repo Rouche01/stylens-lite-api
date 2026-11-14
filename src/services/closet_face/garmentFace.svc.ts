@@ -25,7 +25,29 @@ export type GarmentFaceJob = {
 	boundingBox: { x: number; y: number; width: number; height: number };
 	/** Required for packshot when cutting from the wear photo. */
 	sourceImageKey?: string;
+	/**
+	 * When true, after cutout settles (store or quality reject), enqueue packshot.
+	 * Used so cutout and packshot never race on the same tile.
+	 */
+	followWithPackshot?: boolean;
 };
+
+export type GarmentFaceEnqueuePlan = 'cutout_then_packshot' | 'packshot' | 'cutout' | 'none';
+
+/** Pure enqueue planner — cutout completes before packshot when both flags are on. */
+export function garmentFaceEnqueuePlan(flags: {
+	cutoutEnabled: boolean;
+	packshotEnabled: boolean;
+}): GarmentFaceEnqueuePlan {
+	if (flags.cutoutEnabled && flags.packshotEnabled) return 'cutout_then_packshot';
+	if (flags.packshotEnabled) return 'packshot';
+	if (flags.cutoutEnabled) return 'cutout';
+	return 'none';
+}
+
+function envFlagTrue(value: unknown): boolean {
+	return String(value || '').toLowerCase() === 'true';
+}
 
 export class GarmentFaceService {
 	constructor(
@@ -66,6 +88,7 @@ export class GarmentFaceService {
 				opaque_frac: result.quality.opaqueFrac,
 				mean_luma: result.quality.meanLuma,
 			});
+			await this.enqueueFollowPackshot(job, log);
 			return;
 		}
 
@@ -86,6 +109,7 @@ export class GarmentFaceService {
 			} else {
 				// Quality reject is terminal (ack) — same crop will not magically pass.
 				log.info('garment_face_matte_rejected', { reason: matteVerdict.reason });
+				await this.enqueueFollowPackshot(job, log);
 				return;
 			}
 		} catch (err) {
@@ -108,9 +132,18 @@ export class GarmentFaceService {
 		});
 		if (!updated) {
 			log.warn('garment_face_cutout_persist_missed', { cutout_image_key: cutoutKey });
+			await this.enqueueFollowPackshot(job, log);
 			return;
 		}
 		log.info('garment_face_cutout_stored', { cutout_image_key: cutoutKey });
+		await this.enqueueFollowPackshot(job, log);
+	}
+
+	private async enqueueFollowPackshot(job: GarmentFaceJob, log: Logger): Promise<void> {
+		if (!job.followWithPackshot) return;
+		const { followWithPackshot: _follow, type: _type, ...rest } = job;
+		// Cutout already settled (store or reject) — do not defer packshot back into cutout.
+		await maybeEnqueueGarmentFacePackshot(this.env, rest, log, { afterCutoutSettled: true });
 	}
 
 	private async processPackshot(job: GarmentFaceJob): Promise<void> {
@@ -121,7 +154,37 @@ export class GarmentFaceService {
 			user_id: job.userId,
 		});
 		const existing = await this.closet().getClosetItemFace(job.userId, job.closetItemId);
-		const sourceKey = existing?.cutout_image_key || job.sourceImageKey || job.imageKey;
+		if (existing?.flatlay_image_key?.trim()) {
+			log.info('garment_face_packshot_skip_existing', {
+				flatlay_image_key: existing.flatlay_image_key,
+			});
+			return;
+		}
+
+		const cutoutKey = existing?.cutout_image_key?.trim() || '';
+		let sourceKey: string;
+		let sourceKind: 'cutout' | 'padded_crop';
+		if (cutoutKey) {
+			sourceKey = cutoutKey;
+			sourceKind = 'cutout';
+		} else {
+			// Never feed the full outfit photo into Nano Banana — padded crop only.
+			const cutout = createCutoutService(this.env, log);
+			const cropped = await cutout.cropFaceJpegFromR2({
+				imageKey: job.sourceImageKey || job.imageKey,
+				boundingBox: job.boundingBox,
+				label: job.label,
+				category: job.category,
+			});
+			sourceKey = cropped.cropImageKey;
+			sourceKind = 'padded_crop';
+			log.info('garment_face_packshot_using_padded_crop', {
+				crop_image_key: sourceKey,
+				crop_width: cropped.cropWidth,
+				crop_height: cropped.cropHeight,
+			});
+		}
+
 		const sourceUrl = await signDownloadUrlForKey(sourceKey);
 		const packshot = await falNanoBananaFlatlay({
 			apiKey: this.env.FAL_KEY,
@@ -146,8 +209,9 @@ export class GarmentFaceService {
 		}
 		log.info('garment_face_packshot_stored', {
 			flatlay_image_key: flatlayKey,
+			packshot_source: sourceKind,
 			face_source: faceSourceFromKeys({
-				cutoutImageKey: existing?.cutout_image_key,
+				cutoutImageKey: cutoutKey || existing?.cutout_image_key,
 				flatlayImageKey: flatlayKey,
 			}),
 		});
@@ -164,7 +228,7 @@ export async function maybeEnqueueGarmentFaceCutout(
 	job: Omit<GarmentFaceJob, 'type'>,
 	log?: Logger
 ): Promise<boolean> {
-	if (String(env.GARMENT_FACE_CUTOUT_ENABLED || '').toLowerCase() !== 'true') {
+	if (!envFlagTrue(env.GARMENT_FACE_CUTOUT_ENABLED)) {
 		return false;
 	}
 	const queue = env.CLOSET_GARMENT_FACE_QUEUE;
@@ -173,7 +237,10 @@ export async function maybeEnqueueGarmentFaceCutout(
 		return false;
 	}
 	await queue.send({ ...job, type: 'cutout' } satisfies GarmentFaceJob);
-	log?.info('garment_face_cutout_enqueued', { closet_item_id: job.closetItemId });
+	log?.info('garment_face_cutout_enqueued', {
+		closet_item_id: job.closetItemId,
+		follow_with_packshot: Boolean(job.followWithPackshot),
+	});
 	return true;
 }
 
@@ -194,13 +261,17 @@ export async function enqueueGarmentFacePackshot(
 /**
  * Enqueue generative packshot when env flag is on (off by default — Fal $).
  * Soft-fails when the queue binding is missing.
+ *
+ * When cutout is also enabled and this tile has no cutout yet, enqueues cutout with
+ * `followWithPackshot` instead so packshot never races ahead of (or without) cutout.
  */
 export async function maybeEnqueueGarmentFacePackshot(
 	env: Env,
 	job: Omit<GarmentFaceJob, 'type'>,
-	log?: Logger
+	log?: Logger,
+	options?: { afterCutoutSettled?: boolean }
 ): Promise<boolean> {
-	if (String(env.GARMENT_FACE_PACKSHOT_ENABLED || '').toLowerCase() !== 'true') {
+	if (!envFlagTrue(env.GARMENT_FACE_PACKSHOT_ENABLED)) {
 		return false;
 	}
 	const queue = env.CLOSET_GARMENT_FACE_QUEUE;
@@ -208,7 +279,32 @@ export async function maybeEnqueueGarmentFacePackshot(
 		log?.warn('garment_face_queue_missing');
 		return false;
 	}
-	await queue.send({ ...job, type: 'packshot' } satisfies GarmentFaceJob);
+
+	// Ask→same/new may call packshot directly: if cutout is enabled and not done yet, run cutout first.
+	if (
+		!options?.afterCutoutSettled &&
+		envFlagTrue(env.GARMENT_FACE_CUTOUT_ENABLED) &&
+		!job.followWithPackshot
+	) {
+		const face = await createClosetDB(env.GOSTYLENS_DB).getClosetItemFace(job.userId, job.closetItemId);
+		if (!face?.cutout_image_key?.trim()) {
+			const cutoutOk = await maybeEnqueueGarmentFaceCutout(
+				env,
+				{ ...job, followWithPackshot: true },
+				log
+			);
+			if (cutoutOk) {
+				log?.info('garment_face_packshot_deferred_to_cutout', {
+					closet_item_id: job.closetItemId,
+				});
+				return true;
+			}
+			// Cutout enqueue failed (flag/queue) — fall through to packshot on padded crop.
+		}
+	}
+
+	const { followWithPackshot: _follow, ...packJob } = job;
+	await queue.send({ ...packJob, type: 'packshot' } satisfies GarmentFaceJob);
 	log?.info('garment_face_packshot_enqueued', { closet_item_id: job.closetItemId });
 	return true;
 }
@@ -227,6 +323,7 @@ type CreatedFaceItem = {
 /**
  * After identity create (queue or admin HTTP extract): enqueue cutout + packshot
  * for each new tile. Flag-gated; safe no-op when disabled / unbound.
+ * When both flags are on, only cutout is enqueued — packshot follows after cutout settles.
  */
 export async function enqueueGarmentFacesForCreatedItems(
 	env: Env,
@@ -237,6 +334,12 @@ export async function enqueueGarmentFacesForCreatedItems(
 	},
 	log?: Logger
 ): Promise<void> {
+	const plan = garmentFaceEnqueuePlan({
+		cutoutEnabled: envFlagTrue(env.GARMENT_FACE_CUTOUT_ENABLED),
+		packshotEnabled: envFlagTrue(env.GARMENT_FACE_PACKSHOT_ENABLED),
+	});
+	if (plan === 'none') return;
+
 	for (const item of params.items) {
 		if (
 			item.identity_status !== 'created' ||
@@ -258,7 +361,15 @@ export async function enqueueGarmentFacesForCreatedItems(
 			subcategory: item.subcategory,
 			boundingBox: item.bounding_box,
 		};
-		await maybeEnqueueGarmentFaceCutout(env, faceJob, log);
+
+		if (plan === 'cutout_then_packshot') {
+			await maybeEnqueueGarmentFaceCutout(env, { ...faceJob, followWithPackshot: true }, log);
+			continue;
+		}
+		if (plan === 'cutout') {
+			await maybeEnqueueGarmentFaceCutout(env, faceJob, log);
+			continue;
+		}
 		await maybeEnqueueGarmentFacePackshot(env, faceJob, log);
 	}
 }

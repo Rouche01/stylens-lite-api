@@ -53,15 +53,15 @@ Identity / Vectorize **always** use real padded crops. Cutout and packshot are p
 
 | Trigger | Cutout (`GARMENT_FACE_CUTOUT_ENABLED`) | Packshot (`GARMENT_FACE_PACKSHOT_ENABLED`) |
 |---------|----------------------------------------|--------------------------------------------|
-| Silent **create** (new tile on queue) | Enqueue after `process` | Enqueue after `process` |
-| Ask → **new** | Not yet (gap vs create) | Enqueue on fresh claim |
-| Ask → **same** | — | Enqueue on fresh claim (skip if flatlay exists) |
+| Silent **create** (new tile on queue) | Enqueue after `process` | After cutout settles when both on (`followWithPackshot`); else enqueue alone |
+| Ask → **new** | If packshot asked and no cutout yet → cutout first | Enqueue on fresh claim (or deferred behind cutout) |
+| Ask → **same** | Same deferral when cutout missing | Enqueue on fresh claim (skip if flatlay exists) |
 | Ask **pending** | No | No |
 | Browse / list | No generation | No generation |
 
 - Queue: `CLOSET_GARMENT_FACE_QUEUE` — jobs `type: cutout | packshot` (`src/services/closet_face/garmentFace.svc.ts`).  
-- Cutout: gated SAM + BiRefNet; reject → keep crop face.  
-- Packshot: Nano Banana flat-lay; prefers stored cutout when present, else wear photo.  
+- Cutout: gated SAM + BiRefNet; reject → keep crop face; still triggers deferred packshot when requested.  
+- Packshot: Nano Banana flat-lay; prefers stored cutout when present, else **padded crop** (never the full outfit photo).  
 - List/detail: `isolated_image_url` prefers flatlay > cutout > crop; expose `crop_image_url` + `face_source`.  
 - Judge (eval only): `GET /closet/eval/faces?userId=<EVAL_USER_ID>&admin_key=…` — crop | stored cutout | stored packshot gallery (`&format=json` for tooling). Eval UI **Faces** tab proxies via `/api/closet-faces`.  
 - Quality plan: [`.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md`](../.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md).
