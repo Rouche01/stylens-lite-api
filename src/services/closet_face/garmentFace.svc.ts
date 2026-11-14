@@ -171,7 +171,7 @@ export async function maybeEnqueueGarmentFaceCutout(
 	return true;
 }
 
-/** Packshot only after opt-in/confirm — caller must gate. */
+/** Packshot for display faces — caller gates (create / ask→new / ask→same; never pending). */
 export async function enqueueGarmentFacePackshot(
 	env: Env,
 	job: Omit<GarmentFaceJob, 'type'>,
@@ -183,4 +183,26 @@ export async function enqueueGarmentFacePackshot(
 	}
 	await queue.send({ ...job, type: 'packshot' } satisfies GarmentFaceJob);
 	log?.info('garment_face_packshot_enqueued', { closet_item_id: job.closetItemId });
+}
+
+/**
+ * Enqueue generative packshot when env flag is on (off by default — Fal $).
+ * Soft-fails when the queue binding is missing.
+ */
+export async function maybeEnqueueGarmentFacePackshot(
+	env: Env,
+	job: Omit<GarmentFaceJob, 'type'>,
+	log?: Logger
+): Promise<boolean> {
+	if (String(env.GARMENT_FACE_PACKSHOT_ENABLED || '').toLowerCase() !== 'true') {
+		return false;
+	}
+	const queue = env.CLOSET_GARMENT_FACE_QUEUE;
+	if (!queue) {
+		log?.warn('garment_face_queue_missing');
+		return false;
+	}
+	await queue.send({ ...job, type: 'packshot' } satisfies GarmentFaceJob);
+	log?.info('garment_face_packshot_enqueued', { closet_item_id: job.closetItemId });
+	return true;
 }

@@ -18,7 +18,10 @@ import {
 import { createOutfitIdentityService } from '../services/identity/outfitIdentity.svc';
 import { persistIdentityRunArtifact } from '../services/identity/logging/runArtifact';
 import { notifyClosetCatalogIfChanged } from '../services/identity/notify/catalogBroadcast';
-import { maybeEnqueueGarmentFaceCutout } from '../services/closet_face/garmentFace.svc';
+import {
+	maybeEnqueueGarmentFaceCutout,
+	maybeEnqueueGarmentFacePackshot,
+} from '../services/closet_face/garmentFace.svc';
 import { createRealtimeService } from '../services/realtime.svc';
 import type { Logger } from '../utils/logger.utils';
 
@@ -85,18 +88,18 @@ export async function handleClosetIdentityQueue(
 					) {
 						continue;
 					}
-					await maybeEnqueueGarmentFaceCutout(
-						env,
-						{
-							userId: message.body.userId,
-							closetItemId: item.closet_item_id,
-							imageKey: result.image_key,
-							label: item.label,
-							category: item.category,
-							boundingBox: item.bounding_box,
-						},
-						log
-					);
+					const faceJob = {
+						userId: message.body.userId,
+						closetItemId: item.closet_item_id,
+						imageKey: result.image_key,
+						label: item.label,
+						category: item.category,
+						boundingBox: item.bounding_box,
+						sourceImageKey: result.image_key,
+					};
+					// New tile: faithful cutout + generative display packshot (each flag-gated).
+					await maybeEnqueueGarmentFaceCutout(env, faceJob, log);
+					await maybeEnqueueGarmentFacePackshot(env, faceJob, log);
 				}
 			},
 		});

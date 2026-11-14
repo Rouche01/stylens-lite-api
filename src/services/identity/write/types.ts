@@ -24,6 +24,7 @@ export type OutfitIdentityStore = Pick<
 	| 'createPendingMatch'
 	| 'findClosetItemForPhotoCrop'
 	| 'getClosetItemSummary'
+	| 'getClosetItemFace'
 	| 'tryAcquireIdentityLock'
 	| 'releaseIdentityLock'
 	| 'getMatchWithOutfit'
@@ -50,6 +51,18 @@ export type ClosetMatchDigestScheduler = {
 	schedule(userId: string): Promise<void>;
 };
 
+export type GarmentFacePackshotScheduler = {
+	enqueue(job: {
+		userId: string;
+		closetItemId: string;
+		imageKey: string;
+		label: string;
+		category?: string | null;
+		boundingBox: { x: number; y: number; width: number; height: number };
+		sourceImageKey?: string;
+	}): Promise<boolean>;
+};
+
 export type IdentityWait = {
 	timeoutMs: number;
 	pollMs: number;
@@ -63,6 +76,8 @@ export type OutfitIdentityWriteDeps = {
 	log: Logger;
 	catalog?: ClosetCatalogNotifier;
 	repairQueue?: ClosetVectorRepairScheduler;
+	/** Display packshot for new/confirmed tiles — never while ask is pending. */
+	garmentFacePackshot?: GarmentFacePackshotScheduler;
 };
 
 export type ResolveClosetMatchParams = {

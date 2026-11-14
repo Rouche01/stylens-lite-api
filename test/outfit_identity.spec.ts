@@ -843,6 +843,51 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 				items: [{ closet_item_id: 'c1', identity_status: 'created' }],
 			},
 		]);
+		expect(harness.packshotEnqueues).toEqual([
+			{
+				userId: 'u1',
+				closetItemId: 'c1',
+				imageKey: 'users/u1/test.jpg',
+				label: 'olive shirt',
+				category: 'top',
+			},
+		]);
+	});
+
+	it('does not enqueue packshot on same when a flatlay already exists', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const match = seedPendingMatch(harness.closet);
+		harness.closet.items[0].flatlay_image_key = 'cutouts/faces/c1/flatlay-existing.png';
+
+		await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'same',
+		});
+
+		expect(harness.packshotEnqueues).toEqual([]);
+	});
+
+	it('enqueues packshot on user-confirmed new (fresh tile)', async () => {
+		const harness = createHarness({ neighbors: [] });
+		const match = seedPendingMatch(harness.closet);
+
+		const result = await harness.processor.resolveMatch({
+			userId: 'u1',
+			matchId: match.id,
+			decision: 'new',
+		});
+
+		expect(result.closet_item_id).toBeTruthy();
+		expect(harness.packshotEnqueues).toEqual([
+			{
+				userId: 'u1',
+				closetItemId: result.closet_item_id,
+				imageKey: 'users/u1/test.jpg',
+				label: 'olive shirt',
+				category: 'top',
+			},
+		]);
 	});
 
 	it('creates a new tile on user-confirmed new even if a neighbor still matches', async () => {
@@ -1670,6 +1715,13 @@ function createHarness(options: {
 		items: Array<{ closet_item_id: string | null; identity_status: string }>;
 	}> = [];
 	const repairSends: unknown[] = [];
+	const packshotEnqueues: Array<{
+		userId: string;
+		closetItemId: string;
+		imageKey: string;
+		label: string;
+		category?: string | null;
+	}> = [];
 	const processor = new OutfitIdentityProcessor(
 		{ extractOutfitItems: async () => extraction },
 		identity as never,
@@ -1698,9 +1750,29 @@ function createHarness(options: {
 				if (options.repairError) throw options.repairError;
 				repairSends.push(job);
 			},
+		},
+		{
+			enqueue: async (job) => {
+				packshotEnqueues.push({
+					userId: job.userId,
+					closetItemId: job.closetItemId,
+					imageKey: job.imageKey,
+					label: job.label,
+					category: job.category,
+				});
+				return true;
+			},
 		}
 	);
-	return { processor, closet, identity, digestSchedules, catalogNotifies, repairSends };
+	return {
+		processor,
+		closet,
+		identity,
+		digestSchedules,
+		catalogNotifies,
+		repairSends,
+		packshotEnqueues,
+	};
 }
 
 	class MemoryCloset {
@@ -1764,6 +1836,16 @@ function createHarness(options: {
 					index_attempts: item.index_attempts ?? 0,
 				}
 			: null;
+	}
+
+	async getClosetItemFace(userId: string, closetItemId: string) {
+		const item = this.items.find((row) => row.id === closetItemId && row.user_id === userId);
+		if (!item) return null;
+		return {
+			cutout_image_key: item.cutout_image_key ?? null,
+			flatlay_image_key: item.flatlay_image_key ?? null,
+			face_source: item.face_source ?? 'crop',
+		};
 	}
 
 	async setClosetIndexStatus(

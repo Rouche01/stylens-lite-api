@@ -42,9 +42,11 @@ import {
 	withIdentityProbe,
 } from './helpers';
 import { resolveClosetMatch } from './resolveMatch';
+import { maybeEnqueueGarmentFacePackshot } from '../../closet_face';
 import type {
 	ClosetMatchDigestScheduler,
 	ClosetVectorRepairScheduler,
+	GarmentFacePackshotScheduler,
 	IdentityWait,
 	OutfitIdentityExtractor,
 	OutfitIdentityQueries,
@@ -60,6 +62,7 @@ import type {
 export type {
 	ClosetMatchDigestScheduler,
 	ClosetVectorRepairScheduler,
+	GarmentFacePackshotScheduler,
 	IdentityWait,
 	OutfitIdentityExtractor,
 	OutfitIdentityQueries,
@@ -92,7 +95,8 @@ export class OutfitIdentityProcessor {
 		private wait: IdentityWait = DEFAULT_WAIT,
 		private digest?: ClosetMatchDigestScheduler,
 		private catalog?: ClosetCatalogNotifier,
-		private repairQueue?: ClosetVectorRepairScheduler
+		private repairQueue?: ClosetVectorRepairScheduler,
+		private garmentFacePackshot?: GarmentFacePackshotScheduler
 	) {}
 
 	async process(params: ProcessOutfitImageParams): Promise<ProcessOutfitImageResult | null> {
@@ -317,6 +321,7 @@ export class OutfitIdentityProcessor {
 			log,
 			catalog: this.catalog,
 			repairQueue: this.repairQueue,
+			garmentFacePackshot: this.garmentFacePackshot,
 		};
 	}
 
@@ -725,6 +730,9 @@ export function createOutfitIdentityWriter(
 	const repairQueue: ClosetVectorRepairScheduler = {
 		send: (job, options) => envBindings.CLOSET_IDENTITY_QUEUE.send(job, options),
 	};
+	const garmentFacePackshot: GarmentFacePackshotScheduler = {
+		enqueue: (job) => maybeEnqueueGarmentFacePackshot(envBindings, job, log),
+	};
 	return new OutfitIdentityProcessor(
 		createOutfitExtractionService(envBindings, log),
 		encode,
@@ -733,6 +741,7 @@ export function createOutfitIdentityWriter(
 		DEFAULT_WAIT,
 		createClosetMatchDigestScheduler(envBindings, log),
 		createClosetCatalogNotifier(createRealtimeService(), log),
-		repairQueue
+		repairQueue,
+		garmentFacePackshot
 	);
 }

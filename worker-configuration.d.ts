@@ -14,6 +14,7 @@ declare namespace Cloudflare {
 		CLOSET_IDENTITY_QUEUE: Queue;
 		CLOSET_GARMENT_FACE_QUEUE: Queue;
 		GARMENT_FACE_CUTOUT_ENABLED?: string;
+		GARMENT_FACE_PACKSHOT_ENABLED?: string;
 		IMAGES: ImagesBinding;
 		ENV_NAME: "staging";
 		OPENAI_MODEL_ENDPOINT_URL: string;
@@ -78,6 +79,7 @@ declare namespace Cloudflare {
 		CLOSET_IDENTITY_QUEUE: Queue;
 		CLOSET_GARMENT_FACE_QUEUE: Queue;
 		GARMENT_FACE_CUTOUT_ENABLED?: string;
+		GARMENT_FACE_PACKSHOT_ENABLED?: string;
 		IMAGES: ImagesBinding;
 		ENV_NAME: "production";
 		OPENAI_MODEL_ENDPOINT_URL: string;
@@ -142,6 +144,7 @@ declare namespace Cloudflare {
 		CLOSET_IDENTITY_QUEUE: Queue;
 		CLOSET_GARMENT_FACE_QUEUE: Queue;
 		GARMENT_FACE_CUTOUT_ENABLED?: string;
+		GARMENT_FACE_PACKSHOT_ENABLED?: string;
 		IMAGES: ImagesBinding;
 		ENV_NAME: "staging" | "production" | "dev";
 		OPENAI_MODEL_ENDPOINT_URL: string;
@@ -199,6 +202,7 @@ declare namespace Cloudflare {
 		/** Dedicated user for extract/identity eval cycles. Reset refuses any other id. */
 		EVAL_USER_ID?: string;
 		GARMENT_FACE_CUTOUT_ENABLED?: string;
+		GARMENT_FACE_PACKSHOT_ENABLED?: string;
 		CLOSET_ITEMS?: VectorizeIndex;
 		AI?: Ai;
 		CLOSET_EMBED_PROVIDER?: "dinov3";

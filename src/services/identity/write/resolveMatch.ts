@@ -48,10 +48,16 @@ async function resolveSame(
 	if (!claimed) {
 		const latest = await deps.closet.getMatchWithOutfit(match.user_id, match.id);
 		if (!latest) throw new ClosetMatchNotFoundError(match.id);
+		// Resume: do not re-enqueue packshot (job may already be in flight).
 		return resumeResolvedMatch(deps, latest, 'same');
 	}
 
 	const result = await finishResolvedSame(deps, match);
+	await enqueuePackshotForDisplayFace(
+		deps,
+		match,
+		result.closet_item_id ?? match.candidate_closet_item_id
+	);
 	logResolveCalibrationLabel(deps.log, { match, decision: 'same', result });
 	return result;
 }
@@ -132,6 +138,8 @@ async function resolveNew(
 	});
 
 	const result = await completeResolvedNew(deps, match, closetItemId, prepared.crop_blur_hash, false);
+	// Fresh tile from ask→new: same display packshot path as silent create.
+	await enqueuePackshotForDisplayFace(deps, match, closetItemId);
 	logResolveCalibrationLabel(deps.log, { match, decision: 'new', result });
 	return result;
 }
@@ -193,6 +201,45 @@ async function finishResolvedSame(
 		identity_reason: 'same',
 		identity_score: match.score,
 	};
+}
+
+/**
+ * Generative display face for a closet tile.
+ * Used on silent create (queue), ask→new, and ask→same — never while ask is still pending.
+ */
+async function enqueuePackshotForDisplayFace(
+	deps: OutfitIdentityWriteDeps,
+	match: ClosetItemMatchWithOutfit,
+	closetItemId: string
+): Promise<void> {
+	if (!deps.garmentFacePackshot) return;
+	if (!match.bounding_box) return;
+
+	try {
+		const face = await deps.closet.getClosetItemFace(match.user_id, closetItemId);
+		if (face?.flatlay_image_key?.trim()) {
+			deps.log.info('garment_face_packshot_skip_existing', {
+				match_id: match.id,
+				closet_item_id: closetItemId,
+			});
+			return;
+		}
+		await deps.garmentFacePackshot.enqueue({
+			userId: match.user_id,
+			closetItemId,
+			imageKey: match.outfit_image_key,
+			sourceImageKey: match.outfit_image_key,
+			label: match.extract_snapshot.label,
+			category: match.extract_snapshot.category,
+			boundingBox: match.bounding_box,
+		});
+	} catch (err) {
+		deps.log.warn(
+			'garment_face_packshot_enqueue_failed',
+			{ match_id: match.id, closet_item_id: closetItemId },
+			err
+		);
+	}
 }
 
 /**

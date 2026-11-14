@@ -96,6 +96,8 @@ SAM_SEGMENT_PROVIDER=fal
 FAL_KEY=
 # Async gated SAM cutout → closet_items.cutout_image_key (queue: closet-garment-face). Off by default (Fal $).
 # GARMENT_FACE_CUTOUT_ENABLED=true
+# Generative packshot for new tiles (create + ask→new) and ask→same → flatlay_image_key. Off by default (Fal $).
+# GARMENT_FACE_PACKSHOT_ENABLED=true
 
 # Closet identity visual embed. Default is Replicate DINOv3 (instance/appearance, 1024-d).
 # Hugging Face hf-inference does not host DINOv2. CLIP/Jina collapsed different jackets (~0.85).
