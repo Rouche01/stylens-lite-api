@@ -63,6 +63,7 @@ Identity / Vectorize **always** use real padded crops. Cutout and packshot are p
 - Cutout: gated SAM + BiRefNet; reject → keep crop face.  
 - Packshot: Nano Banana flat-lay; prefers stored cutout when present, else wear photo.  
 - List/detail: `isolated_image_url` prefers flatlay > cutout > crop; expose `crop_image_url` + `face_source`.  
+- Judge (eval only): `GET /closet/eval/faces?userId=<EVAL_USER_ID>&admin_key=…` — crop | stored cutout | stored packshot gallery (`&format=json` for tooling). Eval UI **Faces** tab proxies via `/api/closet-faces`.  
 - Quality plan: [`.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md`](../.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md).
 
 ## Sync vs queue boundaries

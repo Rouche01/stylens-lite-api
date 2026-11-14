@@ -65,6 +65,132 @@ export function escapeHtml(value: string): string {
 		.replace(/'/g, '&#39;');
 }
 
+/** Admin judge gallery: one row per closet item — crop | stored cutout | stored packshot. */
+export type ClosetFaceGalleryItem = {
+	id: string;
+	label: string;
+	subtitle: string;
+	faceSource: 'crop' | 'cutout' | 'flatlay';
+	cropUrl: string;
+	cutoutUrl: string;
+	flatlayUrl: string;
+	aspectRatio: number;
+	/** Relative preview path (admin_key appended by the gallery page JS). */
+	previewHref: string;
+};
+
+export type ClosetFaceGalleryPage = {
+	title: string;
+	subtitle: string;
+	userId: string;
+	items: ClosetFaceGalleryItem[];
+};
+
+export function renderClosetFaceGalleryHtml(page: ClosetFaceGalleryPage): string {
+	const rows = page.items
+		.map((item) => {
+			const ratio = item.aspectRatio > 0 ? item.aspectRatio : CLOSET_SCREEN_FALLBACK_ASPECT;
+			const cell = (url: string, fit: 'fill' | 'contain', empty: string) =>
+				url
+					? `<img class="face-img ${fit}" src="${escapeHtml(url)}" alt=""/>`
+					: `<div class="ph">${escapeHtml(empty)}</div>`;
+			return `
+<article class="row" data-id="${escapeHtml(item.id)}" data-source="${escapeHtml(item.faceSource)}">
+  <header class="row-head">
+    <div>
+      <h2>${escapeHtml(item.label)}</h2>
+      <p class="sub">${escapeHtml(item.subtitle)} · <span class="pill">${escapeHtml(item.faceSource)}</span></p>
+      <p class="mono id">${escapeHtml(item.id)}</p>
+    </div>
+    <a class="link" data-preview="${escapeHtml(item.previewHref)}" href="#">Face spike ↗</a>
+  </header>
+  <div class="cols">
+    <figure class="hero" style="aspect-ratio:${ratio}">
+      ${cell(item.cropUrl, 'fill', 'no crop')}
+      <figcaption>Crop</figcaption>
+    </figure>
+    <figure class="hero mint" style="aspect-ratio:${ratio}">
+      ${cell(item.cutoutUrl, 'contain', 'no cutout')}
+      <figcaption>Cutout</figcaption>
+    </figure>
+    <figure class="hero mint" style="aspect-ratio:${ratio}">
+      ${cell(item.flatlayUrl, 'contain', 'no packshot')}
+      <figcaption>Packshot</figcaption>
+    </figure>
+  </div>
+</article>`;
+		})
+		.join('\n');
+
+	const empty = page.items.length
+		? ''
+		: `<p class="empty">No browse closet items for this eval user. Run extract:smoke with packshot enabled.</p>`;
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>${escapeHtml(page.title)}</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-display@600&amp;f[]=satoshi@500,600&amp;display=swap"/>
+<style>
+  :root { --green:#3d4a3d; --lime:#b8e994; --mist:#e8f5e8; --radius:16px; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Satoshi, ui-sans-serif, system-ui, sans-serif; background:#dfe9dc; color:#2c352c; }
+  .top { padding:16px 20px 8px; display:flex; flex-wrap:wrap; gap:12px; align-items:baseline; justify-content:space-between; }
+  h1 { font-family:"Clash Display",sans-serif; font-size:22px; margin:0; color:var(--green); }
+  .lead { margin:0; color:#5a675a; font-size:14px; max-width:52rem; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; color:#7a8a7a; }
+  .page { padding:8px 20px 48px; display:grid; gap:28px; max-width:1100px; }
+  .row { background: color-mix(in srgb, white 55%, transparent); border-radius:20px; padding:14px 14px 18px; }
+  .row-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:12px; }
+  .row-head h2 { font-family:"Clash Display",sans-serif; font-size:16px; margin:0 0 4px; color:var(--green); }
+  .sub { margin:0; font-size:13px; color:#5a675a; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:var(--green); color:var(--lime); font-size:11px; font-weight:600; }
+  .link { color:var(--green); font-weight:600; font-size:13px; text-decoration:none; white-space:nowrap; }
+  .cols { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+  @media (max-width:820px) { .cols { grid-template-columns:1fr; } }
+  .hero { position:relative; border-radius:var(--radius); overflow:hidden; background:#cfdccf; max-width:100%; }
+  .hero.mint { background:var(--mist); }
+  .face-img { position:absolute; inset:0; width:100%; height:100%; }
+  .face-img.fill { object-fit:cover; object-position:top center; }
+  .face-img.contain { object-fit:contain; object-position:center; padding:10px; }
+  .ph { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:12px; text-align:center; color:#7a8a7a; font-size:12px; }
+  figcaption { position:absolute; left:0; right:0; bottom:0; z-index:2; padding:20px 10px 8px;
+    background:linear-gradient(transparent, color-mix(in srgb, var(--green) 72%, black));
+    color:#fff; font-size:12px; font-weight:600; }
+  .empty { padding:24px; color:#5a675a; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>${escapeHtml(page.title)}</h1>
+    <p class="lead">${escapeHtml(page.subtitle)}</p>
+  </div>
+  <p class="mono">judge: prefer packshot when face_source=flatlay</p>
+</header>
+<main class="page">
+${rows || empty}
+</main>
+<script>
+  (function () {
+    var key = new URL(location.href).searchParams.get('admin_key') || '';
+    document.querySelectorAll('[data-preview]').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        var href = a.getAttribute('data-preview') || '';
+        var u = new URL(href, location.origin);
+        if (key) u.searchParams.set('admin_key', key);
+        window.open(u.toString(), '_blank', 'noopener');
+      });
+    });
+  })();
+</script>
+</body>
+</html>`;
+}
+
 function boxStyle(box: PreviewBox['bounding_box']): string {
 	return [
 		`left:${box.x}%`,

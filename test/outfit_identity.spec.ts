@@ -849,7 +849,9 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 				closetItemId: 'c1',
 				imageKey: 'users/u1/test.jpg',
 				label: 'olive shirt',
+				color: 'olive',
 				category: 'top',
+				subcategory: 'shirt',
 			},
 		]);
 	});
@@ -885,7 +887,9 @@ describe('OutfitIdentityProcessor.resolveMatch', () => {
 				closetItemId: result.closet_item_id,
 				imageKey: 'users/u1/test.jpg',
 				label: 'olive shirt',
+				color: 'olive',
 				category: 'top',
+				subcategory: 'shirt',
 			},
 		]);
 	});
@@ -1720,7 +1724,9 @@ function createHarness(options: {
 		closetItemId: string;
 		imageKey: string;
 		label: string;
+		color?: string | null;
 		category?: string | null;
+		subcategory?: string | null;
 	}> = [];
 	const processor = new OutfitIdentityProcessor(
 		{ extractOutfitItems: async () => extraction },
@@ -1758,7 +1764,9 @@ function createHarness(options: {
 					closetItemId: job.closetItemId,
 					imageKey: job.imageKey,
 					label: job.label,
+					color: job.color,
 					category: job.category,
+					subcategory: job.subcategory,
 				});
 				return true;
 			},

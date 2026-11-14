@@ -18,7 +18,10 @@ export type GarmentFaceJob = {
 	closetItemId: string;
 	imageKey: string;
 	label: string;
+	/** Extract color — packshot prompt hint; reference pixels win on conflict. */
+	color?: string | null;
 	category?: string | null;
+	subcategory?: string | null;
 	boundingBox: { x: number; y: number; width: number; height: number };
 	/** Required for packshot when cutting from the wear photo. */
 	sourceImageKey?: string;
@@ -124,6 +127,9 @@ export class GarmentFaceService {
 			apiKey: this.env.FAL_KEY,
 			imageUrl: sourceUrl,
 			label: job.label,
+			color: job.color,
+			category: job.category,
+			subcategory: job.subcategory,
 		});
 		const flatlayKey = `cutouts/faces/${job.closetItemId}/flatlay-${crypto.randomUUID()}.png`;
 		await this.env.OUTFIT_PHOTOS_BUCKET.put(flatlayKey, packshot.pngBytes, {
@@ -212,7 +218,9 @@ type CreatedFaceItem = {
 	is_new_closet_item?: boolean;
 	closet_item_id?: string | null;
 	label?: string;
+	color?: string | null;
 	category?: string | null;
+	subcategory?: string | null;
 	bounding_box?: GarmentFaceJob['boundingBox'] | null;
 };
 
@@ -245,7 +253,9 @@ export async function enqueueGarmentFacesForCreatedItems(
 			imageKey: params.imageKey,
 			sourceImageKey: params.imageKey,
 			label: item.label,
+			color: item.color,
 			category: item.category,
+			subcategory: item.subcategory,
 			boundingBox: item.bounding_box,
 		};
 		await maybeEnqueueGarmentFaceCutout(env, faceJob, log);

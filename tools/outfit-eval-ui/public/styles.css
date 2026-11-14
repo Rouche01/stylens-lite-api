@@ -604,6 +604,131 @@ button.chip.active-unclear {
 	background: #fff;
 }
 
+/* Author display rules beat the UA [hidden] stylesheet — force hide. */
+[hidden] {
+	display: none !important;
+}
+
+.mode-toggle {
+	display: inline-flex;
+	gap: 0.25rem;
+	padding: 0.15rem;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	background: var(--bg-elev);
+}
+
+.mode-btn.active {
+	background: var(--accent);
+	color: var(--accent-ink);
+	border-color: transparent;
+}
+
+.faces-stage {
+	padding: 1rem 1.25rem 2.5rem;
+	max-width: 1100px;
+	width: 100%;
+	margin: 0 auto;
+}
+
+.faces-head {
+	margin-bottom: 1rem;
+}
+
+.faces-head h1 {
+	margin: 0 0 0.35rem;
+	font-size: 1.35rem;
+}
+
+.faces-grid {
+	display: grid;
+	gap: 1.25rem;
+}
+
+.face-card {
+	background: var(--bg-elev);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	padding: 0.9rem 1rem 1.1rem;
+	box-shadow: var(--shadow);
+}
+
+.face-card-head h2 {
+	margin: 0 0 0.25rem;
+	font-size: 1.05rem;
+}
+
+.face-card .pill {
+	display: inline-block;
+	padding: 0.1rem 0.45rem;
+	border-radius: 999px;
+	background: var(--accent);
+	color: var(--accent-ink);
+	font-size: 0.72rem;
+	font-weight: 600;
+}
+
+.face-cols {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0.65rem;
+	margin-top: 0.75rem;
+}
+
+.face-cols figure {
+	position: relative;
+	margin: 0;
+	border-radius: 12px;
+	overflow: hidden;
+	background: #e4ddd0;
+	aspect-ratio: var(--face-ratio, 0.8);
+}
+
+.face-cols figure.mint {
+	background: #e7f2ec;
+}
+
+.face-cols img {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	object-position: center;
+	padding: 0.4rem;
+}
+
+.face-cols figure:first-child img {
+	object-fit: cover;
+	object-position: top center;
+	padding: 0;
+}
+
+.face-ph {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.75rem;
+	text-align: center;
+	color: var(--muted);
+	font-size: 0.8rem;
+}
+
+.face-cols figcaption {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 1;
+	padding: 1.4rem 0.55rem 0.45rem;
+	background: linear-gradient(transparent, rgba(28, 25, 20, 0.72));
+	color: #fff;
+	font-size: 0.75rem;
+	font-weight: 600;
+}
+
 @media (max-width: 960px) {
 	.stage {
 		grid-template-columns: 1fr;
@@ -616,5 +741,9 @@ button.chip.active-unclear {
 
 	.preview {
 		--preview-frame-h: min(62vh, calc(100vh - 12rem));
+	}
+
+	.face-cols {
+		grid-template-columns: 1fr;
 	}
 }

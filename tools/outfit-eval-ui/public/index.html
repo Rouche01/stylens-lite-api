@@ -16,24 +16,29 @@
 		<header class="top">
 			<div class="brand">
 				<span class="brand-mark">GoStylens</span>
-				<span class="brand-sub">extract / identity labels</span>
+				<span class="brand-sub" id="brandSub">extract / identity labels</span>
 			</div>
 			<div class="top-controls">
-				<label class="field">
+				<div class="mode-toggle" role="group" aria-label="View mode">
+					<button type="button" id="modeLabels" class="ghost mode-btn active">Labels</button>
+					<button type="button" id="modeFaces" class="ghost mode-btn">Faces</button>
+				</div>
+				<label class="field" id="smokeField">
 					<span>Smoke run</span>
 					<select id="smokeSelect"></select>
 				</label>
-				<div class="nav">
+				<div class="nav" id="photoNav">
 					<button type="button" id="prevBtn" class="ghost">← Prev</button>
 					<span id="photoIndex" class="mono muted">—</span>
 					<button type="button" id="nextBtn" class="ghost">Next →</button>
 				</div>
 				<button type="button" id="saveBtn" class="primary">Save labels</button>
+				<button type="button" id="refreshFacesBtn" class="ghost" hidden>Refresh faces</button>
 				<span id="saveStatus" class="mono muted" aria-live="polite"></span>
 			</div>
 		</header>
 
-		<main class="stage">
+		<main class="stage" id="labelsStage">
 			<section class="preview" aria-label="Photo preview">
 				<div class="preview-toolbar">
 					<div class="zoom-controls" role="group" aria-label="Zoom">
@@ -93,6 +98,15 @@
 					</p>
 				</section>
 			</aside>
+		</main>
+
+		<main class="faces-stage" id="facesStage" hidden aria-label="Closet face compare">
+			<div class="faces-head">
+				<h1>Closet faces</h1>
+				<p id="facesMeta" class="muted">Crop vs stored cutout vs packshot for the eval user.</p>
+			</div>
+			<div id="facesGrid" class="faces-grid"></div>
+			<p id="facesEmpty" class="empty" hidden>No closet faces yet. Run extract:smoke with packshot enabled.</p>
 		</main>
 
 		<script type="module" src="/app.js"></script>

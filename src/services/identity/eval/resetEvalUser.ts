@@ -44,7 +44,7 @@ export function assertEvalUserAllowed(env: ResetEvalUserEnv, userId: string): st
 	}
 	if (requested !== allowed) {
 		throw new EvalUserResetError(
-			'Refusing reset: userId must match EVAL_USER_ID (dedicated eval account only)',
+			'Refusing: userId must match EVAL_USER_ID (dedicated eval account only)',
 			403
 		);
 	}

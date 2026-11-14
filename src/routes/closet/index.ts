@@ -16,6 +16,7 @@ import getClosetIdentityStatusHandler from './handlers/getClosetIdentityStatusHa
 import listPendingClosetMatchesHandler from './handlers/listPendingClosetMatchesHandler';
 import resolveClosetMatchHandler from './handlers/resolveClosetMatchHandler';
 import resetEvalUserHandler from './handlers/resetEvalUserHandler';
+import evalClosetFacesHandler from './handlers/evalClosetFacesHandler';
 
 const requireClosetBrowse = requireFeatureFlagMiddleware(FeatureFlags.closetBrowse, {
 	message: 'Closet is unavailable',
@@ -28,6 +29,8 @@ router.post('/identity/embed', adminApiKeyMiddleware, embedClosetCropHandler);
 router.post('/identity/query', adminApiKeyMiddleware, queryClosetCropHandler);
 /** Wipe EVAL_USER_ID closet/identity state between eval cycles. */
 router.post('/eval/reset', adminApiKeyMiddleware, resetEvalUserHandler);
+/** Judge crop vs stored cutout/packshot for EVAL_USER_ID (HTML). */
+router.get('/eval/faces', adminApiKeyQueryMiddleware, evalClosetFacesHandler);
 router.get(
 	'/identity/status',
 	authMiddleware,

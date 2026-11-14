@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	escapeHtml,
 	renderClosetFaceCompareHtml,
+	renderClosetFaceGalleryHtml,
 	renderClosetPreviewHtml,
 	renderClosetScreenHtml,
 } from '../src/routes/closet/handlers/closetPreviewHtml';
@@ -167,6 +168,34 @@ describe('renderClosetFaceCompareHtml', () => {
 		expect(html).toContain('Run packshot');
 		expect(html).not.toContain('admin_key');
 		expect(html).not.toContain('X-Amz-Signature');
+	});
+
+	it('renders eval face gallery rows for crop vs stored faces', () => {
+		const html = renderClosetFaceGalleryHtml({
+			title: 'Eval closet faces',
+			subtitle: 'judge packshot',
+			userId: 'eval-user',
+			items: [
+				{
+					id: 'item-1',
+					label: 'Pink tee',
+					subtitle: 'pink shirt',
+					faceSource: 'flatlay',
+					cropUrl: 'http://127.0.0.1:8787/assets/isolate?key=p.jpg&cutout=0',
+					cutoutUrl: 'https://example.com/cutout.png',
+					flatlayUrl: 'https://example.com/flatlay.png',
+					aspectRatio: 0.9,
+					previewHref: '/closet/items/item-1/preview?layout=face',
+				},
+			],
+		});
+		expect(html).toContain('Pink tee');
+		expect(html).toContain('flatlay');
+		expect(html).toContain('cutout.png');
+		expect(html).toContain('flatlay.png');
+		expect(html).toContain('cutout=0');
+		expect(html).toContain('data-preview="/closet/items/item-1/preview?layout=face"');
+		expect(html).not.toContain('admin_key=');
 	});
 
 	it('shows SAM failure note when face URL is empty', () => {

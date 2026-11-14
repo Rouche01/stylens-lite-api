@@ -230,7 +230,9 @@ async function enqueuePackshotForDisplayFace(
 			imageKey: match.outfit_image_key,
 			sourceImageKey: match.outfit_image_key,
 			label: match.extract_snapshot.label,
+			color: match.extract_snapshot.color,
 			category: match.extract_snapshot.category,
+			subcategory: match.extract_snapshot.subcategory,
 			boundingBox: match.bounding_box,
 		});
 	} catch (err) {

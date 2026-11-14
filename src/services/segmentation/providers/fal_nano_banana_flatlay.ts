@@ -19,6 +19,14 @@ type FalNanoBananaEditResponse = {
 	error?: unknown;
 };
 
+export type FlatlayPromptOptions = {
+	label: string;
+	/** Extract color string — hint only; reference pixels win on conflict. */
+	color?: string | null;
+	category?: string | null;
+	subcategory?: string | null;
+};
+
 function asMediaUrl(value: unknown): string | undefined {
 	if (typeof value !== 'string' || value.length === 0) return undefined;
 	if (value.startsWith('http') || value.startsWith('data:image')) return value;
@@ -27,18 +35,20 @@ function asMediaUrl(value: unknown): string | undefined {
 
 function falFileToUrl(value: unknown): string | undefined {
 	if (value == null) return undefined;
-	if (typeof value === 'string') return asMediaUrl(value);
-	if (typeof value !== 'object' || Array.isArray(value)) return undefined;
-	const obj = value as FalImageFile;
-	const direct = asMediaUrl(obj.url) ?? asMediaUrl(obj.data_uri);
-	if (direct) return direct;
-	const raw = obj.file_data ?? obj.data;
-	if (typeof raw === 'string' && raw.length > 0) {
-		if (raw.startsWith('data:')) return raw;
-		const mime = obj.content_type || 'image/png';
-		return `data:${mime};base64,${raw}`;
+	if (typeof value !== 'string') {
+		if (typeof value !== 'object' || Array.isArray(value)) return undefined;
+		const obj = value as FalImageFile;
+		const direct = asMediaUrl(obj.url) ?? asMediaUrl(obj.data_uri);
+		if (direct) return direct;
+		const raw = obj.file_data ?? obj.data;
+		if (typeof raw === 'string' && raw.length > 0) {
+			if (raw.startsWith('data:')) return raw;
+			const mime = obj.content_type || 'image/png';
+			return `data:${mime};base64,${raw}`;
+		}
+		return undefined;
 	}
-	return undefined;
+	return asMediaUrl(value);
 }
 
 function extractImageUrl(json: FalNanoBananaEditResponse | null): string | undefined {
@@ -62,28 +72,76 @@ function summarizeFalError(body: string, json: FalNanoBananaEditResponse | null)
 	return body.slice(0, 500);
 }
 
-/** Catalog flat-lay / ghost-mannequin style prompt for a named worn garment. */
-export function flatlayPromptForLabel(label: string): string {
-	const piece = label.trim() || 'garment';
-	return [
+function normalizeCategory(category?: string | null): string {
+	return (category || '').trim().toLowerCase();
+}
+
+function categoryGuidance(category?: string | null, subcategory?: string | null): string[] {
+	const cat = normalizeCategory(category);
+	const sub = (subcategory || '').trim().toLowerCase();
+	const kind = sub || cat || 'garment';
+
+	if (cat === 'footwear') {
+		return [
+			`This is footwear (${kind}). Preserve the exact shoe type, height, toe shape, sole, and closures from the reference.`,
+			'Keep lace-ups as lace-ups, sneakers as sneakers, boots as boots — do not invent a different style (no Chelsea boot unless the reference is one).',
+			'Show a clean product view of the same shoe(s) as in the reference; do not swap in a generic catalog boot.',
+		];
+	}
+
+	if (cat === 'accessory') {
+		return [
+			`This is an accessory (${kind}). Preserve the exact silhouette, brim/strap/hardware, and any logo or embroidery from the reference.`,
+			'Match the visible fabric color in the reference image — never repaint the item to match a color word in the name.',
+		];
+	}
+
+	return [];
+}
+
+/**
+ * Catalog flat-lay / ghost-mannequin prompt.
+ * Reference image is authoritative for color and construction; label is type only.
+ */
+export function flatlayPromptForGarment(options: FlatlayPromptOptions): string {
+	const piece = options.label.trim() || 'garment';
+	const colorHint = options.color?.trim();
+	const parts = [
 		`Create a clean e-commerce catalog flat-lay product photo of only this ${piece}.`,
-		'Preserve the exact colors, pattern, print, fabric texture, and distinctive details from the reference.',
+		'The reference image is the source of truth for appearance: preserve the exact colors, pattern, print, fabric texture, logos, and distinctive details as seen in the image.',
+		'The garment name is only a type hint. If any word in the name (including a color word) conflicts with what you see, follow the reference image — never recolor to match the name.',
+	];
+	if (colorHint) {
+		parts.push(
+			`Extract color hint "${colorHint}" — use it only when it agrees with the reference; otherwise prefer the pixels.`
+		);
+	}
+	parts.push(...categoryGuidance(options.category, options.subcategory));
+	parts.push(
 		'No person, no mannequin, no hands, no phone, no room background.',
 		'Lay the garment neatly on a soft mint or light neutral surface, soft even studio lighting, slight natural shadow.',
-		'Square product shot, single garment filling most of the frame.',
-	].join(' ');
+		'Square product shot, single garment filling most of the frame.'
+	);
+	return parts.join(' ');
+}
+
+/** @deprecated Prefer flatlayPromptForGarment — kept for call sites that only have a label. */
+export function flatlayPromptForLabel(label: string): string {
+	return flatlayPromptForGarment({ label });
 }
 
 /**
  * Generative try-off / packshot via Fal Nano Banana edit (Gemini Flash Image).
- * Spike helper for admin face preview — not a product pipeline.
  */
 export async function falNanoBananaFlatlay(params: {
 	apiKey: string;
 	imageUrl: string;
 	label: string;
+	color?: string | null;
+	category?: string | null;
+	subcategory?: string | null;
 }): Promise<{ pngBytes: Uint8Array; model: string }> {
-	const { apiKey, imageUrl, label } = params;
+	const { apiKey, imageUrl, label, color, category, subcategory } = params;
 	if (!apiKey) {
 		throw new SegmentError('FAL_KEY is not set');
 	}
@@ -99,7 +157,7 @@ export async function falNanoBananaFlatlay(params: {
 			'Content-Type': 'application/json',
 		},
 		body: JSON.stringify({
-			prompt: flatlayPromptForLabel(label),
+			prompt: flatlayPromptForGarment({ label, color, category, subcategory }),
 			image_urls: [imageUrl],
 			num_images: 1,
 			aspect_ratio: '1:1',

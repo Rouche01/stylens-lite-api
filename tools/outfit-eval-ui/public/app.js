@@ -15,6 +15,10 @@ const state = {
 	saving: false,
 	view: { scale: 1, x: 0, y: 0 },
 	pan: null,
+	mode: 'labels', // labels | faces
+	faces: null,
+	facesLoading: false,
+	facesError: null,
 };
 
 const els = {
@@ -40,6 +44,17 @@ const els = {
 	missingItems: document.getElementById('missingItems'),
 	photoNotes: document.getElementById('photoNotes'),
 	photoNoteLinks: document.getElementById('photoNoteLinks'),
+	modeLabels: document.getElementById('modeLabels'),
+	modeFaces: document.getElementById('modeFaces'),
+	labelsStage: document.getElementById('labelsStage'),
+	facesStage: document.getElementById('facesStage'),
+	facesGrid: document.getElementById('facesGrid'),
+	facesEmpty: document.getElementById('facesEmpty'),
+	facesMeta: document.getElementById('facesMeta'),
+	refreshFacesBtn: document.getElementById('refreshFacesBtn'),
+	smokeField: document.getElementById('smokeField'),
+	photoNav: document.getElementById('photoNav'),
+	brandSub: document.getElementById('brandSub'),
 };
 
 function okResults() {
@@ -268,6 +283,9 @@ async function init() {
 	}
 
 	els.smokeSelect.addEventListener('change', () => loadSmoke(els.smokeSelect.value));
+	els.modeLabels?.addEventListener('click', () => setMode('labels'));
+	els.modeFaces?.addEventListener('click', () => setMode('faces'));
+	els.refreshFacesBtn?.addEventListener('click', () => loadClosetFaces({ force: true }));
 	els.prevBtn.addEventListener('click', () => stepPhoto(-1));
 	els.nextBtn.addEventListener('click', () => stepPhoto(1));
 	els.saveBtn.addEventListener('click', saveLabels);
@@ -923,8 +941,106 @@ async function saveLabels() {
 	}
 }
 
+function setMode(mode) {
+	state.mode = mode === 'faces' ? 'faces' : 'labels';
+	const faces = state.mode === 'faces';
+	els.modeLabels?.classList.toggle('active', !faces);
+	els.modeFaces?.classList.toggle('active', faces);
+	if (els.labelsStage) els.labelsStage.hidden = faces;
+	if (els.facesStage) els.facesStage.hidden = !faces;
+	if (els.smokeField) els.smokeField.hidden = faces;
+	if (els.photoNav) els.photoNav.hidden = faces;
+	if (els.saveBtn) els.saveBtn.hidden = faces;
+	if (els.refreshFacesBtn) els.refreshFacesBtn.hidden = !faces;
+	if (els.brandSub) {
+		els.brandSub.textContent = faces
+			? 'closet faces · crop vs packshot'
+			: 'extract / identity labels';
+	}
+	if (faces) {
+		loadClosetFaces();
+	}
+}
+
+async function loadClosetFaces({ force = false } = {}) {
+	if (state.facesLoading) return;
+	if (state.faces && !force && !state.facesError) {
+		renderFaces();
+		return;
+	}
+	state.facesLoading = true;
+	state.facesError = null;
+	els.facesMeta.textContent = 'Loading closet faces from local API…';
+	els.facesGrid.innerHTML = '';
+	els.facesEmpty.hidden = true;
+	try {
+		const userId = state.smoke?.user_id || '';
+		const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+		const data = await api(`/api/closet-faces${qs}`);
+		state.faces = data;
+		renderFaces();
+	} catch (err) {
+		state.faces = null;
+		state.facesError = err?.message || String(err);
+		els.facesMeta.textContent = state.facesError;
+		els.facesEmpty.hidden = false;
+		els.facesEmpty.textContent = state.facesError;
+	} finally {
+		state.facesLoading = false;
+	}
+}
+
+function faceCellHtml(url, empty) {
+	if (url) {
+		return `<img src="${escapeAttr(url)}" alt="" loading="lazy"/>`;
+	}
+	return `<div class="face-ph">${escapeHtml(empty)}</div>`;
+}
+
+function renderFaces() {
+	const items = state.faces?.items || [];
+	const userId = state.faces?.user_id || state.smoke?.user_id || '—';
+	els.facesMeta.textContent = `${items.length} browse items · user ${shortId(userId)} · list prefers flatlay > cutout > crop`;
+	els.facesGrid.innerHTML = '';
+	els.facesEmpty.hidden = items.length > 0;
+	if (!items.length) {
+		els.facesEmpty.textContent = 'No closet faces yet. Run extract:smoke with packshot enabled.';
+		return;
+	}
+	for (const item of items) {
+		const card = document.createElement('article');
+		card.className = 'face-card';
+		const ratio = item.aspectRatio > 0 ? item.aspectRatio : 0.8;
+		card.innerHTML = `
+			<header class="face-card-head">
+				<div>
+					<h2>${escapeHtml(item.label || 'Item')}</h2>
+					<p class="muted small">${escapeHtml(item.subtitle || '')} · <span class="pill">${escapeHtml(item.faceSource || 'crop')}</span></p>
+					<p class="mono muted small">${escapeHtml(item.id || '')}</p>
+				</div>
+			</header>
+			<div class="face-cols" style="--face-ratio:${ratio}">
+				<figure>
+					${faceCellHtml(item.cropUrl, 'no crop')}
+					<figcaption>Crop</figcaption>
+				</figure>
+				<figure class="mint">
+					${faceCellHtml(item.cutoutUrl, 'no cutout')}
+					<figcaption>Cutout</figcaption>
+				</figure>
+				<figure class="mint">
+					${faceCellHtml(item.flatlayUrl, 'no packshot')}
+					<figcaption>Packshot</figcaption>
+				</figure>
+			</div>
+		`;
+		els.facesGrid.appendChild(card);
+	}
+}
+
 function onKey(ev) {
 	if (ev.target.matches('input, textarea, select')) return;
+	if (state.mode === 'faces') return;
 	if (ev.key === 'ArrowLeft') {
 		ev.preventDefault();
 		stepPhoto(-1);

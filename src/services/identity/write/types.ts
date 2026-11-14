@@ -57,7 +57,9 @@ export type GarmentFacePackshotScheduler = {
 		closetItemId: string;
 		imageKey: string;
 		label: string;
+		color?: string | null;
 		category?: string | null;
+		subcategory?: string | null;
 		boundingBox: { x: number; y: number; width: number; height: number };
 		sourceImageKey?: string;
 	}): Promise<boolean>;

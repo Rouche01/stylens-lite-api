@@ -90,25 +90,46 @@ const previewClosetItemHandler: RequestHandler<ApiRequest> = async (request) => 
 				category: details.category,
 			});
 
-			const face = await buildSamFace({
-				imageKey: wear.image_key,
-				label: details.label,
-				boundingBox: wear.bounding_box,
-				category: details.category,
-				log: request.log,
-			});
+			const storedCutoutUrl = details.cutout_image_key?.trim()
+				? await signDownloadUrlForKey(details.cutout_image_key.trim())
+				: '';
+			const storedFlatlayUrl = details.flatlay_image_key?.trim()
+				? await signDownloadUrlForKey(details.flatlay_image_key.trim())
+				: '';
 
-			const packshot = wantPackshot
-				? await buildPackshotFace({
-						sourceUrl: face.url || (await signDownloadUrlForKey(wear.image_key)),
-						label: details.label,
-						log: request.log,
-					})
-				: {
-						url: '',
-						note: 'Append &packshot=1 or tap Run packshot (Nano Banana edit; slow / billed).',
-						model: '',
-					};
+			// Prefer persisted faces for judgment; only regenerate when missing / forced.
+			let face = {
+				url: storedCutoutUrl || '',
+				note: storedCutoutUrl ? 'Stored cutout_image_key' : '',
+				model: storedCutoutUrl ? 'stored' : '',
+			};
+			if (!storedCutoutUrl) {
+				face = await buildSamFace({
+					imageKey: wear.image_key,
+					label: details.label,
+					boundingBox: wear.bounding_box,
+					category: details.category,
+					log: request.log,
+				});
+			}
+
+			let packshot = {
+				url: storedFlatlayUrl || '',
+				note: storedFlatlayUrl
+					? 'Stored flatlay_image_key (list isolated_image_url)'
+					: 'Append &packshot=1 or tap Run packshot (Nano Banana edit; slow / billed).',
+				model: storedFlatlayUrl ? 'stored' : '',
+			};
+			if (!storedFlatlayUrl && wantPackshot) {
+				packshot = await buildPackshotFace({
+					sourceUrl: face.url || (await signDownloadUrlForKey(wear.image_key)),
+					label: details.label,
+					color: details.color,
+					category: details.category,
+					subcategory: details.subcategory,
+					log: request.log,
+				});
+			}
 
 			const html = renderClosetFaceCompareHtml({
 				title: details.label,
@@ -232,6 +253,9 @@ const previewClosetItemHandler: RequestHandler<ApiRequest> = async (request) => 
 async function buildPackshotFace(params: {
 	sourceUrl: string;
 	label: string;
+	color?: string | null;
+	category?: string | null;
+	subcategory?: string | null;
 	log: ApiRequest['log'];
 }): Promise<{ url: string; note: string; model: string }> {
 	if (!params.sourceUrl) {
@@ -242,6 +266,9 @@ async function buildPackshotFace(params: {
 			apiKey: env.FAL_KEY,
 			imageUrl: params.sourceUrl,
 			label: params.label,
+			color: params.color,
+			category: params.category,
+			subcategory: params.subcategory,
 		});
 		const key = `cutouts/scratch/face-packshot-${crypto.randomUUID()}.png`;
 		await env.OUTFIT_PHOTOS_BUCKET.put(key, result.pngBytes, {

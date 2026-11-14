@@ -28,7 +28,36 @@ const SMOKE_DIR = resolve(process.env.OUTFIT_EVAL_SMOKE || join(ROOT, 'tmp/extra
 const LABELS_PATH = join(SMOKE_DIR, 'labels.json');
 const MANIFEST_PATH = join(SET_DIR, 'manifest.json');
 const IDENTITY_RUNS_DIR = resolve(process.env.OUTFIT_EVAL_IDENTITY_RUNS || join(ROOT, '.cursor/identity_runs'));
+const DEV_VARS_PATH = join(ROOT, '.dev.vars');
 const PORT = Number(process.env.OUTFIT_EVAL_PORT || 8788);
+
+function parseDevVars(text) {
+	const out = {};
+	for (const line of text.split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed || trimmed.startsWith('#')) continue;
+		const eq = trimmed.indexOf('=');
+		if (eq < 0) continue;
+		const key = trimmed.slice(0, eq).trim();
+		let value = trimmed.slice(eq + 1).trim();
+		if (
+			(value.startsWith('"') && value.endsWith('"')) ||
+			(value.startsWith("'") && value.endsWith("'"))
+		) {
+			value = value.slice(1, -1);
+		}
+		out[key] = value;
+	}
+	return out;
+}
+
+async function loadDevVars() {
+	try {
+		return parseDevVars(await readFile(DEV_VARS_PATH, 'utf8'));
+	} catch {
+		return {};
+	}
+}
 
 const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.JPG', '.JPEG', '.PNG', '.WEBP']);
 
@@ -314,6 +343,39 @@ const server = createServer(async (req, res) => {
 				return sendText(res, 500, `Failed to write manifest: ${err?.message || err}`);
 			}
 			return sendJson(res, 200, next);
+		}
+
+		if (req.method === 'GET' && pathname === '/api/closet-faces') {
+			const env = await loadDevVars();
+			const base = (env.EVAL_API_BASE_URL || 'http://127.0.0.1:8787').replace(/\/$/, '');
+			const adminKey = env.ADMIN_API_KEY;
+			const userId = (url.searchParams.get('userId') || env.EVAL_USER_ID || '').trim();
+			if (!adminKey || adminKey === 'dummy') {
+				return sendText(res, 500, 'ADMIN_API_KEY missing/dummy in .dev.vars');
+			}
+			if (!userId) {
+				return sendText(res, 400, 'userId required (or set EVAL_USER_ID)');
+			}
+			const upstream = `${base}/closet/eval/faces?userId=${encodeURIComponent(userId)}&format=json&admin_key=${encodeURIComponent(adminKey)}`;
+			try {
+				const apiRes = await fetch(upstream);
+				const text = await apiRes.text();
+				if (!apiRes.ok) {
+					return sendText(res, apiRes.status, text.slice(0, 500) || apiRes.statusText);
+				}
+				res.writeHead(200, {
+					'Content-Type': 'application/json; charset=utf-8',
+					'Cache-Control': 'no-store',
+				});
+				res.end(text);
+			} catch (err) {
+				return sendText(
+					res,
+					502,
+					`Cannot reach API at ${base} — start npm run dev. (${err?.message || err})`
+				);
+			}
+			return;
 		}
 
 		if (req.method === 'GET' && pathname === '/api/smoke') {

@@ -24,4 +24,9 @@ export {
 	type FaceQualityVerdict,
 } from './face_quality';
 export { falBirefnetMatte } from './providers/fal_birefnet';
-export { falNanoBananaFlatlay, flatlayPromptForLabel } from './providers/fal_nano_banana_flatlay';
+export {
+	falNanoBananaFlatlay,
+	flatlayPromptForGarment,
+	flatlayPromptForLabel,
+	type FlatlayPromptOptions,
+} from './providers/fal_nano_banana_flatlay';
