@@ -3,6 +3,7 @@ import {
 	cropLocalBoxPx,
 	evaluateFaceRgba,
 	faceCutoutPad,
+	facePrefersSam3First,
 	passesFaceQuality,
 } from '../src/services/segmentation/face_quality';
 import { sam3PromptCandidates } from '../src/services/segmentation/sam3_prompt';
@@ -23,13 +24,17 @@ function rgbaFrame(width: number, height: number, paint: (x: number, y: number) 
 }
 
 describe('evaluateFaceRgba / passesFaceQuality', () => {
-	it('accepts a solid garment occupying a healthy share of the frame', () => {
-		const rgba = rgbaFrame(100, 100, (x, y) =>
-			x >= 20 && x < 80 && y >= 10 && y < 90 ? [40, 40, 40, 255] : [0, 0, 0, 0]
-		);
+	it('accepts a solid garment with visible tone variation', () => {
+		const rgba = rgbaFrame(100, 100, (x, y) => {
+			if (x < 20 || x >= 80 || y < 10 || y >= 90) return [0, 0, 0, 0];
+			const tone = 70 + ((x + y) % 40);
+			return [tone, tone - 5, tone + 5, 255];
+		});
 		const metrics = evaluateFaceRgba(rgba, 100, 100, 0.9);
 		const verdict = passesFaceQuality(metrics);
 		expect(metrics.opaqueFrac).toBeCloseTo(0.48, 2);
+		expect(metrics.meanLuma).toBeGreaterThan(18);
+		expect(metrics.lumaStd).toBeGreaterThan(10);
 		expect(verdict.ok).toBe(true);
 	});
 
@@ -40,20 +45,48 @@ describe('evaluateFaceRgba / passesFaceQuality', () => {
 		const metrics = evaluateFaceRgba(rgba, 100, 100, 0.8);
 		const verdict = passesFaceQuality(metrics);
 		expect(verdict.ok).toBe(false);
-		expect(verdict.reason).toMatch(/opaque_frac|opaque_bbox/);
+		expect(verdict.reason).toMatch(/opaque_frac|opaque_bbox|mean_luma|fill_density/);
+	});
+
+	it('rejects near-black voids that still have high opaque_frac', () => {
+		const rgba = rgbaFrame(80, 80, (x, y) =>
+			x >= 10 && x < 70 && y >= 10 && y < 70 ? [4, 4, 4, 255] : [0, 0, 0, 0]
+		);
+		const metrics = evaluateFaceRgba(rgba, 80, 80, 0.9);
+		expect(metrics.opaqueFrac).toBeGreaterThan(0.5);
+		const verdict = passesFaceQuality(metrics);
+		expect(verdict.ok).toBe(false);
+		expect(verdict.reason).toMatch(/mean_luma|luma_std/);
+	});
+
+	it('rejects hollow outlines (low fill density)', () => {
+		// Thin ring: clears opaque_frac floor but fill_density stays low (empty interior).
+		const rgba = rgbaFrame(80, 80, (x, y) => {
+			const inOuter = x >= 5 && x < 75 && y >= 5 && y < 75;
+			const inHole = x >= 8 && x < 72 && y >= 8 && y < 72;
+			if (inOuter && !inHole) return [130, 110, 100, 255];
+			return [0, 0, 0, 0];
+		});
+		const metrics = evaluateFaceRgba(rgba, 80, 80, 0.9);
+		expect(metrics.opaqueFrac).toBeGreaterThan(0.06);
+		expect(metrics.fillDensity).toBeLessThan(0.22);
+		expect(passesFaceQuality(metrics).ok).toBe(false);
+		expect(passesFaceQuality(metrics).reason).toMatch(/fill_density/);
 	});
 
 	it('rejects low mask scores even when geometry looks fine', () => {
-		const rgba = rgbaFrame(40, 40, (x, y) =>
-			x >= 5 && x < 35 && y >= 5 && y < 35 ? [20, 20, 20, 200] : [0, 0, 0, 0]
-		);
+		const rgba = rgbaFrame(40, 40, (x, y) => {
+			if (x < 5 || x >= 35 || y < 5 || y >= 35) return [0, 0, 0, 0];
+			const tone = 60 + ((x * y) % 50);
+			return [tone, tone, tone, 200];
+		});
 		const metrics = evaluateFaceRgba(rgba, 40, 40, 0.2);
 		expect(passesFaceQuality(metrics).ok).toBe(false);
 		expect(passesFaceQuality(metrics).reason).toMatch(/mask_score/);
 	});
 });
 
-describe('faceCutoutPad / cropLocalBoxPx', () => {
+describe('faceCutoutPad / cropLocalBoxPx / facePrefersSam3First', () => {
 	it('tightens footwear pad vs default closet tile pad', () => {
 		const footwear = faceCutoutPad('footwear');
 		const top = faceCutoutPad('top');
@@ -63,6 +96,13 @@ describe('faceCutoutPad / cropLocalBoxPx', () => {
 
 	it('builds an inset full-frame box on the crop', () => {
 		expect(cropLocalBoxPx(200, 100, 0.02)).toEqual([4, 2, 196, 98]);
+	});
+
+	it('prefers SAM3 first for footwear and accessory only', () => {
+		expect(facePrefersSam3First('footwear')).toBe(true);
+		expect(facePrefersSam3First('accessory')).toBe(true);
+		expect(facePrefersSam3First('top')).toBe(false);
+		expect(facePrefersSam3First(null)).toBe(false);
 	});
 });
 

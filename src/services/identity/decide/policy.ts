@@ -163,7 +163,11 @@ export type IdentityCreateReason =
 	| 'visibility_timeout'
 	| 'd1_failed'
 	| 'race_lost'
-	| 'existing_crop';
+	| 'existing_crop'
+	/** Create-side gate: unusable extract box — no closet tile. */
+	| 'ignored_unusable_box'
+	/** Create-side gate: low extract confidence with other items on the outfit. */
+	| 'ignored_low_confidence';
 
 export type IdentityDecision =
 	| {

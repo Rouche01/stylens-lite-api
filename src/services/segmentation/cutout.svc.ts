@@ -1,4 +1,4 @@
-import { cropJpegWithTrim } from '../../utils/cf_images.utils';
+import { cropJpegWithTrim, orientImageJpeg } from '../../utils/cf_images.utils';
 import { percentBoxToTrim } from '../../utils/bounding_box';
 import { signDownloadUrlForKey } from '../../utils/assets.utils';
 import { getImageDimensions } from '../../utils/image.utils';
@@ -8,6 +8,8 @@ import {
 	cropLocalBoxPx,
 	evaluateFaceCutoutPng,
 	faceCutoutPad,
+	facePrefersSam3First,
+	faceQualityRank,
 	passesFaceQuality,
 	type FaceQualityMetrics,
 	type FaceQualityVerdict,
@@ -161,10 +163,12 @@ export class CutoutService {
 			throw new Error(`Outfit image not found in R2: ${imageKey}`);
 		}
 
-		const image = await object.arrayBuffer();
-		const fullDims = await getImageDimensions(image);
+		const raw = await object.arrayBuffer();
+		// Match identity/catalog: orient first, then trim on oriented pixel size (EXIF swap).
+		const oriented = await orientImageJpeg(this.images, raw);
+		const fullDims = await getImageDimensions(oriented);
 		const trim = percentBoxToTrim(boundingBox, fullDims.width, fullDims.height, faceCutoutPad(category));
-		const cropJpeg = await cropJpegWithTrim(this.images, image, trim);
+		const cropJpeg = await cropJpegWithTrim(this.images, oriented, trim, 85, { alreadyOriented: true });
 		const cropDims = await getImageDimensions(cropJpeg);
 
 		const cropImageKey = `cutouts/scratch/face-crop-${crypto.randomUUID()}.jpg`;
@@ -187,6 +191,7 @@ export class CutoutService {
 				prefer_box_first: preferBoxFirst,
 				box_px: localBox.join(','),
 				label: label || '',
+				category: category || '',
 			});
 			const segmented = await this.provider.segmentBox({
 				image: cropJpeg,
@@ -205,22 +210,34 @@ export class CutoutService {
 				mask_score: segmented.maskScore ?? null,
 				opaque_frac: Number(quality.opaqueFrac.toFixed(4)),
 				opaque_bbox_frac: Number(quality.opaqueBboxFrac.toFixed(4)),
+				mean_luma: Number(quality.meanLuma.toFixed(1)),
+				luma_std: Number(quality.lumaStd.toFixed(1)),
+				fill_density: Number(quality.fillDensity.toFixed(4)),
 				quality_ok: verdict.ok,
 				quality_reason: verdict.reason,
 			});
 			return { segmented, quality, verdict };
 		};
 
-		let best = await trySegment(true);
+		// Footwear/accessory: SAM3 concept first — box-first SAM2 often yields black voids / person blobs.
+		const sam3First = facePrefersSam3First(category) && Boolean(label?.trim());
+		const firstPreferBox = !sam3First;
+		let best = await trySegment(firstPreferBox);
 		if (!best.verdict.ok && label?.trim()) {
-			log.info('cutout_face_retry_sam3', { reason: best.verdict.reason });
+			log.info('cutout_face_retry_alt', {
+				reason: best.verdict.reason,
+				next_prefer_box_first: sam3First,
+			});
 			try {
-				const retry = await trySegment(false);
-				if (retry.verdict.ok || retry.quality.opaqueFrac > best.quality.opaqueFrac) {
+				const retry = await trySegment(sam3First);
+				if (
+					retry.verdict.ok ||
+					(!best.verdict.ok && faceQualityRank(retry.quality) > faceQualityRank(best.quality))
+				) {
 					best = retry;
 				}
 			} catch (err) {
-				log.warn('cutout_face_sam3_retry_failed', {
+				log.warn('cutout_face_alt_retry_failed', {
 					error: err instanceof Error ? err.message : String(err),
 				});
 			}

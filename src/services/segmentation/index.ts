@@ -17,6 +17,8 @@ export {
 	evaluateFaceCutoutPng,
 	evaluateFaceRgba,
 	faceCutoutPad,
+	facePrefersSam3First,
+	faceQualityRank,
 	passesFaceQuality,
 	type FaceQualityMetrics,
 	type FaceQualityVerdict,

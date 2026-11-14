@@ -275,7 +275,7 @@ async function buildSamFace(params: {
 			category: params.category,
 		});
 
-		const qualityNote = `opaque=${result.quality.opaqueFrac.toFixed(3)} bbox=${result.quality.opaqueBboxFrac.toFixed(3)}${
+		const qualityNote = `opaque=${result.quality.opaqueFrac.toFixed(3)} bbox=${result.quality.opaqueBboxFrac.toFixed(3)} luma=${result.quality.meanLuma.toFixed(0)}±${result.quality.lumaStd.toFixed(0)} fill=${result.quality.fillDensity.toFixed(2)}${
 			result.maskScore != null ? ` score=${result.maskScore.toFixed(3)}` : ''
 		}`;
 
@@ -314,9 +314,14 @@ async function buildSamFace(params: {
 				params.log?.warn('preview_face_matte_quality_reject', {
 					reason: matteVerdict.reason,
 					opaque_frac: matteQuality.opaqueFrac,
+					mean_luma: matteQuality.meanLuma,
 				});
-				note = `SAM ok; BiRefNet rejected (${matteVerdict.reason}). Using SAM. ${qualityNote}`;
-				return { url: samUrl, note, model };
+				// Don't promote raw SAM when matting collapses to a black void / hollow — keep padded crop.
+				return {
+					url: '',
+					note: `Face quality reject after BiRefNet (${matteVerdict.reason}; ${qualityNote}). Keep padded crop.`,
+					model: `${result.model}+birefnet`,
+				};
 			}
 			const matteKey = `cutouts/scratch/face-matte-${crypto.randomUUID()}.png`;
 			await env.OUTFIT_PHOTOS_BUCKET.put(matteKey, faceBytes, {

@@ -1,6 +1,5 @@
 import { createClosetDB } from '../../../db';
 import { ClothingItem } from '../../../types';
-import { identityEmbedBox } from '../../../utils/bounding_box';
 import { Logger } from '../../../utils/logger.utils';
 import { createOutfitExtractionService } from '../../outfit_extraction.svc';
 import { createRealtimeService } from '../../realtime.svc';
@@ -33,7 +32,8 @@ import {
 import { createClosetMatchDigestScheduler } from '../notify/digest';
 import { createClosetCatalogNotifier, type ClosetCatalogNotifier } from '../notify/catalogBroadcast';
 import { ClosetMatchResolvedError, IdentityBusyError } from './errors';
-import { commitNewItem, commitUnindexedItem } from './commit';
+import { commitNewItem } from './commit';
+import { closetCreateIgnoreReason } from './createGate';
 import {
 	extractSnapshot,
 	extractionConfidence,
@@ -156,6 +156,7 @@ export class OutfitIdentityProcessor {
 						imageKey: params.imageKey,
 						outfitId: outfit.id,
 						item,
+						extractItemCount: extracted.items.length,
 						signal: params.signal,
 					},
 					runLog
@@ -335,6 +336,8 @@ export class OutfitIdentityProcessor {
 			imageKey: string;
 			outfitId: string;
 			item: ClothingItem;
+			/** Total extract items on this outfit (for low-confidence sole-item exception). */
+			extractItemCount: number;
 			signal?: AbortSignal;
 		},
 		log: Logger
@@ -396,33 +399,30 @@ export class OutfitIdentityProcessor {
 			}
 		}
 
-		const box = params.item.bounding_box;
-		if (
-			!box ||
-			!identityEmbedBox(box, {
-				category: params.item.category,
-				subcategory: params.item.subcategory,
-			})
-		) {
-			// Tiny false crops poison Vectorize + crop-color; keep a D1 tile, skip embed.
-			// (Brim-only hat strips are expanded by the encoder instead of skipped.)
-			log.warn('outfit_identity_unusable_box', {
+		const ignoreReason = closetCreateIgnoreReason(params.item, {
+			extractItemCount: params.extractItemCount,
+		});
+		if (ignoreReason) {
+			const box = params.item.bounding_box;
+			log.warn('closet_item_ignored', {
 				outfit_id: params.outfitId,
+				reason: ignoreReason,
 				label: params.item.label,
 				category: params.item.category,
 				subcategory: params.item.subcategory,
+				confidence: params.item.confidence,
+				extract_item_count: params.extractItemCount,
 				box_w: box?.width,
 				box_h: box?.height,
 				box_area: box ? box.width * box.height : undefined,
 			});
 			return {
 				kind: 'final',
-				item: await commitUnindexedItem(this.writeDeps(log), params, {
-					action: 'create',
-					reason: 'skip_query',
-				}),
+				item: failedItem(params.item, ignoreReason),
 			};
 		}
+
+		const box = params.item.bounding_box!;
 
 		let prepared: PreparedClosetCrop;
 		try {
@@ -446,6 +446,12 @@ export class OutfitIdentityProcessor {
 				},
 				err
 			);
+			log.warn('closet_item_ignored', {
+				outfit_id: params.outfitId,
+				reason: 'embed_failed',
+				label: params.item.label,
+				category: params.item.category,
+			});
 			return { kind: 'final', item: failedItem(params.item, 'embed_failed') };
 		}
 

@@ -436,7 +436,7 @@ describe('OutfitIdentityProcessor', () => {
 		expect(harness.closet.items).toHaveLength(1);
 	});
 
-	it('creates without embedding when a non-hat box is a tiny false strip', async () => {
+	it('ignores a non-hat tiny false strip instead of creating an unindexed tile', async () => {
 		const harness = createHarness({
 			neighbors: [],
 			items: [
@@ -455,12 +455,47 @@ describe('OutfitIdentityProcessor', () => {
 		});
 
 		expect(result?.items[0]).toMatchObject({
-			identity_status: 'created',
-			identity_reason: 'skip_query',
-			is_new_closet_item: true,
+			identity_status: 'failed',
+			identity_reason: 'ignored_unusable_box',
+			is_new_closet_item: false,
+			closet_item_id: null,
 		});
 		expect(harness.identity.prepares).toBe(0);
 		expect(harness.identity.upserts).toHaveLength(0);
+		expect(harness.closet.items).toHaveLength(0);
+	});
+
+	it('ignores low-confidence extracts when other items exist on the outfit', async () => {
+		const harness = createHarness({
+			neighbors: [],
+			items: [
+				clothingItem({
+					label: 'navy tee',
+					bounding_box: { x: 20, y: 10, width: 40, height: 35 },
+				}),
+				clothingItem({
+					label: 'mystery scrap',
+					confidence: ExtractionConfidence.LOW,
+					bounding_box: { x: 55, y: 50, width: 25, height: 30 },
+				}),
+			],
+		});
+		const result = await harness.processor.process({
+			userId: 'u1',
+			imageUrl: 'https://img/test.jpg',
+			imageKey: 'users/u1/test.jpg',
+		});
+
+		expect(result?.items).toHaveLength(2);
+		expect(result?.items[0]).toMatchObject({
+			identity_status: 'created',
+			is_new_closet_item: true,
+		});
+		expect(result?.items[1]).toMatchObject({
+			identity_status: 'failed',
+			identity_reason: 'ignored_low_confidence',
+			closet_item_id: null,
+		});
 		expect(harness.closet.items).toHaveLength(1);
 	});
 
