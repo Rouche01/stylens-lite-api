@@ -33,4 +33,9 @@ describe('closet_face prefer order', () => {
 		expect(faceSourceFromKeys({ cutoutImageKey: 'x' })).toBe('cutout');
 		expect(faceSourceFromKeys({})).toBe('crop');
 	});
+
+	it('treats whitespace-only keys as missing', () => {
+		expect(resolveClosetFaceSource({ cutout_image_key: '  ', flatlay_image_key: '\t' })).toBe('crop');
+		expect(closetFaceImageKey({ cutout_image_key: '   ' })).toBeNull();
+	});
 });

@@ -192,17 +192,29 @@ export function WithClosetItems<TBase extends Ctor>(Base: TBase) {
 			};
 		}
 
+		/**
+		 * Persist presentation face keys. Omitted fields keep the existing column value
+		 * so cutout and packshot jobs cannot wipe each other.
+		 */
 		async updateClosetItemFace(params: {
 			userId: string;
 			closetItemId: string;
 			cutoutImageKey?: string | null;
 			flatlayImageKey?: string | null;
 		}): Promise<boolean> {
+			const existing = await this.getClosetItemFace(params.userId, params.closetItemId);
+			if (!existing) return false;
+
+			const cutoutImageKey =
+				params.cutoutImageKey !== undefined
+					? params.cutoutImageKey?.trim() || null
+					: existing.cutout_image_key;
+			const flatlayImageKey =
+				params.flatlayImageKey !== undefined
+					? params.flatlayImageKey?.trim() || null
+					: existing.flatlay_image_key;
+			const faceSource = faceSourceFromKeys({ cutoutImageKey, flatlayImageKey });
 			const now = Date.now();
-			const faceSource = faceSourceFromKeys({
-				cutoutImageKey: params.cutoutImageKey,
-				flatlayImageKey: params.flatlayImageKey,
-			});
 			const result = await this.db
 				.prepare(
 					`
@@ -215,15 +227,7 @@ export function WithClosetItems<TBase extends Ctor>(Base: TBase) {
 					WHERE id = ? AND user_id = ?
 					`
 				)
-				.bind(
-					params.cutoutImageKey?.trim() || null,
-					params.flatlayImageKey?.trim() || null,
-					faceSource,
-					now,
-					now,
-					params.closetItemId,
-					params.userId
-				)
+				.bind(cutoutImageKey, flatlayImageKey, faceSource, now, now, params.closetItemId, params.userId)
 				.run();
 			return Boolean(result.success && (result.meta?.changes ?? 0) > 0);
 		}

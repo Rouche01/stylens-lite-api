@@ -81,14 +81,16 @@ export class GarmentFaceService {
 			if (matteVerdict.ok) {
 				pngBytes = matte;
 			} else {
+				// Quality reject is terminal (ack) — same crop will not magically pass.
 				log.info('garment_face_matte_rejected', { reason: matteVerdict.reason });
 				return;
 			}
 		} catch (err) {
+			// Transient Fal/network errors should retry via the queue.
 			log.warn('garment_face_matte_failed', {
 				error: err instanceof Error ? err.message : String(err),
 			});
-			return;
+			throw err;
 		}
 
 		const cutoutKey = `cutouts/faces/${job.closetItemId}/cutout-${crypto.randomUUID()}.png`;
@@ -96,13 +98,15 @@ export class GarmentFaceService {
 			httpMetadata: { contentType: 'image/png' },
 		});
 
-		const existing = await this.closet().getClosetItemFace(job.userId, job.closetItemId);
-		await this.closet().updateClosetItemFace({
+		const updated = await this.closet().updateClosetItemFace({
 			userId: job.userId,
 			closetItemId: job.closetItemId,
 			cutoutImageKey: cutoutKey,
-			flatlayImageKey: existing?.flatlay_image_key ?? null,
 		});
+		if (!updated) {
+			log.warn('garment_face_cutout_persist_missed', { cutout_image_key: cutoutKey });
+			return;
+		}
 		log.info('garment_face_cutout_stored', { cutout_image_key: cutoutKey });
 	}
 
@@ -125,12 +129,15 @@ export class GarmentFaceService {
 		await this.env.OUTFIT_PHOTOS_BUCKET.put(flatlayKey, packshot.pngBytes, {
 			httpMetadata: { contentType: 'image/png' },
 		});
-		await this.closet().updateClosetItemFace({
+		const updated = await this.closet().updateClosetItemFace({
 			userId: job.userId,
 			closetItemId: job.closetItemId,
-			cutoutImageKey: existing?.cutout_image_key ?? null,
 			flatlayImageKey: flatlayKey,
 		});
+		if (!updated) {
+			log.warn('garment_face_packshot_persist_missed', { flatlay_image_key: flatlayKey });
+			return;
+		}
 		log.info('garment_face_packshot_stored', {
 			flatlay_image_key: flatlayKey,
 			face_source: faceSourceFromKeys({

@@ -14,7 +14,7 @@ export async function handleClosetGarmentFaceQueue(
 	for (const message of batch.messages) {
 		const body = message.body;
 		try {
-			if (!body?.closetItemId || !body?.userId || !body?.imageKey || !body?.boundingBox) {
+			if (!body?.closetItemId || !body?.userId || !body?.imageKey || !body?.label || !body?.boundingBox) {
 				log.warn('garment_face_job_invalid', { body: JSON.stringify(body).slice(0, 200) });
 				message.ack();
 				continue;
