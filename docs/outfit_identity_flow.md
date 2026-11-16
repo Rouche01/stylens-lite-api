@@ -64,9 +64,24 @@ Identity / Vectorize **always** use real padded crops. Cutout and packshot are p
 - Packshot: Nano Banana flat-lay; prefers stored cutout when present, else **padded crop** (never the full outfit photo).  
 - **Footwear:** Nano Banana only when a **studio-trusted cutout** exists (`passesFootwearStudioCutout`); else letterbox padded crop to a studio card (`flatlay_image_key`). Generative failure falls back to studio pad from the trusted cutout. Packshot type label prefers subcategory (e.g. `sneakers` not free-text `boots`).  
 - **Apparel:** generative packshot; may use cutout or padded crop.  
-- List/detail: `isolated_image_url` prefers flatlay > cutout > crop; expose `crop_image_url` + `face_source`. When `GARMENT_FACE_PACKSHOT_ENABLED`, `GET /closet/items` returns only packshot-ready tiles (`flatlay_image_key` set).  
+- List/detail: `isolated_image_url` prefers flatlay > cutout > crop; expose `crop_image_url` + `face_source` + `packshot_ready`.  
 - Judge (eval only): `GET /closet/eval/faces?userId=<EVAL_USER_ID>&admin_key=…` — crop | stored cutout | stored packshot gallery (`&format=json` for tooling). Eval UI **Faces** tab proxies via `/api/closet-faces`.  
 - Quality plan: [`.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md`](../.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md).
+
+### Browse-ready contract (Flutter)
+
+**Create ≠ browse-ready.** D1/Vectorize tiles exist as soon as identity creates; packshot is async presentation.
+
+| Surface | Contract |
+|---------|----------|
+| `GET /closet/items` | Each item includes `packshot_ready` (`true` iff `flatlay_image_key` set) and `face_source` (`flatlay` \| `cutout` \| `crop`). Response also has `packshot_only_browse` (mirrors `GARMENT_FACE_PACKSHOT_ENABLED`). |
+| Packshot-only mode | When `packshot_only_browse: true`, list **omits** items without a packshot. Grid is uniform flatlay tiles — no crop/packshot mix. |
+| Flag off (prod default today) | List returns all browse items; Flutter may hide until `packshot_ready` / `face_source === 'flatlay'` using the same PostHog / remote flag as the API. |
+| `GET /closet/items/:id` | Same `packshot_ready` + face fields. In packshot-only mode, non-ready items return **404** (not in wardrobe). |
+| Ask / identity | Always use `crop_image_url` / padded crops — never wait on packshot. |
+| Preparing UX | Optional client “preparing” state for known item ids that are not yet `packshot_ready`; do not block extract or resolve. |
+
+No Flutter implementation lives in this repo — API fields + this doc are the contract.
 
 ## Sync vs queue boundaries
 

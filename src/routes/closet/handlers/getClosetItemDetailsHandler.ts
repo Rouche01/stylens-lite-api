@@ -3,7 +3,12 @@ import { createClosetDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
 import { getIsolatedItemUrl, signClosetOriginalUrl, signDownloadUrlForKey } from 'utils/assets.utils';
-import { closetFaceImageKey, resolveClosetFaceSource } from 'utils/closet_face';
+import {
+	closetFaceImageKey,
+	isClosetPackshotReady,
+	isPackshotOnlyBrowseEnabled,
+	resolveClosetFaceSource,
+} from 'utils/closet_face';
 import { logRouteError } from 'utils/error';
 
 const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
@@ -18,6 +23,13 @@ const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = asyn
 
 		const details = await closetDB.getClosetItemDetails(userId, itemId);
 		if (!details) {
+			return error(404, 'Closet item not found');
+		}
+
+		const packshotReady = isClosetPackshotReady(details);
+		const packshotOnlyBrowse = isPackshotOnlyBrowseEnabled(env.GARMENT_FACE_PACKSHOT_ENABLED);
+		// Match list: packshot-only mode hides non-ready tiles from wardrobe surfaces.
+		if (packshotOnlyBrowse && !packshotReady) {
 			return error(404, 'Closet item not found');
 		}
 
@@ -67,6 +79,7 @@ const getClosetItemDetailsHandler: RequestHandler<ProvisionedAuthRequest> = asyn
 			...details,
 			original_image_url: originalImageUrl,
 			face_source: faceSource,
+			packshot_ready: packshotReady,
 			isolated_image_url: isolatedImageUrl,
 			crop_image_url: cropIsolateUrl,
 			wear_history: enrichedHistory,

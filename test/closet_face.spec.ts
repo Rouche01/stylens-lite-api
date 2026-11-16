@@ -3,6 +3,7 @@ import {
 	closetFaceImageKey,
 	faceSourceFromKeys,
 	isClosetPackshotReady,
+	isPackshotOnlyBrowseEnabled,
 	resolveClosetFaceSource,
 } from '../src/utils/closet_face';
 
@@ -44,5 +45,13 @@ describe('closet_face prefer order', () => {
 		expect(isClosetPackshotReady({ flatlay_image_key: 'cutouts/x.png' })).toBe(true);
 		expect(isClosetPackshotReady({ flatlay_image_key: '  ' })).toBe(false);
 		expect(isClosetPackshotReady({})).toBe(false);
+	});
+
+	it('isPackshotOnlyBrowseEnabled mirrors GARMENT_FACE_PACKSHOT_ENABLED', () => {
+		expect(isPackshotOnlyBrowseEnabled('true')).toBe(true);
+		expect(isPackshotOnlyBrowseEnabled('TRUE')).toBe(true);
+		expect(isPackshotOnlyBrowseEnabled('false')).toBe(false);
+		expect(isPackshotOnlyBrowseEnabled(undefined)).toBe(false);
+		expect(isPackshotOnlyBrowseEnabled('')).toBe(false);
 	});
 });

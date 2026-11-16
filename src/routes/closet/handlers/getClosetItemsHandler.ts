@@ -10,7 +10,12 @@ import {
 	parseIsolateCutout,
 } from 'utils/assets.utils';
 import { isClosetBrowseItem } from 'utils/closet_browse';
-import { closetFaceImageKey, isClosetPackshotReady, resolveClosetFaceSource } from 'utils/closet_face';
+import {
+	closetFaceImageKey,
+	isClosetPackshotReady,
+	isPackshotOnlyBrowseEnabled,
+	resolveClosetFaceSource,
+} from 'utils/closet_face';
 import { logRouteError } from 'utils/error';
 
 const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (request) => {
@@ -18,11 +23,10 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 		const closetDB = createClosetDB(env.GOSTYLENS_DB);
 		const userId = request.user.dbId;
 
-		const requirePackshot =
-			String(env.GARMENT_FACE_PACKSHOT_ENABLED || '').toLowerCase() === 'true';
+		const packshotOnlyBrowse = isPackshotOnlyBrowseEnabled(env.GARMENT_FACE_PACKSHOT_ENABLED);
 		let items = (await closetDB.getClosetItems(userId)).filter(isClosetBrowseItem);
-		// Packshot-only grid: omit tiles until a trusted flatlay exists (footwear may never qualify).
-		if (requirePackshot) {
+		// Packshot-only grid: omit tiles until flatlay_image_key exists.
+		if (packshotOnlyBrowse) {
 			items = items.filter(isClosetPackshotReady);
 		}
 
@@ -36,9 +40,15 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 
 		const enrichedItems = await Promise.all(
 			items.map(async (item) => {
+				const packshotReady = isClosetPackshotReady(item);
 				const originalImageUrl = await signClosetOriginalUrl(item.image_key, item.original_image_url);
 				if (!originalImageUrl || !item.bounding_box) {
-					return { ...item, original_image_url: originalImageUrl };
+					return {
+						...item,
+						original_image_url: originalImageUrl,
+						face_source: resolveClosetFaceSource(item),
+						packshot_ready: packshotReady,
+					};
 				}
 
 				const faceSource = resolveClosetFaceSource(item);
@@ -59,17 +69,24 @@ const getClosetItemsHandler: RequestHandler<ProvisionedAuthRequest> = async (req
 					...item,
 					original_image_url: originalImageUrl,
 					face_source: faceSource,
-					// Hybrid: stored flatlay/cutout when present; else padded crop isolate.
+					packshot_ready: packshotReady,
+					// Prefer stored flatlay/cutout when present; else padded crop isolate.
 					isolated_image_url: faceUrl || cropIsolateUrl,
 					crop_image_url: cropIsolateUrl,
 				};
 			})
 		);
 
-		return new Response(JSON.stringify({ items: enrichedItems }), {
-			headers: { 'Content-Type': 'application/json' },
-			status: 200
-		});
+		return new Response(
+			JSON.stringify({
+				packshot_only_browse: packshotOnlyBrowse,
+				items: enrichedItems,
+			}),
+			{
+				headers: { 'Content-Type': 'application/json' },
+				status: 200,
+			}
+		);
 
 	} catch (err) {
 		logRouteError(request.log, 'get_closet_items_failed', err);

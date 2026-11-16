@@ -35,9 +35,14 @@ export function faceSourceFromKeys(params: {
 }
 
 /**
- * Trusted packshot ready for packshot-only browse.
- * Untrusted footwear never persists flatlay_image_key (see garment face trust gate).
+ * Trusted packshot ready for packshot-only browse (`flatlay_image_key` set).
+ * Footwear may set flatlay via Nano Banana (studio-trusted cutout) or studio crop card.
  */
 export function isClosetPackshotReady(item: { flatlay_image_key?: string | null }): boolean {
 	return Boolean(item.flatlay_image_key?.trim());
+}
+
+/** Env / response helper — when true, list omits non-packshot tiles. */
+export function isPackshotOnlyBrowseEnabled(envFlag: unknown): boolean {
+	return String(envFlag || '').toLowerCase() === 'true';
 }
