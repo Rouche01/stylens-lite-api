@@ -4,12 +4,15 @@ import {
 	evaluateFaceCutoutPng,
 	falBirefnetMatte,
 	falNanoBananaFlatlay,
-	packshotRequiresTrustedCutout,
 	passesFaceQuality,
+	passesFootwearStudioCutout,
+	usesGenerativePackshot,
 } from '../segmentation';
 import { faceSourceFromKeys } from '../../utils/closet_face';
 import { Logger } from '../../utils/logger.utils';
 import { signDownloadUrlForKey } from '../../utils/assets.utils';
+import { packshotTypeLabel } from './packshotLabel';
+import { buildFootwearStudioCard } from './studioFaceCard';
 
 export type GarmentFaceJobType = 'cutout' | 'packshot';
 
@@ -149,18 +152,12 @@ export class GarmentFaceService {
 	private async enqueueFollowPackshot(
 		job: GarmentFaceJob,
 		log: Logger,
-		opts: { cutoutTrusted: boolean }
+		_opts: { cutoutTrusted: boolean }
 	): Promise<void> {
 		if (!job.followWithPackshot) return;
-		if (packshotRequiresTrustedCutout(job.category) && !opts.cutoutTrusted) {
-			log.info('garment_face_packshot_skipped_untrusted_cutout', {
-				closet_item_id: job.closetItemId,
-				category: job.category || '',
-			});
-			return;
-		}
 		const { followWithPackshot: _follow, type: _type, ...rest } = job;
-		// Cutout already settled (store or reject) — do not defer packshot back into cutout.
+		// Cutout settled (store or reject): apparel generative packshot, or footwear studio card
+		// (uses trusted cutout when stored, else padded crop).
 		await maybeEnqueueGarmentFacePackshot(this.env, rest, log, { afterCutoutSettled: true });
 	}
 
@@ -179,15 +176,12 @@ export class GarmentFaceService {
 			return;
 		}
 
-		const cutoutKey = existing?.cutout_image_key?.trim() || '';
-		if (packshotRequiresTrustedCutout(job.category) && !cutoutKey) {
-			// Footwear: no high-confidence cutout → do not store an untrusted flatlay for browse.
-			log.info('garment_face_packshot_skipped_needs_cutout', {
-				category: job.category || '',
-			});
+		if (!usesGenerativePackshot(job.category)) {
+			await this.processFootwearStudioCard(job, log);
 			return;
 		}
 
+		const cutoutKey = existing?.cutout_image_key?.trim() || '';
 		let sourceKey: string;
 		let sourceKind: 'cutout' | 'padded_crop';
 		if (cutoutKey) {
@@ -211,11 +205,16 @@ export class GarmentFaceService {
 			});
 		}
 
+		const typeLabel = packshotTypeLabel({
+			label: job.label,
+			category: job.category,
+			subcategory: job.subcategory,
+		});
 		const sourceUrl = await signDownloadUrlForKey(sourceKey);
 		const packshot = await falNanoBananaFlatlay({
 			apiKey: this.env.FAL_KEY,
 			imageUrl: sourceUrl,
-			label: job.label,
+			label: typeLabel,
 			color: job.color,
 			category: job.category,
 			subcategory: job.subcategory,
@@ -236,8 +235,169 @@ export class GarmentFaceService {
 		log.info('garment_face_packshot_stored', {
 			flatlay_image_key: flatlayKey,
 			packshot_source: sourceKind,
+			packshot_type_label: typeLabel,
 			face_source: faceSourceFromKeys({
 				cutoutImageKey: cutoutKey || existing?.cutout_image_key,
+				flatlayImageKey: flatlayKey,
+			}),
+		});
+	}
+
+	/**
+	 * Footwear browse face:
+	 * - Trusted studio cutout → try Nano Banana (same as apparel); fall back to studio pad on failure.
+	 * - Untrusted / missing cutout → letterbox padded crop (never generative).
+	 */
+	private async processFootwearStudioCard(job: GarmentFaceJob, log: Logger): Promise<void> {
+		const existing = await this.closet().getClosetItemFace(job.userId, job.closetItemId);
+		const cutoutKey = existing?.cutout_image_key?.trim() || '';
+		const typeLabel = packshotTypeLabel({
+			label: job.label,
+			category: job.category,
+			subcategory: job.subcategory,
+		});
+
+		const loadPaddedCrop = async () => {
+			return createCutoutService(this.env, log).cropFaceJpegFromR2({
+				imageKey: job.sourceImageKey || job.imageKey,
+				boundingBox: job.boundingBox,
+				label: job.label,
+				category: job.category,
+			});
+		};
+
+		let trustedCutoutKey: string | null = null;
+		if (cutoutKey) {
+			const obj = await this.env.OUTFIT_PHOTOS_BUCKET.get(cutoutKey);
+			if (obj) {
+				const cutoutBytes = await obj.arrayBuffer();
+				const quality = await evaluateFaceCutoutPng(new Uint8Array(cutoutBytes), null);
+				const verdict = passesFootwearStudioCutout(quality);
+				if (verdict.ok) {
+					trustedCutoutKey = cutoutKey;
+					log.info('garment_face_footwear_cutout_trusted', {
+						cutout_image_key: cutoutKey,
+						opaque_frac: quality.opaqueFrac,
+						fill_density: quality.fillDensity,
+					});
+				} else {
+					log.info('garment_face_footwear_studio_cutout_untrusted', {
+						cutout_image_key: cutoutKey,
+						reason: verdict.reason,
+						opaque_frac: quality.opaqueFrac,
+						fill_density: quality.fillDensity,
+						mean_luma: quality.meanLuma,
+					});
+				}
+			} else {
+				log.warn('garment_face_footwear_cutout_missing_object', { cutout_image_key: cutoutKey });
+			}
+		}
+
+		if (trustedCutoutKey) {
+			try {
+				const sourceUrl = await signDownloadUrlForKey(trustedCutoutKey);
+				const packshot = await falNanoBananaFlatlay({
+					apiKey: this.env.FAL_KEY,
+					imageUrl: sourceUrl,
+					label: typeLabel,
+					color: job.color,
+					category: job.category,
+					subcategory: job.subcategory,
+				});
+				const flatlayKey = `cutouts/faces/${job.closetItemId}/flatlay-${crypto.randomUUID()}.png`;
+				await this.env.OUTFIT_PHOTOS_BUCKET.put(flatlayKey, packshot.pngBytes, {
+					httpMetadata: { contentType: 'image/png' },
+				});
+				const updated = await this.closet().updateClosetItemFace({
+					userId: job.userId,
+					closetItemId: job.closetItemId,
+					flatlayImageKey: flatlayKey,
+				});
+				if (!updated) {
+					log.warn('garment_face_packshot_persist_missed', { flatlay_image_key: flatlayKey });
+					return;
+				}
+				log.info('garment_face_packshot_stored', {
+					flatlay_image_key: flatlayKey,
+					packshot_source: 'cutout',
+					packshot_model: packshot.model,
+					packshot_type_label: typeLabel,
+					footwear_generative: true,
+					face_source: faceSourceFromKeys({
+						cutoutImageKey: trustedCutoutKey,
+						flatlayImageKey: flatlayKey,
+					}),
+				});
+				return;
+			} catch (err) {
+				log.warn('garment_face_footwear_generative_failed_fallback_studio', {
+					cutout_image_key: trustedCutoutKey,
+					error: err instanceof Error ? err.message : String(err),
+				});
+				// Fall through to studio pad from the trusted cutout.
+			}
+		}
+
+		let imageBytes: ArrayBuffer;
+		let source: 'cutout' | 'padded_crop';
+		let contentType: string;
+		let cutoutImageKey: string | null = trustedCutoutKey;
+
+		if (trustedCutoutKey) {
+			const obj = await this.env.OUTFIT_PHOTOS_BUCKET.get(trustedCutoutKey);
+			if (!obj) {
+				cutoutImageKey = null;
+				const cropped = await loadPaddedCrop();
+				imageBytes = cropped.cropJpeg;
+				source = 'padded_crop';
+				contentType = 'image/jpeg';
+			} else {
+				imageBytes = await obj.arrayBuffer();
+				source = 'cutout';
+				contentType = obj.httpMetadata?.contentType || 'image/png';
+				log.info('garment_face_footwear_studio_using_cutout', {
+					cutout_image_key: trustedCutoutKey,
+					after_generative_fallback: true,
+				});
+			}
+		} else {
+			const cropped = await loadPaddedCrop();
+			imageBytes = cropped.cropJpeg;
+			source = 'padded_crop';
+			contentType = 'image/jpeg';
+			log.info('garment_face_footwear_studio_using_padded_crop', {
+				crop_image_key: cropped.cropImageKey,
+			});
+		}
+
+		const studio = await buildFootwearStudioCard({
+			images: this.env.IMAGES,
+			imageBytes,
+			source,
+			contentType,
+		});
+		const flatlayKey = `cutouts/faces/${job.closetItemId}/flatlay-${crypto.randomUUID()}.jpg`;
+		await this.env.OUTFIT_PHOTOS_BUCKET.put(flatlayKey, studio.bytes, {
+			httpMetadata: { contentType: studio.contentType },
+		});
+		const updated = await this.closet().updateClosetItemFace({
+			userId: job.userId,
+			closetItemId: job.closetItemId,
+			flatlayImageKey: flatlayKey,
+		});
+		if (!updated) {
+			log.warn('garment_face_packshot_persist_missed', { flatlay_image_key: flatlayKey });
+			return;
+		}
+		log.info('garment_face_packshot_stored', {
+			flatlay_image_key: flatlayKey,
+			packshot_source: source === 'cutout' ? 'studio_cutout' : 'studio_crop',
+			packshot_model: studio.model,
+			packshot_type_label: typeLabel,
+			footwear_generative: false,
+			face_source: faceSourceFromKeys({
+				cutoutImageKey,
 				flatlayImageKey: flatlayKey,
 			}),
 		});
@@ -306,7 +466,8 @@ export async function maybeEnqueueGarmentFacePackshot(
 		return false;
 	}
 
-	// Ask→same/new may call packshot directly: if cutout is enabled and not done yet, run cutout first.
+	// If cutout is enabled and missing, run cutout first then packshot
+	// (apparel generative / footwear studio — may use trusted cutout).
 	if (
 		!options?.afterCutoutSettled &&
 		envFlagTrue(env.GARMENT_FACE_CUTOUT_ENABLED) &&
@@ -389,6 +550,7 @@ export async function enqueueGarmentFacesForCreatedItems(
 		};
 
 		if (plan === 'cutout_then_packshot') {
+			// Apparel + footwear: cutout first; packshot follows (footwear studio prefers cutout).
 			await maybeEnqueueGarmentFaceCutout(env, { ...faceJob, followWithPackshot: true }, log);
 			continue;
 		}

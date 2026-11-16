@@ -23,6 +23,8 @@ export {
 	isFootwearCategory,
 	packshotRequiresTrustedCutout,
 	passesFaceQuality,
+	passesFootwearStudioCutout,
+	usesGenerativePackshot,
 	type FaceQualityMetrics,
 	type FaceQualityThresholds,
 	type FaceQualityVerdict,

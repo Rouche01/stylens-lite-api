@@ -10,6 +10,7 @@ import {
 	passesFaceQuality,
 	SegmentError,
 } from 'services/segmentation';
+import { packshotTypeLabel } from 'services/closet_face/packshotLabel';
 import { ApiRequest } from 'types';
 import {
 	CLOSET_PREVIEW_CROP_WIDTH,
@@ -123,12 +124,36 @@ const previewClosetItemHandler: RequestHandler<ApiRequest> = async (request) => 
 			if (!storedFlatlayUrl && wantPackshot) {
 				packshot = await buildPackshotFace({
 					sourceUrl: face.url || (await signDownloadUrlForKey(wear.image_key)),
-					label: details.label,
+					label: packshotTypeLabel({
+						label: details.label,
+						category: details.category,
+						subcategory: details.subcategory,
+					}),
 					color: details.color,
 					category: details.category,
 					subcategory: details.subcategory,
 					log: request.log,
 				});
+				const persistPackshot = requestUrl.searchParams.get('persist') === '1';
+				if (persistPackshot && packshot.r2Key) {
+					const flatlayKey = `cutouts/faces/${itemId}/flatlay-${crypto.randomUUID()}.png`;
+					const obj = await env.OUTFIT_PHOTOS_BUCKET.get(packshot.r2Key);
+					if (obj) {
+						await env.OUTFIT_PHOTOS_BUCKET.put(flatlayKey, await obj.arrayBuffer(), {
+							httpMetadata: { contentType: 'image/png' },
+						});
+						await closetDB.updateClosetItemFace({
+							userId: details.user_id,
+							closetItemId: itemId,
+							flatlayImageKey: flatlayKey,
+						});
+						packshot = {
+							...packshot,
+							url: await signDownloadUrlForKey(flatlayKey),
+							note: `${packshot.note}; persisted flatlay_image_key`,
+						};
+					}
+				}
 			}
 
 			const html = renderClosetFaceCompareHtml({
@@ -257,7 +282,7 @@ async function buildPackshotFace(params: {
 	category?: string | null;
 	subcategory?: string | null;
 	log: ApiRequest['log'];
-}): Promise<{ url: string; note: string; model: string }> {
+}): Promise<{ url: string; note: string; model: string; r2Key?: string }> {
 	if (!params.sourceUrl) {
 		return { url: '', note: 'No source image for packshot', model: '' };
 	}
@@ -278,6 +303,7 @@ async function buildPackshotFace(params: {
 			url: await signDownloadUrlForKey(key),
 			note: `Nano Banana flat-lay ok (${result.model})`,
 			model: result.model,
+			r2Key: key,
 		};
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : 'Packshot failed';

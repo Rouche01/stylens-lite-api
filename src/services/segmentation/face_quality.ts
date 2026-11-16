@@ -42,6 +42,14 @@ export const FACE_FOOTWEAR_MIN_MASK_SCORE = 0.55;
 /** Reject tiny on-foot crops before SAM — not enough signal for a trusted shoe matte. */
 export const FACE_FOOTWEAR_MIN_CROP_SIDE = 96;
 
+/**
+ * Studio-card prefer-cutout bar (stricter than store gate).
+ * Junk boots mattes often clear store thresholds but look like holey blobs on mint.
+ */
+export const FACE_FOOTWEAR_STUDIO_MIN_OPAQUE_FRAC = 0.22;
+export const FACE_FOOTWEAR_STUDIO_MIN_FILL_DENSITY = 0.55;
+export const FACE_FOOTWEAR_STUDIO_MIN_SIDE = 128;
+
 export type FaceQualityMetrics = {
 	width: number;
 	height: number;
@@ -106,11 +114,20 @@ export function isFootwearCategory(category?: string | null): boolean {
 }
 
 /**
- * Generative packshot for these categories is only trusted when fed a high-confidence cutout.
- * Apparel may still packshot from a padded crop.
+ * Category-level enqueue routing: footwear stays on the footwear packshot path
+ * (generative only when a studio-trusted cutout exists; else studio card).
+ * Apparel / accessories always use generative packshot.
  */
-export function packshotRequiresTrustedCutout(category?: string | null): boolean {
-	return isFootwearCategory(category);
+export function usesGenerativePackshot(category?: string | null): boolean {
+	return !isFootwearCategory(category);
+}
+
+/**
+ * @deprecated Footwear no longer requires a cutout (studio card from padded crop).
+ * Kept for call-site clarity; always false.
+ */
+export function packshotRequiresTrustedCutout(_category?: string | null): boolean {
+	return false;
 }
 
 export type FaceQualityThresholds = {
@@ -247,6 +264,39 @@ export async function evaluateFaceCutoutPng(
 /** Rough ranking when both SAM2 and SAM3 fail the hard gate — prefer more visible fabric. */
 export function faceQualityRank(metrics: FaceQualityMetrics): number {
 	return metrics.meanLuma * metrics.opaqueFrac * Math.max(metrics.fillDensity, 0.01);
+}
+
+/**
+ * Prefer this cutout as the footwear studio face (customer-visible).
+ * Falls back to padded crop when the matte is holey / tiny even if it was stored.
+ */
+export function passesFootwearStudioCutout(metrics: FaceQualityMetrics): FaceQualityVerdict {
+	const base = passesFaceQuality(metrics, { category: 'footwear' });
+	if (!base.ok) return base;
+	const { opaqueFrac, fillDensity, width, height } = metrics;
+	const minSide = Math.min(width, height);
+	if (opaqueFrac < FACE_FOOTWEAR_STUDIO_MIN_OPAQUE_FRAC) {
+		return {
+			ok: false,
+			reason: `studio_opaque_frac ${opaqueFrac.toFixed(3)} < ${FACE_FOOTWEAR_STUDIO_MIN_OPAQUE_FRAC}`,
+			metrics,
+		};
+	}
+	if (fillDensity < FACE_FOOTWEAR_STUDIO_MIN_FILL_DENSITY) {
+		return {
+			ok: false,
+			reason: `studio_fill_density ${fillDensity.toFixed(3)} < ${FACE_FOOTWEAR_STUDIO_MIN_FILL_DENSITY}`,
+			metrics,
+		};
+	}
+	if (minSide < FACE_FOOTWEAR_STUDIO_MIN_SIDE) {
+		return {
+			ok: false,
+			reason: `studio_min_side ${minSide} < ${FACE_FOOTWEAR_STUDIO_MIN_SIDE}`,
+			metrics,
+		};
+	}
+	return { ok: true, reason: 'ok', metrics };
 }
 
 export function passesFaceQuality(

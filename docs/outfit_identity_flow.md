@@ -62,7 +62,8 @@ Identity / Vectorize **always** use real padded crops. Cutout and packshot are p
 - Queue: `CLOSET_GARMENT_FACE_QUEUE` — jobs `type: cutout | packshot` (`src/services/closet_face/garmentFace.svc.ts`).  
 - Cutout: gated SAM + BiRefNet (stricter thresholds for **footwear**); reject → keep crop face.  
 - Packshot: Nano Banana flat-lay; prefers stored cutout when present, else **padded crop** (never the full outfit photo).  
-- **Display trust:** footwear generative packshot only after a high-confidence cutout; otherwise no `flatlay_image_key` (omit from packshot-only browse). Apparel may packshot from padded crop.  
+- **Footwear:** Nano Banana only when a **studio-trusted cutout** exists (`passesFootwearStudioCutout`); else letterbox padded crop to a studio card (`flatlay_image_key`). Generative failure falls back to studio pad from the trusted cutout. Packshot type label prefers subcategory (e.g. `sneakers` not free-text `boots`).  
+- **Apparel:** generative packshot; may use cutout or padded crop.  
 - List/detail: `isolated_image_url` prefers flatlay > cutout > crop; expose `crop_image_url` + `face_source`. When `GARMENT_FACE_PACKSHOT_ENABLED`, `GET /closet/items` returns only packshot-ready tiles (`flatlay_image_key` set).  
 - Judge (eval only): `GET /closet/eval/faces?userId=<EVAL_USER_ID>&admin_key=…` — crop | stored cutout | stored packshot gallery (`&format=json` for tooling). Eval UI **Faces** tab proxies via `/api/closet-faces`.  
 - Quality plan: [`.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md`](../.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md).

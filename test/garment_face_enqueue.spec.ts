@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { garmentFaceEnqueuePlan } from '../src/services/closet_face';
-import { packshotRequiresTrustedCutout } from '../src/services/segmentation';
+import { usesGenerativePackshot } from '../src/services/segmentation';
 
 describe('garmentFaceEnqueuePlan', () => {
 	it('defers packshot until after cutout when both flags are on', () => {
@@ -28,9 +28,9 @@ describe('garmentFaceEnqueuePlan', () => {
 	});
 });
 
-describe('footwear packshot trust', () => {
-	it('gates generative packshot on trusted cutout for footwear only', () => {
-		expect(packshotRequiresTrustedCutout('footwear')).toBe(true);
-		expect(packshotRequiresTrustedCutout('bottom')).toBe(false);
+describe('footwear packshot path', () => {
+	it('keeps footwear on the dedicated path (not apparel generative enqueue)', () => {
+		expect(usesGenerativePackshot('footwear')).toBe(false);
+		expect(usesGenerativePackshot('bottom')).toBe(true);
 	});
 });

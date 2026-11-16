@@ -23,6 +23,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
+import { Agent, setGlobalDispatcher } from 'undici';
+
+// Outfit extract (LLM + identity + faces) can exceed Node's default ~300s headers timeout.
+setGlobalDispatcher(new Agent({ headersTimeout: 0, bodyTimeout: 0, connectTimeout: 60_000 }));
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const DEFAULT_SET = resolve(ROOT, '../outfits-set-v1');

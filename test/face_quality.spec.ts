@@ -6,6 +6,8 @@ import {
 	facePrefersSam3First,
 	packshotRequiresTrustedCutout,
 	passesFaceQuality,
+	passesFootwearStudioCutout,
+	usesGenerativePackshot,
 } from '../src/services/segmentation/face_quality';
 import { sam3PromptCandidates } from '../src/services/segmentation/sam3_prompt';
 
@@ -100,10 +102,23 @@ describe('evaluateFaceRgba / passesFaceQuality', () => {
 		expect(footwear.reason).toMatch(/mask_score/);
 	});
 
-	it('requires trusted cutout only for footwear packshots', () => {
-		expect(packshotRequiresTrustedCutout('footwear')).toBe(true);
+	it('routes footwear off the apparel generative enqueue path (trusted-cutout generative is in-path)', () => {
+		expect(usesGenerativePackshot('footwear')).toBe(false);
+		expect(usesGenerativePackshot('top')).toBe(true);
+		expect(packshotRequiresTrustedCutout('footwear')).toBe(false);
 		expect(packshotRequiresTrustedCutout('top')).toBe(false);
-		expect(packshotRequiresTrustedCutout('accessory')).toBe(false);
+	});
+
+	it('rejects holey footwear mattes for studio prefer-cutout even if store gate might pass', () => {
+		// Sparse mid-tone blob: clears soft store-ish numbers, fails studio fill/opaque.
+		const rgba = rgbaFrame(160, 180, (x, y) => {
+			const inBlob = x > 40 && x < 120 && y > 40 && y < 140 && (x + y) % 3 !== 0;
+			if (!inBlob) return [0, 0, 0, 0];
+			const tone = 60 + ((x * 3 + y) % 50);
+			return [tone, tone - 8, tone + 4, 255];
+		});
+		const metrics = evaluateFaceRgba(rgba, 160, 180, null);
+		expect(passesFootwearStudioCutout(metrics).ok).toBe(false);
 	});
 });
 

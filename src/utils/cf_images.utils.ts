@@ -15,7 +15,7 @@ export function isRetryableCfImagesFailure(err: unknown): boolean {
 	return /fetch failed|network|timed?\s*out|ECONNRESET|socket/i.test(message);
 }
 
-async function withCfImagesRetry<T>(op: () => Promise<T>): Promise<T> {
+export async function withCfImagesRetry<T>(op: () => Promise<T>): Promise<T> {
 	let lastErr: unknown;
 	for (let attempt = 1; attempt <= CF_IMAGES_RETRY_ATTEMPTS; attempt++) {
 		try {
