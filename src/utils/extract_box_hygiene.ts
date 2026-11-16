@@ -4,6 +4,12 @@ import { identityEmbedBox, percentBoxIou, type PercentBox } from './bounding_box
 export const EXTRACT_BOX_DEDUPE_IOU = 0.85;
 
 /**
+ * Two tops with this much IoU are treated as the same torso layer fight
+ * (hem-peek “gray band” under a hoodie lands ~0.55 after Florence).
+ */
+export const EXTRACT_TOP_LAYER_IOU = 0.45;
+
+/**
  * Accessories that are large enough / identity-useful to extract for now.
  * Everything else (socks, eyewear, belt, scarf, jewelry, watch, gloves, other) is dropped.
  */
@@ -99,6 +105,41 @@ function confidenceRank(confidence?: string): number {
 	return 0;
 }
 
+/** Outer-ish tops beat hem-peek mislabels when Florence collapses both onto the torso. */
+function topSubcategoryRank(subcategory?: string): number {
+	switch (normalizeSubcategory(subcategory)) {
+		case 'hoodie':
+			return 10;
+		case 'sweatshirt':
+		case 'sweater':
+			return 6;
+		case 'shirt':
+		case 'polo':
+			return 5;
+		case 't-shirt':
+			return 4;
+		case 'tank-top':
+		case 'crop-top':
+			return 3;
+		default:
+			return 2;
+	}
+}
+
+/**
+ * LLM sometimes invents a garment from an undershirt hem ("gray band").
+ * Drop those labels before they become closet tiles / packshots.
+ */
+export function isJunkPeekExtractLabel(label?: string): boolean {
+	const text = label?.trim().toLowerCase() ?? '';
+	if (!text) return false;
+	if (/\b(waistband|hem|sliver|peek)\b/.test(text)) return true;
+	if (/\bstrips?\b/.test(text)) return true;
+	// "gray band" / "band" — keep headband/sweatband/wristband for accessory path (usually dropped).
+	if (/\bbands?\b/.test(text) && !/\b(head|sweat|wrist)bands?\b/.test(text)) return true;
+	return false;
+}
+
 /** Higher wins when two items share nearly the same crop. */
 export function extractItemKeepScore(item: ExtractHygieneItem): number {
 	const subcategory = normalizeSubcategory(item.subcategory);
@@ -117,7 +158,7 @@ export function extractItemKeepScore(item: ExtractHygieneItem): number {
 			categoryScore = 40;
 			break;
 		case 'top':
-			categoryScore = 35;
+			categoryScore = 35 + topSubcategoryRank(subcategory);
 			break;
 		case 'accessory':
 			categoryScore = subcategory === 'hat' || subcategory === 'cap' ? 30 : subcategory === 'bag' ? 28 : 10;
@@ -131,7 +172,26 @@ function shouldKeepExtractItem(item: ExtractHygieneItem): boolean {
 	if (item.category === 'accessory' && !isKeptExtractAccessory(item.subcategory)) {
 		return false;
 	}
+	if (isJunkPeekExtractLabel(item.label)) {
+		return false;
+	}
 	return isPlausibleExtractBox(item);
+}
+
+function isTopLayerItem(item: ExtractHygieneItem): boolean {
+	return item.category === 'top';
+}
+
+/** True when candidate is a dominated torso twin of an already-kept top. */
+function isDominatedTopLayer(candidate: ExtractHygieneItem, kept: ExtractHygieneItem): boolean {
+	if (!isTopLayerItem(candidate) || !isTopLayerItem(kept)) return false;
+	if (percentBoxIou(candidate.bounding_box, kept.bounding_box) < EXTRACT_TOP_LAYER_IOU) return false;
+	const candScore = extractItemKeepScore(candidate);
+	const keptScore = extractItemKeepScore(kept);
+	if (keptScore > candScore) return true;
+	if (keptScore < candScore) return false;
+	// Tie-break: prefer the already-kept (higher-ranked) outer-ish subcategory.
+	return topSubcategoryRank(kept.subcategory) >= topSubcategoryRank(candidate.subcategory);
 }
 
 /**
@@ -150,7 +210,9 @@ export function sanitizeExtractedItems<T extends ExtractHygieneItem>(items: T[])
 	const winners: Array<{ item: T; index: number }> = [];
 	for (const candidate of ranked) {
 		const overlaps = winners.some(
-			(kept) => percentBoxIou(candidate.item.bounding_box, kept.item.bounding_box) >= EXTRACT_BOX_DEDUPE_IOU
+			(kept) =>
+				percentBoxIou(candidate.item.bounding_box, kept.item.bounding_box) >= EXTRACT_BOX_DEDUPE_IOU ||
+				isDominatedTopLayer(candidate.item, kept.item)
 		);
 		if (overlaps) continue;
 		winners.push(candidate);

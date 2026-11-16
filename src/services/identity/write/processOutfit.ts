@@ -34,6 +34,7 @@ import { createClosetCatalogNotifier, type ClosetCatalogNotifier } from '../noti
 import { ClosetMatchResolvedError, IdentityBusyError } from './errors';
 import { commitNewItem } from './commit';
 import { closetCreateIgnoreReason } from './createGate';
+import { sanitizeExtractedItems } from '../../../utils/extract_box_hygiene';
 import {
 	extractSnapshot,
 	extractionConfidence,
@@ -118,6 +119,21 @@ export class OutfitIdentityProcessor {
 		}
 		if (!extracted) {
 			return null;
+		}
+
+		// Always re-apply box hygiene (live extract already did; admin cachedExtraction may not).
+		const hygieneItems = sanitizeExtractedItems(extracted.items);
+		if (hygieneItems.length !== extracted.items.length) {
+			runLog.info('outfit_identity_box_hygiene', {
+				before_count: extracted.items.length,
+				after_count: hygieneItems.length,
+				dropped: extracted.items.length - hygieneItems.length,
+			});
+			extracted = {
+				...extracted,
+				items: hygieneItems,
+				item_count: hygieneItems.length,
+			};
 		}
 
 		const jobId = crypto.randomUUID();

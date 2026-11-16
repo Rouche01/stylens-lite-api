@@ -11,6 +11,15 @@ describe('flatlayPromptForGarment', () => {
 		expect(prompt).toContain('prefer the pixels');
 	});
 
+	it('picks mint backdrop for dark colors and charcoal for light', () => {
+		const dark = flatlayPromptForGarment({ label: 'navy jacket', color: 'navy' });
+		expect(dark).toContain('#E8F0EE');
+		expect(dark).toMatch(/solid seamless soft mint/i);
+		const light = flatlayPromptForGarment({ label: 'white sneakers', color: 'white' });
+		expect(light).toContain('#6B736E');
+		expect(light).toMatch(/charcoal-gray/i);
+	});
+
 	it('adds footwear silhouette rules', () => {
 		const prompt = flatlayPromptForGarment({
 			label: 'black boots',

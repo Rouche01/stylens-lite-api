@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	extractBoxAreaPercent,
 	extractItemKeepScore,
+	isJunkPeekExtractLabel,
 	isKeptExtractAccessory,
 	isPlausibleExtractBox,
 	sanitizeExtractedItems,
@@ -156,6 +157,76 @@ describe('sanitizeExtractedItems', () => {
 			},
 		]);
 		expect(items).toHaveLength(3);
+	});
+
+	it('drops hem-peek gray band under hoodie from IMG_0462 smoke', () => {
+		const items = sanitizeExtractedItems([
+			{
+				label: 'gray band',
+				category: 'top',
+				subcategory: 'sweatshirt',
+				confidence: 'high',
+				bounding_box: { x: 33.6, y: 30, width: 32.8, height: 24.1 },
+			},
+			{
+				label: 'black hoodie',
+				category: 'top',
+				subcategory: 'hoodie',
+				confidence: 'high',
+				bounding_box: { x: 26.9, y: 33.4, width: 43, height: 26.3 },
+			},
+		]);
+		expect(items.map((item) => item.label)).toEqual(['black hoodie']);
+	});
+
+	it('drops overlapping under-top when Florence collapses it onto a hoodie', () => {
+		const items = sanitizeExtractedItems([
+			{
+				label: 'gray t-shirt',
+				category: 'top',
+				subcategory: 't-shirt',
+				confidence: 'high',
+				bounding_box: { x: 33.6, y: 30, width: 32.8, height: 24.1 },
+			},
+			{
+				label: 'black hoodie',
+				category: 'top',
+				subcategory: 'hoodie',
+				confidence: 'high',
+				bounding_box: { x: 26.9, y: 33.4, width: 43, height: 26.3 },
+			},
+		]);
+		expect(items.map((item) => item.label)).toEqual(['black hoodie']);
+	});
+
+	it('keeps open-jacket shirt when outerwear is a different category', () => {
+		const items = sanitizeExtractedItems([
+			{
+				label: 'white t-shirt',
+				category: 'top',
+				subcategory: 't-shirt',
+				confidence: 'high',
+				bounding_box: { x: 30, y: 35, width: 28, height: 30 },
+			},
+			{
+				label: 'black leather jacket',
+				category: 'outerwear',
+				subcategory: 'jacket',
+				confidence: 'high',
+				bounding_box: { x: 22, y: 32, width: 42, height: 36 },
+			},
+		]);
+		expect(items.map((item) => item.label).sort()).toEqual(['black leather jacket', 'white t-shirt']);
+	});
+});
+
+describe('isJunkPeekExtractLabel', () => {
+	it('flags band/waistband peeks and leaves real garments', () => {
+		expect(isJunkPeekExtractLabel('gray band')).toBe(true);
+		expect(isJunkPeekExtractLabel('navy waistband')).toBe(true);
+		expect(isJunkPeekExtractLabel('fabric strip')).toBe(true);
+		expect(isJunkPeekExtractLabel('black hoodie')).toBe(false);
+		expect(isJunkPeekExtractLabel('gray sweatshirt')).toBe(false);
 	});
 });
 

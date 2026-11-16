@@ -11,6 +11,7 @@ import {
 import { faceSourceFromKeys } from '../../utils/closet_face';
 import { Logger } from '../../utils/logger.utils';
 import { signDownloadUrlForKey } from '../../utils/assets.utils';
+import { resolvePackshotStudioBackground } from '../../utils/packshot_background';
 import { packshotTypeLabel } from './packshotLabel';
 import { buildFootwearStudioCard } from './studioFaceCard';
 
@@ -323,6 +324,7 @@ export class GarmentFaceService {
 					packshot_source: 'cutout',
 					packshot_model: packshot.model,
 					packshot_type_label: typeLabel,
+					packshot_background: resolvePackshotStudioBackground({ color: job.color }).hex,
 					footwear_generative: true,
 					face_source: faceSourceFromKeys({
 						cutoutImageKey: trustedCutoutKey,
@@ -376,6 +378,7 @@ export class GarmentFaceService {
 			imageBytes,
 			source,
 			contentType,
+			color: job.color,
 		});
 		const flatlayKey = `cutouts/faces/${job.closetItemId}/flatlay-${crypto.randomUUID()}.jpg`;
 		await this.env.OUTFIT_PHOTOS_BUCKET.put(flatlayKey, studio.bytes, {
@@ -394,6 +397,7 @@ export class GarmentFaceService {
 			flatlay_image_key: flatlayKey,
 			packshot_source: source === 'cutout' ? 'studio_cutout' : 'studio_crop',
 			packshot_model: studio.model,
+			packshot_background: studio.background,
 			packshot_type_label: typeLabel,
 			footwear_generative: false,
 			face_source: faceSourceFromKeys({

@@ -35,8 +35,8 @@ Extraction Rules:
 - Only include items that are clearly part of the outfit being worn.
 - Bounding boxes MUST tightly wrap only that garment's visible pixels (sleeves, collar, hems, cuffs).
 - Do NOT include walls, floors, elevator panels, mirrors, phones, or empty space. The person may be off-center; measure percents against the full image, not the person crop.
-- One item per box. Overlapping layers (open shirt over a tee) get separate boxes; each box should cover that layer only, even if another garment shows through.
-- Under-layers peeking at the collar/hem get a small box on the visible fabric only — never a torso-tall box that also covers the outer sweater or pants.
+- One item per box. Overlapping layers get separate boxes only when the under-layer is substantially visible as its own garment (e.g. open jacket showing most of a shirt). Each box should cover that layer only.
+- Do NOT extract base layers that only peek as a collar rim, hoodie hem strip, or waistband under another top/outerwear — those are not closet items. Never invent a "band", "strip", or "waistband" garment from a hem peek.
 - Accessories: extract ONLY a bag or hat/cap when clearly worn (including crossbody bags). Do NOT extract socks, gloves, jewelry, watches, eyewear, belts, scarves, headphones/earbuds, or phones.
 - Prefer footwear alone; never invent socks from shoes.
 - "color" must be a single primary word or hyphenated shade (e.g. black, navy, light-blue). Do not hedge with "or" (bad: "dark navy or black"). For jeans, prefer light / medium / dark plus hue when obvious (e.g. light-blue, dark-indigo).

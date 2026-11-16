@@ -1,12 +1,16 @@
 import { withCfImagesRetry } from '../../utils/cf_images.utils';
+import {
+	PACKSHOT_BG_FOR_DARK_GARMENT,
+	resolvePackshotStudioBackground,
+} from '../../utils/packshot_background';
 
-/** Soft mint studio pad — dark shoes read clearly; light sneakers still usable. */
-export const FOOTWEAR_STUDIO_BG = '#E8F0EE';
+/** @deprecated Prefer resolvePackshotStudioBackground — default mint for dark garments. */
+export const FOOTWEAR_STUDIO_BG = PACKSHOT_BG_FOR_DARK_GARMENT;
 export const FOOTWEAR_STUDIO_SIDE = 1024;
 
 /**
  * Non-generative footwear browse face: letterbox real pixels (trusted cutout or padded crop)
- * onto a square studio background. No Nano Banana — avoids label-driven boot hallucinations.
+ * onto a square studio background. Background swatch contrasts the garment (mint vs charcoal).
  */
 export async function buildFootwearStudioCard(params: {
 	images: ImagesBinding;
@@ -14,10 +18,15 @@ export async function buildFootwearStudioCard(params: {
 	imageBytes: ArrayBuffer;
 	source: 'cutout' | 'padded_crop';
 	contentType?: string;
-}): Promise<{ bytes: Uint8Array; contentType: string; model: string }> {
+	/** Extract color — picks mint vs charcoal pad. */
+	color?: string | null;
+	/** Optional opaque mean luma when color is ambiguous. */
+	meanLuma?: number | null;
+}): Promise<{ bytes: Uint8Array; contentType: string; model: string; background: string }> {
 	const { images, imageBytes, source } = params;
 	const inputType = params.contentType || (source === 'cutout' ? 'image/png' : 'image/jpeg');
 	const modelBase = source === 'cutout' ? 'studio-cutout' : 'studio-crop';
+	const bg = resolvePackshotStudioBackground({ color: params.color, meanLuma: params.meanLuma });
 	try {
 		const padded = await withCfImagesRetry(async () => {
 			const res = (
@@ -27,7 +36,7 @@ export async function buildFootwearStudioCard(params: {
 						width: FOOTWEAR_STUDIO_SIDE,
 						height: FOOTWEAR_STUDIO_SIDE,
 						fit: 'pad',
-						background: FOOTWEAR_STUDIO_BG,
+						background: bg.hex,
 					})
 					.output({
 						format: 'image/jpeg',
@@ -43,6 +52,7 @@ export async function buildFootwearStudioCard(params: {
 			bytes: new Uint8Array(padded),
 			contentType: 'image/jpeg',
 			model: `${modelBase}-pad`,
+			background: bg.hex,
 		};
 	} catch {
 		// CF Images pad unavailable / transient — still better than a generative fake boot.
@@ -50,6 +60,7 @@ export async function buildFootwearStudioCard(params: {
 			bytes: new Uint8Array(imageBytes),
 			contentType: inputType,
 			model: modelBase,
+			background: bg.hex,
 		};
 	}
 }

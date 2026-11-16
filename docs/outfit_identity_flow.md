@@ -64,6 +64,7 @@ Identity / Vectorize **always** use real padded crops. Cutout and packshot are p
 - Packshot: Nano Banana flat-lay; prefers stored cutout when present, else **padded crop** (never the full outfit photo).  
 - **Footwear:** Nano Banana only when a **studio-trusted cutout** exists (`passesFootwearStudioCutout`); else letterbox padded crop to a studio card (`flatlay_image_key`). Generative failure falls back to studio pad from the trusted cutout. Packshot type label prefers subcategory (e.g. `sneakers` not free-text `boots`).  
 - **Apparel:** generative packshot; may use cutout or padded crop.  
+- **Backdrop (≤2 swatches):** dark garments → soft mint `#E8F0EE`; light garments → soft charcoal `#6B736E` (`resolvePackshotStudioBackground`). Solid seamless only — no floor/wall seam or fabric texture. Used in Nano Banana prompts and footwear studio pad.  
 - List/detail: `isolated_image_url` prefers flatlay > cutout > crop; expose `crop_image_url` + `face_source` + `packshot_ready`.  
 - Judge (eval only): `GET /closet/eval/faces?userId=<EVAL_USER_ID>&admin_key=…` — crop | stored cutout | stored packshot gallery (`&format=json` for tooling). Eval UI **Faces** tab proxies via `/api/closet-faces`.  
 - Quality plan: [`.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md`](../.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md).

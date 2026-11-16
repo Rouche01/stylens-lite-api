@@ -1,4 +1,5 @@
 import { fetchImageAsArrayBuffer } from '../../../utils/assets.utils';
+import { resolvePackshotStudioBackground } from '../../../utils/packshot_background';
 import { SegmentError } from './base.provider';
 
 const FAL_NANO_BANANA_EDIT = 'https://fal.run/fal-ai/nano-banana/edit';
@@ -117,9 +118,10 @@ export function flatlayPromptForGarment(options: FlatlayPromptOptions): string {
 		);
 	}
 	parts.push(...categoryGuidance(options.category, options.subcategory));
+	const studioBg = resolvePackshotStudioBackground({ color: options.color });
 	parts.push(
 		'No person, no mannequin, no hands, no phone, no room background.',
-		'Lay the garment neatly on a soft mint or light neutral surface, soft even studio lighting, slight natural shadow.',
+		studioBg.promptClause,
 		'Square product shot, single garment filling most of the frame.'
 	);
 	return parts.join(' ');
