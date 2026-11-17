@@ -1,3 +1,5 @@
+import { FAL_PACKSHOT_MODEL } from 'services/fal';
+
 export type PreviewBox = {
 	closet_item_id: string;
 	label: string;
@@ -492,7 +494,7 @@ export function renderClosetFaceCompareHtml(page: ClosetFaceComparePage): string
   <section class="card">
     <p class="kicker">D · Tier 3 spike</p>
     <h2>Nano Banana flat-lay</h2>
-    <p class="note">Generative packshot via <code>fal-ai/nano-banana/edit</code>. Opt in with <code>&amp;packshot=1</code> (slow / paid).</p>
+    <p class="note">Generative packshot via <code>${escapeHtml(FAL_PACKSHOT_MODEL)}</code>. Opt in with <code>&amp;packshot=1</code> (slow / paid).</p>
     <figure class="hero mint">
       ${packshot}
       <figcaption>${escapeHtml(page.label)}</figcaption>

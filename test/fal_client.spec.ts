@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
+	FAL_MODELS,
 	FAL_TIMEOUT_MS,
 	FalHttpError,
 	falPostJson,
@@ -9,7 +10,7 @@ import { falBirefnetMatte } from '../src/services/segmentation/providers/fal_bir
 import { SegmentError } from '../src/services/segmentation/providers/base.provider';
 import { shouldExportLogToPostHog } from '../src/utils/logger.utils';
 
-const ENDPOINT = 'https://fal.run/fal-ai/sam2/image';
+const ENDPOINT = FAL_MODELS.segmentSam2.endpoint;
 
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -29,6 +30,16 @@ describe('FAL_TIMEOUT_MS', () => {
 		expect(FAL_TIMEOUT_MS.grounding).toBeLessThan(FAL_TIMEOUT_MS.packshot);
 		expect(FAL_TIMEOUT_MS.segment).toBeLessThanOrEqual(FAL_TIMEOUT_MS.tryon);
 		expect(FAL_TIMEOUT_MS.packshot).toBe(FAL_TIMEOUT_MS.tryon);
+	});
+});
+
+describe('FAL_MODELS', () => {
+	it('keeps endpoint paths aligned with model ids', () => {
+		for (const ref of Object.values(FAL_MODELS)) {
+			expect(ref.endpoint.startsWith('https://fal.run/')).toBe(true);
+			expect(ref.endpoint.endsWith(ref.model)).toBe(true);
+			expect(ref.model.startsWith('fal-ai/')).toBe(true);
+		}
 	});
 });
 

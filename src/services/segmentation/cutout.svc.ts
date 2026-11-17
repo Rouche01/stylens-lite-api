@@ -3,6 +3,7 @@ import { percentBoxToTrim } from '../../utils/bounding_box';
 import { signDownloadUrlForKey } from '../../utils/assets.utils';
 import { getImageDimensions } from '../../utils/image.utils';
 import { Logger, createLogger } from '../../utils/logger.utils';
+import { FAL_SAM3_MODEL } from '../fal';
 import { BoxPx, SegmentProvider, createSegmentProvider } from './providers';
 import {
 	cropLocalBoxPx,
@@ -120,7 +121,7 @@ export class CutoutService {
 			image_width: imageDimensions.width,
 			image_height: imageDimensions.height,
 			label: label || '',
-			model: label ? 'fal-ai/sam-3/image' : this.provider.model,
+			model: label ? FAL_SAM3_MODEL : this.provider.model,
 		});
 
 		const segmented = await this.provider.segmentBox({

@@ -1,10 +1,9 @@
 import type { Logger } from 'utils/logger.utils';
-import { FalHttpError, falPostJson } from '../fal';
+import { FAL_MODELS, FalHttpError, falPostJson } from '../fal';
 import { GroundingError, GroundingInput, GroundingProvider, GroundingResult } from './base.provider';
 import { collectGroundingBoxes, pickGroundedPercentBox } from './boxes';
 
-const FAL_FLORENCE_ENDPOINT = 'https://fal.run/fal-ai/florence-2-large/caption-to-phrase-grounding';
-const FLORENCE_MODEL = 'fal-ai/florence-2-large/caption-to-phrase-grounding';
+const FLORENCE = FAL_MODELS.grounding;
 
 export class FlorenceGroundingProvider implements GroundingProvider {
 	readonly name = 'fal-florence-2';
@@ -24,9 +23,9 @@ export class FlorenceGroundingProvider implements GroundingProvider {
 		try {
 			const result = await falPostJson<unknown>({
 				apiKey,
-				endpoint: FAL_FLORENCE_ENDPOINT,
-				model: FLORENCE_MODEL,
-				useCase: 'grounding',
+				endpoint: FLORENCE.endpoint,
+				model: FLORENCE.model,
+				useCase: FLORENCE.useCase,
 				signal: input.signal,
 				log: this.log,
 				body: {

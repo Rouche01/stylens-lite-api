@@ -1,12 +1,12 @@
 import { arrayBufferToBase64, fetchImageAsArrayBuffer } from '../../../utils/assets.utils';
 import { getImageMimeType } from '../../../utils/image.utils';
 import type { Logger } from '../../../utils/logger.utils';
-import { FalHttpError, falPostJson } from '../../fal';
+import { FAL_MODELS, FAL_SAM2_MODEL, FalHttpError, falPostJson } from '../../fal';
 import { sam3PromptCandidates } from '../sam3_prompt';
 import { SegmentError, SegmentProvider, SegmentBoxInput, SegmentBoxResult } from './base.provider';
 
-const FAL_SAM2_ENDPOINT = 'https://fal.run/fal-ai/sam2/image';
-const FAL_SAM3_ENDPOINT = 'https://fal.run/fal-ai/sam-3/image';
+const SAM2 = FAL_MODELS.segmentSam2;
+const SAM3 = FAL_MODELS.segmentSam3;
 
 type FalImage = {
 	url?: string;
@@ -111,7 +111,7 @@ function toDataUri(image: ArrayBuffer): string {
  */
 export class FalSegmentProvider implements SegmentProvider {
 	readonly name = 'fal';
-	private activeModel = 'fal-ai/sam2/image';
+	private activeModel = FAL_SAM2_MODEL;
 
 	get model(): string {
 		return this.activeModel;
@@ -148,9 +148,9 @@ export class FalSegmentProvider implements SegmentProvider {
 
 		// Face / crop path: box-guided SAM 2 first so wrong SAM 3 concepts cannot win.
 		if (input.preferBoxFirst && boxPx) {
-			this.activeModel = 'fal-ai/sam2/image';
+			this.activeModel = SAM2.model;
 			const sam2 = await this.runFal({
-				endpoint: FAL_SAM2_ENDPOINT,
+				endpoint: SAM2.endpoint,
 				model: this.activeModel,
 				imageUrl,
 				boxPx,
@@ -169,10 +169,10 @@ export class FalSegmentProvider implements SegmentProvider {
 		}
 
 		if (useSam3) {
-			this.activeModel = 'fal-ai/sam-3/image';
+			this.activeModel = SAM3.model;
 			for (const prompt of prompts) {
 				const sam3 = await this.runFal({
-					endpoint: FAL_SAM3_ENDPOINT,
+					endpoint: SAM3.endpoint,
 					model: this.activeModel,
 					imageUrl,
 					boxPx,
@@ -191,9 +191,9 @@ export class FalSegmentProvider implements SegmentProvider {
 			}
 
 			if (boxPx && !input.preferBoxFirst) {
-				this.activeModel = 'fal-ai/sam2/image';
+				this.activeModel = SAM2.model;
 				const sam2 = await this.runFal({
-					endpoint: FAL_SAM2_ENDPOINT,
+					endpoint: SAM2.endpoint,
 					model: this.activeModel,
 					imageUrl,
 					boxPx,
@@ -217,9 +217,9 @@ export class FalSegmentProvider implements SegmentProvider {
 			);
 		}
 
-		this.activeModel = 'fal-ai/sam2/image';
+		this.activeModel = SAM2.model;
 		const sam2 = await this.runFal({
-			endpoint: FAL_SAM2_ENDPOINT,
+			endpoint: SAM2.endpoint,
 			model: this.activeModel,
 			imageUrl,
 			boxPx,
@@ -227,7 +227,7 @@ export class FalSegmentProvider implements SegmentProvider {
 			signal,
 		});
 		if (!sam2) {
-			throw new SegmentError('fal-ai/sam2/image returned no mask image', 422);
+			throw new SegmentError(`${FAL_SAM2_MODEL} returned no mask image`, 422);
 		}
 		return {
 			pngBytes: sam2.pngBytes,

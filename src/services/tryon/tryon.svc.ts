@@ -1,9 +1,10 @@
 import { arrayBufferToBase64, fetchImageAsArrayBuffer, signDownloadUrlForKey } from '../../utils/assets.utils';
 import { Logger, createLogger } from '../../utils/logger.utils';
-import { FalHttpError, falPostJson } from '../fal';
+import { FAL_MODELS, FAL_TRYON_MODEL, FalHttpError, falPostJson } from '../fal';
 
-const FAL_FASHN_ENDPOINT = 'https://fal.run/fal-ai/fashn/tryon/v1.6';
-export const TRYON_MODEL = 'fal-ai/fashn/tryon/v1.6';
+const TRYON = FAL_MODELS.tryon;
+/** @deprecated Prefer FAL_TRYON_MODEL / FAL_MODELS.tryon — kept for existing imports. */
+export const TRYON_MODEL = FAL_TRYON_MODEL;
 
 export const CLOTH_TYPES = ['upper', 'lower', 'overall', 'inner', 'outer'] as const;
 export type ClothType = (typeof CLOTH_TYPES)[number];
@@ -119,9 +120,9 @@ export class TryonService {
 		try {
 			const result = await falPostJson<{ image?: unknown; images?: unknown; detail?: unknown; error?: unknown }>({
 				apiKey: this.apiKey,
-				endpoint: FAL_FASHN_ENDPOINT,
-				model: TRYON_MODEL,
-				useCase: 'tryon',
+				endpoint: TRYON.endpoint,
+				model: TRYON.model,
+				useCase: TRYON.useCase,
 				log,
 				body: {
 					model_image: modelImageUrl,
@@ -145,7 +146,7 @@ export class TryonService {
 
 		const resultUrl = extractFashnImageUrl(json);
 		if (!resultUrl) {
-			throw new TryonError(`${TRYON_MODEL} returned no image url`, 422);
+			throw new TryonError(`${TRYON.model} returned no image url`, 422);
 		}
 
 		const pngBuffer = await fetchImageAsArrayBuffer(resultUrl);

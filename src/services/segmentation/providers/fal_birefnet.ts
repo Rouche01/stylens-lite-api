@@ -1,10 +1,9 @@
 import { fetchImageAsArrayBuffer } from '../../../utils/assets.utils';
 import type { Logger } from '../../../utils/logger.utils';
-import { FalHttpError, falPostJson } from '../../fal';
+import { FAL_MODELS, FalHttpError, falPostJson } from '../../fal';
 import { SegmentError } from './base.provider';
 
-const FAL_BIREFNET_V2 = 'https://fal.run/fal-ai/birefnet/v2';
-const BIREFNET_MODEL = 'fal-ai/birefnet/v2';
+const BIREFNET = FAL_MODELS.matte;
 
 type FalImageFile = {
 	url?: string;
@@ -65,9 +64,9 @@ export async function falBirefnetMatte(params: {
 	try {
 		const result = await falPostJson<FalBirefnetResponse>({
 			apiKey,
-			endpoint: FAL_BIREFNET_V2,
-			model: BIREFNET_MODEL,
-			useCase: 'matte',
+			endpoint: BIREFNET.endpoint,
+			model: BIREFNET.model,
+			useCase: BIREFNET.useCase,
 			log,
 			signal,
 			body: {
@@ -88,7 +87,7 @@ export async function falBirefnetMatte(params: {
 
 	const resultUrl = falFileToUrl(json.image) ?? falFileToUrl(json.mask_image);
 	if (!resultUrl) {
-		throw new SegmentError('fal-ai/birefnet/v2 returned no image', 422);
+		throw new SegmentError(`${BIREFNET.model} returned no image`, 422);
 	}
 
 	const buffer = await fetchImageAsArrayBuffer(resultUrl);

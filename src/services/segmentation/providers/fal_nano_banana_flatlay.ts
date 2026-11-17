@@ -1,10 +1,10 @@
 import { fetchImageAsArrayBuffer } from '../../../utils/assets.utils';
 import type { Logger } from '../../../utils/logger.utils';
 import { resolvePackshotStudioBackground } from '../../../utils/packshot_background';
-import { FalHttpError, falPostJson } from '../../fal';
+import { FAL_MODELS, FalHttpError, falPostJson } from '../../fal';
 import { SegmentError } from './base.provider';
 
-const FAL_NANO_BANANA_EDIT = 'https://fal.run/fal-ai/nano-banana/edit';
+const PACKSHOT = FAL_MODELS.packshot;
 
 type FalImageFile = {
 	url?: string;
@@ -145,14 +145,14 @@ export async function falNanoBananaFlatlay(params: {
 		throw new SegmentError('imageUrl is required for flat-lay');
 	}
 
-	const model = 'fal-ai/nano-banana/edit';
+	const model = PACKSHOT.model;
 	let json: FalNanoBananaEditResponse;
 	try {
 		const result = await falPostJson<FalNanoBananaEditResponse>({
 			apiKey,
-			endpoint: FAL_NANO_BANANA_EDIT,
+			endpoint: PACKSHOT.endpoint,
 			model,
-			useCase: 'packshot',
+			useCase: PACKSHOT.useCase,
 			log,
 			signal,
 			body: {
