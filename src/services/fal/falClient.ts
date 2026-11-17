@@ -3,7 +3,10 @@ import type { Logger } from 'utils/logger.utils';
 /** Domain tag for spend / latency dashboards — not the Fal model id. */
 export type FalUseCase = 'grounding' | 'segment' | 'matte' | 'packshot' | 'tryon';
 
-/** Default wall-clock budgets per use case (ms). Callers may override. */
+/**
+ * Default wall-clock budgets per use case (ms). Callers may override via `timeoutMs`.
+ * Always composed with an optional caller `AbortSignal` (request cancel wins over timeout).
+ */
 export const FAL_TIMEOUT_MS: Record<FalUseCase, number> = {
 	grounding: 45_000,
 	segment: 60_000,

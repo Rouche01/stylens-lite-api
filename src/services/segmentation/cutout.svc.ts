@@ -29,6 +29,8 @@ export type CutoutFromR2Params = {
 	boundingBox?: PercentBox;
 	/** Extract item label; with Fal this uses SAM 3 (concept; box optional). */
 	label?: string;
+	/** Caller abort; composed with Fal segment timeout. */
+	signal?: AbortSignal;
 };
 
 export type CutoutResult = {
@@ -91,7 +93,7 @@ export class CutoutService {
 	) {}
 
 	async cutoutFromR2(params: CutoutFromR2Params): Promise<CutoutResult> {
-		const { imageKey, boundingBox, label } = params;
+		const { imageKey, boundingBox, label, signal } = params;
 		const log = this.log.child({ image_key: imageKey, provider: this.provider.name });
 
 		if (!label?.trim() && !boundingBox) {
@@ -126,6 +128,7 @@ export class CutoutService {
 			boxPx,
 			imageUrl: await signDownloadUrlForKey(imageKey),
 			label,
+			signal,
 		});
 
 		log.info('cutout_segment_ok', {
@@ -192,7 +195,7 @@ export class CutoutService {
 	 * On quality fail with a label, retries SAM3 on the same crop. Does not discard closet items.
 	 */
 	async cutoutFaceFromR2(params: FaceCutoutFromR2Params): Promise<FaceCutoutResult> {
-		const { imageKey, boundingBox, label, category } = params;
+		const { imageKey, boundingBox, label, category, signal } = params;
 		const log = this.log.child({ image_key: imageKey, provider: this.provider.name, face: true });
 
 		if (!boundingBox) {
@@ -261,6 +264,7 @@ export class CutoutService {
 				imageUrl: cropUrl,
 				label,
 				preferBoxFirst,
+				signal,
 			});
 			const quality = await evaluateFaceCutoutPng(segmented.pngBytes, segmented.maskScore ?? null);
 			const verdict = passesFaceQuality(quality, { category });

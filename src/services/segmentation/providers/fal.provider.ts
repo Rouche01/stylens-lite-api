@@ -144,6 +144,8 @@ export class FalSegmentProvider implements SegmentProvider {
 			throw new SegmentError('SAM 3 prompt is empty after normalizing the label');
 		}
 
+		const signal = input.signal;
+
 		// Face / crop path: box-guided SAM 2 first so wrong SAM 3 concepts cannot win.
 		if (input.preferBoxFirst && boxPx) {
 			this.activeModel = 'fal-ai/sam2/image';
@@ -153,6 +155,7 @@ export class FalSegmentProvider implements SegmentProvider {
 				imageUrl,
 				boxPx,
 				centerPoint: true,
+				signal,
 			});
 			if (sam2) {
 				return {
@@ -174,6 +177,7 @@ export class FalSegmentProvider implements SegmentProvider {
 					imageUrl,
 					boxPx,
 					prompt,
+					signal,
 				});
 				if (sam3) {
 					return {
@@ -194,6 +198,7 @@ export class FalSegmentProvider implements SegmentProvider {
 					imageUrl,
 					boxPx,
 					centerPoint: true,
+					signal,
 				});
 				if (sam2) {
 					return {
@@ -219,6 +224,7 @@ export class FalSegmentProvider implements SegmentProvider {
 			imageUrl,
 			boxPx,
 			centerPoint: true,
+			signal,
 		});
 		if (!sam2) {
 			throw new SegmentError('fal-ai/sam2/image returned no mask image', 422);
@@ -237,6 +243,7 @@ export class FalSegmentProvider implements SegmentProvider {
 		boxPx?: SegmentBoxInput['boxPx'];
 		prompt?: string;
 		centerPoint?: boolean;
+		signal?: AbortSignal;
 	}): Promise<{ pngBytes: Uint8Array; maskScore?: number } | null> {
 		const payload: Record<string, unknown> = {
 			image_url: params.imageUrl,
@@ -267,6 +274,7 @@ export class FalSegmentProvider implements SegmentProvider {
 				model: params.model,
 				useCase: 'segment',
 				log: this.log,
+				signal: params.signal,
 				body: payload,
 			});
 			json = result.json;

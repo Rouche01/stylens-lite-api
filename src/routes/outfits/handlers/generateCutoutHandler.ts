@@ -62,6 +62,7 @@ const generateCutoutHandler: RequestHandler<ApiRequest> = async (request) => {
 			imageKey,
 			label,
 			boundingBox,
+			signal: request.signal,
 		});
 
 		const scratchKey = `cutouts/scratch/${crypto.randomUUID()}.png`;

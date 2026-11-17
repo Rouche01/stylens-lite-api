@@ -111,10 +111,11 @@ const previewClosetItemHandler: RequestHandler<ApiRequest> = async (request) => 
 					boundingBox: wear.bounding_box,
 					category: details.category,
 					log: request.log,
+					signal: request.signal,
 				});
 			}
 
-			let packshot = {
+			let packshot: { url: string; note: string; model: string; r2Key?: string } = {
 				url: storedFlatlayUrl || '',
 				note: storedFlatlayUrl
 					? 'Stored flatlay_image_key (list isolated_image_url)'
@@ -133,6 +134,7 @@ const previewClosetItemHandler: RequestHandler<ApiRequest> = async (request) => 
 					category: details.category,
 					subcategory: details.subcategory,
 					log: request.log,
+					signal: request.signal,
 				});
 				const persistPackshot = requestUrl.searchParams.get('persist') === '1';
 				if (persistPackshot && packshot.r2Key) {
@@ -282,6 +284,7 @@ async function buildPackshotFace(params: {
 	category?: string | null;
 	subcategory?: string | null;
 	log: ApiRequest['log'];
+	signal?: AbortSignal;
 }): Promise<{ url: string; note: string; model: string; r2Key?: string }> {
 	if (!params.sourceUrl) {
 		return { url: '', note: 'No source image for packshot', model: '' };
@@ -295,6 +298,7 @@ async function buildPackshotFace(params: {
 			category: params.category,
 			subcategory: params.subcategory,
 			log: params.log,
+			signal: params.signal,
 		});
 		const key = `cutouts/scratch/face-packshot-${crypto.randomUUID()}.png`;
 		await env.OUTFIT_PHOTOS_BUCKET.put(key, result.pngBytes, {
@@ -319,6 +323,7 @@ async function buildSamFace(params: {
 	boundingBox: { x: number; y: number; width: number; height: number };
 	category?: string | null;
 	log: ApiRequest['log'];
+	signal?: AbortSignal;
 }): Promise<{ url: string; note: string; model: string }> {
 	try {
 		const cutoutService = createCutoutService(env, params.log);
@@ -327,6 +332,7 @@ async function buildSamFace(params: {
 			label: params.label,
 			boundingBox: params.boundingBox,
 			category: params.category,
+			signal: params.signal,
 		});
 
 		const qualityNote = `opaque=${result.quality.opaqueFrac.toFixed(3)} bbox=${result.quality.opaqueBboxFrac.toFixed(3)} luma=${result.quality.meanLuma.toFixed(0)}±${result.quality.lumaStd.toFixed(0)} fill=${result.quality.fillDensity.toFixed(2)}${
@@ -362,6 +368,7 @@ async function buildSamFace(params: {
 				apiKey: env.FAL_KEY,
 				imageUrl: samUrl,
 				log: params.log,
+				signal: params.signal,
 			});
 			const matteQuality = await evaluateFaceCutoutPng(faceBytes, result.maskScore ?? null);
 			const matteVerdict = passesFaceQuality(matteQuality, { category: params.category });

@@ -12,6 +12,8 @@ export type SegmentBoxInput = {
 	 * Wrong non-empty SAM 3 masks no longer skip the box path.
 	 */
 	preferBoxFirst?: boolean;
+	/** Caller abort (e.g. request.signal); composed with Fal use-case timeout. */
+	signal?: AbortSignal;
 };
 
 export type SegmentBoxResult = {
