@@ -1,3 +1,4 @@
+import type { Logger } from 'utils/logger.utils';
 import { FalHttpError, falPostJson } from '../fal';
 import { GroundingError, GroundingInput, GroundingProvider, GroundingResult } from './base.provider';
 import { collectGroundingBoxes, pickGroundedPercentBox } from './boxes';
@@ -8,7 +9,10 @@ const FLORENCE_MODEL = 'fal-ai/florence-2-large/caption-to-phrase-grounding';
 export class FlorenceGroundingProvider implements GroundingProvider {
 	readonly name = 'fal-florence-2';
 
-	constructor(private apiKey: string) {}
+	constructor(
+		private apiKey: string,
+		private log?: Logger
+	) {}
 
 	async groundPhrase(input: GroundingInput): Promise<GroundingResult | null> {
 		const apiKey = this.apiKey?.trim();
@@ -24,6 +28,7 @@ export class FlorenceGroundingProvider implements GroundingProvider {
 				model: FLORENCE_MODEL,
 				useCase: 'grounding',
 				signal: input.signal,
+				log: this.log,
 				body: {
 					image_url: input.imageUrl,
 					text_input: input.prompt,

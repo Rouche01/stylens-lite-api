@@ -294,6 +294,7 @@ async function buildPackshotFace(params: {
 			color: params.color,
 			category: params.category,
 			subcategory: params.subcategory,
+			log: params.log,
 		});
 		const key = `cutouts/scratch/face-packshot-${crypto.randomUUID()}.png`;
 		await env.OUTFIT_PHOTOS_BUCKET.put(key, result.pngBytes, {
@@ -360,6 +361,7 @@ async function buildSamFace(params: {
 			const faceBytes = await falBirefnetMatte({
 				apiKey: env.FAL_KEY,
 				imageUrl: samUrl,
+				log: params.log,
 			});
 			const matteQuality = await evaluateFaceCutoutPng(faceBytes, result.maskScore ?? null);
 			const matteVerdict = passesFaceQuality(matteQuality, { category: params.category });

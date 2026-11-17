@@ -1,5 +1,6 @@
 import { arrayBufferToBase64, fetchImageAsArrayBuffer } from '../../../utils/assets.utils';
 import { getImageMimeType } from '../../../utils/image.utils';
+import type { Logger } from '../../../utils/logger.utils';
 import { FalHttpError, falPostJson } from '../../fal';
 import { sam3PromptCandidates } from '../sam3_prompt';
 import { SegmentError, SegmentProvider, SegmentBoxInput, SegmentBoxResult } from './base.provider';
@@ -116,7 +117,10 @@ export class FalSegmentProvider implements SegmentProvider {
 		return this.activeModel;
 	}
 
-	constructor(private apiKey: string) {}
+	constructor(
+		private apiKey: string,
+		private log?: Logger
+	) {}
 
 	async segmentBox(input: SegmentBoxInput): Promise<SegmentBoxResult> {
 		if (!this.apiKey?.trim()) {
@@ -262,6 +266,7 @@ export class FalSegmentProvider implements SegmentProvider {
 				endpoint: params.endpoint,
 				model: params.model,
 				useCase: 'segment',
+				log: this.log,
 				body: payload,
 			});
 			json = result.json;

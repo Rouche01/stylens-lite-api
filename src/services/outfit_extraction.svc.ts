@@ -157,7 +157,7 @@ export class OutfitExtractionService {
 export const createOutfitExtractionService = (envBindings: Env, log?: Logger) => {
 	const logger = (log ?? createLogger({ env: envBindings.ENV_NAME })).child({ service: 'outfit_extraction' });
 	const falKey = envBindings.FAL_KEY?.trim();
-	const grounding = falKey ? new FlorenceGroundingProvider(falKey) : null;
+	const grounding = falKey ? new FlorenceGroundingProvider(falKey, logger) : null;
 	if (!grounding) {
 		logger.warn('outfit_grounding_disabled', { reason: 'FAL_KEY is not set' });
 	}

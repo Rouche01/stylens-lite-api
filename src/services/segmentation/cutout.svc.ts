@@ -324,7 +324,7 @@ export class CutoutService {
 export const createCutoutService = (envBindings: Env, log?: Logger) => {
 	const logger = (log ?? createLogger({ env: envBindings.ENV_NAME })).child({ service: 'cutout' });
 	return new CutoutService(
-		createSegmentProvider(envBindings),
+		createSegmentProvider(envBindings, logger),
 		envBindings.OUTFIT_PHOTOS_BUCKET,
 		envBindings.IMAGES,
 		logger
