@@ -10,6 +10,17 @@ export enum ModelUseCase {
 	CLASSIFICATION = 'CLASSIFICATION',
 	TITLE_GENERATION = 'TITLE_GENERATION',
 	OUTFIT_EXTRACTION = 'OUTFIT_EXTRACTION',
+	AVATAR_FRAMING = 'AVATAR_FRAMING',
+}
+
+const FAST_TASK_USE_CASES: ReadonlySet<ModelUseCase> = new Set([
+	ModelUseCase.CLASSIFICATION,
+	ModelUseCase.TITLE_GENERATION,
+	ModelUseCase.AVATAR_FRAMING,
+]);
+
+export function isFastTaskUseCase(useCase: ModelUseCase): boolean {
+	return FAST_TASK_USE_CASES.has(useCase);
 }
 
 export interface LLMConfig {
@@ -30,7 +41,7 @@ export class ModelConfigService {
 		const { provider, config: providerConfig } = this._getProviderConfig();
 
 		// Use specific flash/mini model for fast tasks
-		if (useCase === ModelUseCase.CLASSIFICATION || useCase === ModelUseCase.TITLE_GENERATION) {
+		if (isFastTaskUseCase(useCase)) {
 			return {
 				...providerConfig,
 				model: modelVersion,
@@ -79,10 +90,10 @@ export class ModelConfigService {
 
 	private _getModelVersionForUseCase(useCase: ModelUseCase): string {
 		if (this.provider === ModelProvider.OPENAI) {
+			if (isFastTaskUseCase(useCase)) {
+				return env.OPENAI_FAST_TASK_MODEL_VERSION;
+			}
 			switch (useCase) {
-				case ModelUseCase.CLASSIFICATION:
-				case ModelUseCase.TITLE_GENERATION:
-					return env.OPENAI_FAST_TASK_MODEL_VERSION;
 				case ModelUseCase.OUTFIT_EXTRACTION:
 					return env.OPENAI_OUTFIT_EXTRACTION_MODEL_VERSION;
 				case ModelUseCase.STYLE_ANALYSIS:
@@ -93,11 +104,10 @@ export class ModelConfigService {
 		}
 
 		if (this.provider === ModelProvider.CLAUDE) {
+			if (isFastTaskUseCase(useCase)) {
+				return env.CLAUDE_FAST_TASK_MODEL_VERSION;
+			}
 			switch (useCase) {
-				case ModelUseCase.CLASSIFICATION:
-					return env.CLAUDE_FAST_TASK_MODEL_VERSION;
-				case ModelUseCase.TITLE_GENERATION:
-					return env.CLAUDE_FAST_TASK_MODEL_VERSION;
 				case ModelUseCase.OUTFIT_EXTRACTION:
 					return env.CLAUDE_OUTFIT_EXTRACTION_MODEL_VERSION;
 				case ModelUseCase.STYLE_ANALYSIS:

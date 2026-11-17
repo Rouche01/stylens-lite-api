@@ -1,0 +1,526 @@
+import { FAL_PACKSHOT_MODEL } from 'services/fal';
+
+export type PreviewBox = {
+	closet_item_id: string;
+	label: string;
+	color: string;
+	bounding_box: { x: number; y: number; width: number; height: number };
+	highlighted: boolean;
+};
+
+export type ClosetPreviewPage = {
+	title: string;
+	subtitle: string;
+	imageUrl: string;
+	boxes: PreviewBox[];
+	showAll: boolean;
+};
+
+/** Admin compare: closet tile (padded crop) vs item view (native-aspect unpadded crop, seed dimmed). */
+export type ClosetItemFocusPage = {
+	title: string;
+	subtitle: string;
+	itemId: string;
+	label: string;
+	cropUrl: string;
+	isolateUrl: string;
+	originalUrl: string;
+	/** Native-aspect item crop (`cutout=0&pad=0`). Empty falls back to originalUrl. */
+	itemCropUrl: string;
+	paddedBox: { x: number; y: number; width: number; height: number };
+	/** Unpadded detector box in the item-crop's local percent space. */
+	seedBox: { x: number; y: number; width: number; height: number };
+	aspectRatio: number;
+	aspectFallback: boolean;
+	blurHash: string;
+	photoWidth?: number | null;
+	photoHeight?: number | null;
+};
+
+export const CLOSET_SCREEN_FALLBACK_ASPECT = 4 / 5;
+
+/** Admin face spike: padded crop vs CF vs SAM(+matte) vs optional Nano Banana packshot. */
+export type ClosetFaceComparePage = {
+	title: string;
+	subtitle: string;
+	itemId: string;
+	label: string;
+	cropUrl: string;
+	cfCutoutUrl: string;
+	/** Signed scratch PNG (SAM, optionally BiRefNet-matted). Empty when generation failed. */
+	samFaceUrl: string;
+	samNote: string;
+	samModel: string;
+	/** Generative flat-lay (Tier 3). Empty until `&packshot=1` or on failure. */
+	packshotUrl: string;
+	packshotNote: string;
+	packshotModel: string;
+	aspectRatio: number;
+};
+
+export function escapeHtml(value: string): string {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
+/** Admin judge gallery: one row per closet item — crop | stored cutout | stored packshot. */
+export type ClosetFaceGalleryItem = {
+	id: string;
+	label: string;
+	subtitle: string;
+	faceSource: 'crop' | 'cutout' | 'flatlay';
+	cropUrl: string;
+	cutoutUrl: string;
+	flatlayUrl: string;
+	aspectRatio: number;
+	/** Relative preview path (admin_key appended by the gallery page JS). */
+	previewHref: string;
+};
+
+export type ClosetFaceGalleryPage = {
+	title: string;
+	subtitle: string;
+	userId: string;
+	items: ClosetFaceGalleryItem[];
+};
+
+export function renderClosetFaceGalleryHtml(page: ClosetFaceGalleryPage): string {
+	const rows = page.items
+		.map((item) => {
+			const ratio = item.aspectRatio > 0 ? item.aspectRatio : CLOSET_SCREEN_FALLBACK_ASPECT;
+			const cell = (url: string, fit: 'fill' | 'contain', empty: string) =>
+				url
+					? `<img class="face-img ${fit}" src="${escapeHtml(url)}" alt=""/>`
+					: `<div class="ph">${escapeHtml(empty)}</div>`;
+			return `
+<article class="row" data-id="${escapeHtml(item.id)}" data-source="${escapeHtml(item.faceSource)}">
+  <header class="row-head">
+    <div>
+      <h2>${escapeHtml(item.label)}</h2>
+      <p class="sub">${escapeHtml(item.subtitle)} · <span class="pill">${escapeHtml(item.faceSource)}</span></p>
+      <p class="mono id">${escapeHtml(item.id)}</p>
+    </div>
+    <a class="link" data-preview="${escapeHtml(item.previewHref)}" href="#">Face spike ↗</a>
+  </header>
+  <div class="cols">
+    <figure class="hero" style="aspect-ratio:${ratio}">
+      ${cell(item.cropUrl, 'fill', 'no crop')}
+      <figcaption>Crop</figcaption>
+    </figure>
+    <figure class="hero mint" style="aspect-ratio:${ratio}">
+      ${cell(item.cutoutUrl, 'contain', 'no cutout')}
+      <figcaption>Cutout</figcaption>
+    </figure>
+    <figure class="hero mint" style="aspect-ratio:${ratio}">
+      ${cell(item.flatlayUrl, 'contain', 'no packshot')}
+      <figcaption>Packshot</figcaption>
+    </figure>
+  </div>
+</article>`;
+		})
+		.join('\n');
+
+	const empty = page.items.length
+		? ''
+		: `<p class="empty">No browse closet items for this eval user. Run extract:smoke with packshot enabled.</p>`;
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>${escapeHtml(page.title)}</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-display@600&amp;f[]=satoshi@500,600&amp;display=swap"/>
+<style>
+  :root { --green:#3d4a3d; --lime:#b8e994; --mist:#e8f5e8; --radius:16px; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Satoshi, ui-sans-serif, system-ui, sans-serif; background:#dfe9dc; color:#2c352c; }
+  .top { padding:16px 20px 8px; display:flex; flex-wrap:wrap; gap:12px; align-items:baseline; justify-content:space-between; }
+  h1 { font-family:"Clash Display",sans-serif; font-size:22px; margin:0; color:var(--green); }
+  .lead { margin:0; color:#5a675a; font-size:14px; max-width:52rem; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; color:#7a8a7a; }
+  .page { padding:8px 20px 48px; display:grid; gap:28px; max-width:1100px; }
+  .row { background: color-mix(in srgb, white 55%, transparent); border-radius:20px; padding:14px 14px 18px; }
+  .row-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:12px; }
+  .row-head h2 { font-family:"Clash Display",sans-serif; font-size:16px; margin:0 0 4px; color:var(--green); }
+  .sub { margin:0; font-size:13px; color:#5a675a; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:var(--green); color:var(--lime); font-size:11px; font-weight:600; }
+  .link { color:var(--green); font-weight:600; font-size:13px; text-decoration:none; white-space:nowrap; }
+  .cols { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+  @media (max-width:820px) { .cols { grid-template-columns:1fr; } }
+  .hero { position:relative; border-radius:var(--radius); overflow:hidden; background:#cfdccf; max-width:100%; }
+  .hero.mint { background:var(--mist); }
+  .face-img { position:absolute; inset:0; width:100%; height:100%; }
+  .face-img.fill { object-fit:cover; object-position:top center; }
+  .face-img.contain { object-fit:contain; object-position:center; padding:10px; }
+  .ph { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:12px; text-align:center; color:#7a8a7a; font-size:12px; }
+  figcaption { position:absolute; left:0; right:0; bottom:0; z-index:2; padding:20px 10px 8px;
+    background:linear-gradient(transparent, color-mix(in srgb, var(--green) 72%, black));
+    color:#fff; font-size:12px; font-weight:600; }
+  .empty { padding:24px; color:#5a675a; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>${escapeHtml(page.title)}</h1>
+    <p class="lead">${escapeHtml(page.subtitle)}</p>
+  </div>
+  <p class="mono">judge: prefer packshot when face_source=flatlay</p>
+</header>
+<main class="page">
+${rows || empty}
+</main>
+<script>
+  (function () {
+    var key = new URL(location.href).searchParams.get('admin_key') || '';
+    document.querySelectorAll('[data-preview]').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        var href = a.getAttribute('data-preview') || '';
+        var u = new URL(href, location.origin);
+        if (key) u.searchParams.set('admin_key', key);
+        window.open(u.toString(), '_blank', 'noopener');
+      });
+    });
+  })();
+</script>
+</body>
+</html>`;
+}
+
+function boxStyle(box: PreviewBox['bounding_box']): string {
+	return [
+		`left:${box.x}%`,
+		`top:${box.y}%`,
+		`width:${box.width}%`,
+		`height:${box.height}%`,
+	].join(';');
+}
+
+export function renderClosetPreviewHtml(page: ClosetPreviewPage): string {
+	const boxesHtml = page.boxes
+		.map((box) => {
+			const cls = box.highlighted ? 'box box-hi' : 'box';
+			const label = escapeHtml(`${box.label} · ${box.color}`);
+			return `<div class="${cls}" style="${boxStyle(box.bounding_box)}"><span>${label}</span></div>`;
+		})
+		.join('');
+
+	const toggleLabel = page.showAll ? 'This item only' : 'All boxes on this outfit';
+	const toggleAll = page.showAll ? '0' : '1';
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>${escapeHtml(page.title)}</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: ui-sans-serif, system-ui, sans-serif; background: #111; color: #eee; }
+  header { padding: 12px 16px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  p { margin: 0; color: #aaa; font-size: 13px; }
+  button { background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  .stage { position: relative; display: inline-block; max-width: 100%; vertical-align: top; overflow: hidden; }
+  .stage img { display: block; max-width: min(100vw, 900px); height: auto; }
+  .box { position: absolute; border: 2px solid rgba(255,255,255,.7); box-sizing: border-box; pointer-events: none; }
+  .box-hi { border-color: #f5c518; border-width: 3px; z-index: 2; box-shadow: 0 0 0 9999px rgba(0,0,0,.5); }
+  .box span { position: absolute; left: 0; bottom: 100%; margin: 0 0 4px; background: rgba(0,0,0,.75); color: #fff; font-size: 11px; line-height: 1.2; padding: 2px 6px; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .box-hi span { background: #f5c518; color: #111; }
+</style>
+</head>
+<body>
+<header>
+  <h1>${escapeHtml(page.title)}</h1>
+  <p>${escapeHtml(page.subtitle)}</p>
+  <button type="button" id="toggle-all">${escapeHtml(toggleLabel)}</button>
+  <button type="button" id="to-closet">Tile vs item</button>
+</header>
+<div class="stage">
+  <img src="${escapeHtml(page.imageUrl)}" alt="Outfit"/>
+  ${boxesHtml}
+</div>
+<script>
+  document.getElementById('toggle-all')?.addEventListener('click', function () {
+    var u = new URL(location.href);
+    u.searchParams.set('all', ${JSON.stringify(toggleAll)});
+    location.href = u.toString();
+  });
+  document.getElementById('to-closet')?.addEventListener('click', function () {
+    var u = new URL(location.href);
+    u.searchParams.set('layout', 'closet');
+    location.href = u.toString();
+  });
+</script>
+</body>
+</html>`;
+}
+
+export function renderClosetScreenHtml(page: ClosetItemFocusPage): string {
+	const ratio = page.aspectRatio > 0 ? page.aspectRatio : CLOSET_SCREEN_FALLBACK_ASPECT;
+	const blur = page.blurHash ? escapeHtml(page.blurHash) : '';
+	const crop = page.cropUrl
+		? `<img class="hero-img" src="${escapeHtml(page.cropUrl)}" alt="${escapeHtml(page.label)}"/>`
+		: `<div class="ph">no crop</div>`;
+	const canvas = blur
+		? `<canvas data-blurhash="${blur}" data-ratio="${ratio}"></canvas>`
+		: `<div class="wash"></div>`;
+	const itemSrc = page.itemCropUrl || page.originalUrl;
+	const itemPhoto = itemSrc
+		? `<img class="item-photo" alt="${escapeHtml(page.label)}" src="${escapeHtml(itemSrc)}"/>`
+		: `<div class="ph">no photo</div>`;
+	const itemSpot = `<div class="seed-spot" style="${boxStyle(page.seedBox)}"></div>`;
+	const meta = [
+		`id ${page.itemId}`,
+		page.aspectFallback ? 'aspect 4/5 fallback' : `aspect ${page.aspectRatio}`,
+		page.photoWidth && page.photoHeight ? `${page.photoWidth}×${page.photoHeight}` : 'photo size missing',
+		page.blurHash ? 'blurhash yes' : 'blurhash missing',
+		page.cropUrl ? 'crop yes' : 'crop missing',
+	].join(' · ');
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>${escapeHtml(page.title)} — tile vs item</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-display@600&amp;f[]=satoshi@500,600&amp;display=swap"/>
+<style>
+  :root {
+    --green: #3d4a3d;
+    --lime: #b8e994;
+    --mist: #e8f5e8;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Satoshi, ui-sans-serif, system-ui, sans-serif; background: #dfe9dc; color: #2c352c; }
+  header { padding: 12px 16px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  h1 { font-family: "Clash Display", sans-serif; font-size: 18px; margin: 0; font-weight: 600; color: var(--green); }
+  p { margin: 0; color: #5a675a; font-size: 13px; }
+  button { background: var(--green); color: var(--lime); border: 0; border-radius: 999px; padding: 8px 12px; cursor: pointer; font: 600 13px Satoshi, sans-serif; }
+  .meta { padding: 0 16px 12px; font-size: 12px; color: #7a8a7a; }
+  .page { display: grid; gap: 24px; padding: 8px 16px 40px; max-width: 1100px; }
+  @media (min-width: 860px) { .page { grid-template-columns: minmax(220px, 0.85fr) minmax(320px, 1.2fr); align-items: start; } }
+  .card h2 { font-family: "Clash Display", sans-serif; font-size: 16px; margin: 0 0 4px; color: var(--green); }
+  .kicker { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #6d7d6d; margin: 0 0 8px; }
+  .hero {
+    position: relative; border-radius: var(--radius); overflow: hidden; background: #d5e4d4;
+  }
+  .hero.tile { max-width: 240px; }
+  .hero.item { max-width: 640px; }
+  .item-stage { position: relative; overflow: hidden; }
+  .item-photo { display: block; width: 100%; height: auto; }
+  .hero canvas, .hero .wash { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .hero-img { position: relative; display: block; width: 100%; height: auto; }
+  .hero .ph { position: relative; display: flex; align-items: center; justify-content: center; color: #7a8a7a; min-height: 160px; width: 100%; }
+  .hero figcaption {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 28px 12px 10px;
+    background: linear-gradient(transparent, color-mix(in srgb, var(--green) 72%, black));
+    color: #fff; font-size: 13px; font-weight: 600;
+  }
+  .seed-spot {
+    position: absolute; z-index: 1; box-sizing: border-box; pointer-events: none;
+    border: 1px solid rgba(255,255,255,.45);
+    box-shadow: 0 0 0 9999px rgba(0,0,0,.46);
+  }
+  .note { font-size: 12px; color: #7a8a7a; margin: 8px 0 12px; line-height: 1.4; }
+</style>
+</head>
+<body>
+<header>
+  <h1>${escapeHtml(page.title)}</h1>
+  <p>${escapeHtml(page.subtitle)}</p>
+  <button type="button" id="to-layout">Photo boxes</button>
+</header>
+<p class="meta">${escapeHtml(meta)}</p>
+<div class="page">
+  <section class="card">
+    <p class="kicker">A · Closet tile</p>
+    <h2>Padded crop</h2>
+    <p class="note">Browse tile: category-padded photo crop at full brightness. No dim overlay.</p>
+    <figure class="hero tile" style="--ratio:${ratio}">
+      ${canvas}
+      ${crop}
+      <figcaption>${escapeHtml(page.label)}</figcaption>
+    </figure>
+  </section>
+  <section class="card">
+    <p class="kicker">B · Item view</p>
+    <h2>Outfit, person in focus</h2>
+    <p class="note">Native-aspect trim + scale-down centered on the person wearing this item. Extra wall and floor are clipped, never stretched. Bright region is the unpadded garment box.</p>
+    <figure class="hero item">
+      <div class="item-stage">
+        ${itemPhoto}
+        ${itemSpot}
+      </div>
+      <figcaption>${escapeHtml(page.label)}</figcaption>
+    </figure>
+  </section>
+</div>
+<script>
+  document.getElementById('to-layout')?.addEventListener('click', function () {
+    var u = new URL(location.href);
+    u.searchParams.delete('layout');
+    location.href = u.toString();
+  });
+  document.querySelectorAll('canvas[data-blurhash]').forEach(function (canvas) {
+    var hash = canvas.getAttribute('data-blurhash');
+    if (!hash) return;
+    import('https://cdn.jsdelivr.net/npm/blurhash@2.0.5/+esm').then(function (mod) {
+      var w = 32;
+      var r = Number(canvas.getAttribute('data-ratio')) || ${CLOSET_SCREEN_FALLBACK_ASPECT};
+      var h = Math.max(3, Math.round(w / r));
+      var pixels = mod.decode(hash, w, h);
+      canvas.width = w;
+      canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      var img = ctx.createImageData(w, h);
+      img.data.set(pixels);
+      ctx.putImageData(img, 0, 0);
+    }).catch(function () {});
+  });
+</script>
+</body>
+</html>`;
+}
+
+export function renderClosetFaceCompareHtml(page: ClosetFaceComparePage): string {
+	const ratio = page.aspectRatio > 0 ? page.aspectRatio : CLOSET_SCREEN_FALLBACK_ASPECT;
+	const crop = page.cropUrl
+		? `<img class="face-img fill" src="${escapeHtml(page.cropUrl)}" alt="padded crop"/>`
+		: `<div class="ph">no crop</div>`;
+	const cf = page.cfCutoutUrl
+		? `<img class="face-img fill" src="${escapeHtml(page.cfCutoutUrl)}" alt="CF segment"/>`
+		: `<div class="ph">no CF isolate</div>`;
+	const sam = page.samFaceUrl
+		? `<img class="face-img contain" src="${escapeHtml(page.samFaceUrl)}" alt="SAM face"/>`
+		: `<div class="ph">${escapeHtml(page.samNote || 'SAM face missing')}</div>`;
+	const packshot = page.packshotUrl
+		? `<img class="face-img contain" src="${escapeHtml(page.packshotUrl)}" alt="packshot"/>`
+		: `<div class="ph">${escapeHtml(page.packshotNote || 'Packshot missing')}</div>`;
+	const meta = [
+		`id ${page.itemId}`,
+		`aspect ${page.aspectRatio > 0 ? page.aspectRatio : '4/5'}`,
+		page.samModel ? `sam ${page.samModel}` : 'sam —',
+		page.packshotModel ? `packshot ${page.packshotModel}` : 'packshot —',
+		page.samNote ? page.samNote : 'SAM ok',
+	].join(' · ');
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>${escapeHtml(page.title)} — face compare</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-display@600&amp;f[]=satoshi@500,600&amp;display=swap"/>
+<style>
+  :root {
+    --green: #3d4a3d;
+    --lime: #b8e994;
+    --mist: #e8f5e8;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Satoshi, ui-sans-serif, system-ui, sans-serif; background: #dfe9dc; color: #2c352c; }
+  header { padding: 12px 16px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  h1 { font-family: "Clash Display", sans-serif; font-size: 18px; margin: 0; font-weight: 600; color: var(--green); }
+  p { margin: 0; color: #5a675a; font-size: 13px; }
+  button { background: var(--green); color: var(--lime); border: 0; border-radius: 999px; padding: 8px 12px; cursor: pointer; font: 600 13px Satoshi, sans-serif; }
+  .meta { padding: 0 16px 12px; font-size: 12px; color: #7a8a7a; }
+  .page { display: grid; gap: 20px; padding: 8px 16px 40px; max-width: 1200px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .card h2 { font-family: "Clash Display", sans-serif; font-size: 15px; margin: 0 0 4px; color: var(--green); }
+  .kicker { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #6d7d6d; margin: 0 0 8px; }
+  .note { font-size: 12px; color: #7a8a7a; margin: 0 0 10px; line-height: 1.4; }
+  .hero {
+    position: relative; border-radius: var(--radius); overflow: hidden;
+    background: #cfdccf; aspect-ratio: ${ratio}; max-width: 320px;
+  }
+  .hero.mint { background: var(--mist); }
+  .face-img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .face-img.fill { object-fit: cover; object-position: top center; }
+  .face-img.contain { object-fit: contain; object-position: center; padding: 10px; }
+  .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; text-align: center; color: #7a8a7a; font-size: 12px; }
+  .hero figcaption {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding: 24px 12px 10px;
+    background: linear-gradient(transparent, color-mix(in srgb, var(--green) 72%, black));
+    color: #fff; font-size: 12px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>${escapeHtml(page.title)}</h1>
+  <p>${escapeHtml(page.subtitle)}</p>
+  <button type="button" id="to-closet">Tile layout</button>
+  <button type="button" id="to-boxes">Photo boxes</button>
+  <button type="button" id="run-packshot">Run packshot</button>
+</header>
+<p class="meta">${escapeHtml(meta)}</p>
+<div class="page">
+  <section class="card">
+    <p class="kicker">A · Product default</p>
+    <h2>Padded crop</h2>
+    <p class="note">Current closet tile face (<code>cutout=0</code>). Readable fabric; room may show.</p>
+    <figure class="hero">
+      ${crop}
+      <figcaption>${escapeHtml(page.label)}</figcaption>
+    </figure>
+  </section>
+  <section class="card">
+    <p class="kicker">B · CF Images</p>
+    <h2>Foreground segment</h2>
+    <p class="note">Isolate default (<code>segment: foreground</code>). Often a dark person silhouette.</p>
+    <figure class="hero mint">
+      ${cf}
+      <figcaption>${escapeHtml(page.label)}</figcaption>
+    </figure>
+  </section>
+  <section class="card">
+    <p class="kicker">C · Tier 1 spike</p>
+    <h2>SAM + BiRefNet</h2>
+    <p class="note">Fal SAM cutout, then BiRefNet matting when available. Mint card, contain fit.</p>
+    <figure class="hero mint">
+      ${sam}
+      <figcaption>${escapeHtml(page.label)}</figcaption>
+    </figure>
+  </section>
+  <section class="card">
+    <p class="kicker">D · Tier 3 spike</p>
+    <h2>Nano Banana flat-lay</h2>
+    <p class="note">Generative packshot via <code>${escapeHtml(FAL_PACKSHOT_MODEL)}</code>. Opt in with <code>&amp;packshot=1</code> (slow / paid).</p>
+    <figure class="hero mint">
+      ${packshot}
+      <figcaption>${escapeHtml(page.label)}</figcaption>
+    </figure>
+  </section>
+</div>
+<script>
+  document.getElementById('to-closet')?.addEventListener('click', function () {
+    var u = new URL(location.href);
+    u.searchParams.set('layout', 'closet');
+    u.searchParams.delete('packshot');
+    location.href = u.toString();
+  });
+  document.getElementById('to-boxes')?.addEventListener('click', function () {
+    var u = new URL(location.href);
+    u.searchParams.delete('layout');
+    u.searchParams.delete('packshot');
+    location.href = u.toString();
+  });
+  document.getElementById('run-packshot')?.addEventListener('click', function () {
+    var u = new URL(location.href);
+    u.searchParams.set('layout', 'face');
+    u.searchParams.set('packshot', '1');
+    location.href = u.toString();
+  });
+</script>
+</body>
+</html>`;
+}

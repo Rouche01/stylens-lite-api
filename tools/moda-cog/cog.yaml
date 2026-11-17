@@ -1,0 +1,15 @@
+# Replicate Cog for MODA fashion vision embeddings (bake-off / CLOSET_EMBED_PROVIDER=moda).
+# From this directory (requires `cog` CLI + Replicate login):
+#   cog predict -i image=@/path/to/crop.jpg
+#   cog push r8.im/<your-user>/moda-fashion-vision-fp16
+build:
+  gpu: true
+  python_version: '3.11'
+  python_packages:
+    - torch==2.4.1
+    - torchvision==0.19.1
+    - open_clip_torch==2.26.1
+    - pillow==10.4.0
+    - huggingface_hub==0.25.2
+    - safetensors==0.4.5
+predict: predict.py:Predictor

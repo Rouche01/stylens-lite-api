@@ -1,5 +1,5 @@
-import { ClaudeContentBlock, ClaudeLLMInput, ClaudeLLMResponse, ClaudeMessage, ClaudeSystemPrompt, LLMProviderOutputContent, MessageEntry } from '../../../utils/types';
-import { regenerateSignedUrl } from '../../../utils/assets.utils';
+import { ClaudeContentBlock, ClaudeImageBlock, ClaudeLLMInput, ClaudeLLMResponse, ClaudeMessage, ClaudeSystemPrompt, LLMProviderOutputContent, MessageEntry } from '../../../utils/types';
+import { fetchImageAsBase64, regenerateSignedUrl } from '../../../utils/assets.utils';
 import { ILLMProvider } from './base.provider';
 import { handleSSEStream } from '../../../utils/llm_stream.utils';
 
@@ -10,7 +10,35 @@ export class ClaudeProvider implements ILLMProvider {
 		private model: string
 	) { }
 
-	async prepareMessagesForLLM(messages: MessageEntry[]): Promise<ClaudeLLMInput> {
+	private async processImage(imgUrl: string, imageFormat: 'url' | 'base64'): Promise<ClaudeImageBlock> {
+
+		if (imageFormat === 'base64') {
+			try {
+				const { base64, mediaType } = await fetchImageAsBase64(imgUrl);
+				return {
+					type: 'image',
+					source: {
+						type: 'base64',
+						media_type: mediaType as any,
+						data: base64,
+					}
+				};
+			} catch (e) {
+				console.error('Error fetching image for base64 conversion, falling back to url', e);
+			}
+		}
+
+		const freshSignedUrl = await regenerateSignedUrl(imgUrl);
+		return {
+			type: 'image',
+			source: {
+				type: 'url',
+				url: freshSignedUrl,
+			}
+		};
+	}
+
+	async prepareMessagesForLLM(messages: MessageEntry[], imageFormat: 'url' | 'base64' = 'url'): Promise<ClaudeLLMInput> {
 		const processedMessages: ClaudeMessage[] = [];
 		let systemPrompt: ClaudeSystemPrompt | undefined = undefined;
 
@@ -40,14 +68,8 @@ export class ClaudeProvider implements ILLMProvider {
 			const uniqueImages = Array.from(new Map(images.map(img => [img.url, img])).values());
 
 			for (const img of uniqueImages) {
-				const freshSignedUrl = await regenerateSignedUrl(img.url);
-				content.push({
-					type: 'image',
-					source: {
-						type: 'url',
-						url: freshSignedUrl,
-					}
-				});
+				const imageBlock = await this.processImage(img.url, imageFormat);
+				content.push(imageBlock);
 			}
 
 			processedMessages.push({
@@ -86,7 +108,12 @@ export class ClaudeProvider implements ILLMProvider {
 				system: input.system,
 				max_tokens: 1024,
 				...(format?.type === 'json_schema' ? {
-					// Handle JSON schema if supported by the specific Claude endpoint/wrapper
+					output_config: {
+						format: {
+							type: 'json_schema',
+							schema: format.schema
+						}
+					}
 				} : {})
 			}),
 			signal,

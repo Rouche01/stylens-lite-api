@@ -1,98 +1,21 @@
-import { createLLMService, LLMService } from '../services/llm.svc';
-import { ModelProvider, ModelUseCase } from '../services/model_config.svc';
-import type { MessageEntry } from './types';
-
 /**
  * Sanitize LLM title output: take first line, collapse whitespace, clip length.
  * Returns null for empty/generic results.
  */
 export const sanitizeTitle = (raw?: string, maxLength = 60): string | null => {
 	if (!raw) return null;
-	const oneLine = raw.split('\n')[0].replace(/\s+/g, ' ').trim();
+	let oneLine = raw.split('\n')[0].replace(/\s+/g, ' ').trim();
+	// Drop wrapping quotes if the model returns them
+	oneLine = oneLine.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim();
+	// Strip machine-y product labels (prefix or suffix) — e.g. "Beach outfit Style Analysis"
+	const productLabel = String.raw`(?:style|outfit|fashion)\s*analysis`;
+	oneLine = oneLine
+		.replace(new RegExp(`^${productLabel}\\s*[:\\-–—|]?\\s*`, 'i'), '')
+		.replace(new RegExp(`\\s+${productLabel}$`, 'i'), '')
+		.trim();
 	const clipped = oneLine.slice(0, maxLength).trim();
 	if (!clipped) return null;
 	// Reject trivial DB fallback or clearly placeholder results
-	if (/^new style analysis$/i.test(clipped)) return null;
+	if (/^(new\s+)?style\s+analysis$/i.test(clipped)) return null;
 	return clipped;
 };
-
-/**
- * Generate a concise session title from an array of MessageEntry.
- * - Returns a sanitized title string or `null` on timeout/error/no-usable-output.
- * - Options:
- *    - maxWords: hint for LLM (not strictly enforced)
- *    - maxLength: hard character limit applied in sanitization
- *    - timeoutMs: max time to wait for LLM response (ms)
- */
-export async function generateTitle(
-	messages: MessageEntry[],
-	opts?: { maxWords?: number; maxLength?: number; timeoutMs?: number },
-): Promise<string | null> {
-	const { maxWords = 6, maxLength = 60, timeoutMs = 5000 } = opts || {};
-
-	// Build a compact summary for the LLM
-	const messagesSummary = messages
-		.filter((m) => m.prompt || m.remoteImage || (m.remoteImages && m.remoteImages.length > 0))
-		.map((m, i) => {
-			const promptPart = m.prompt ? m.prompt : '';
-			const imageCount = (m.remoteImage ? 1 : 0) + (m.remoteImages?.length || 0);
-			const imagePart = imageCount > 0 ? `[${imageCount} images]` : '';
-			const content = `${promptPart} ${imagePart}`.trim();
-			return `${i + 1}. ${m.role}: ${content}`;
-		})
-		.join('\n');
-
-	if (!messagesSummary) return null;
-
-	const titleMessages: MessageEntry[] = [
-		{
-			role: 'user',
-			prompt: `Create a concise session title (max ${maxWords} words) for a personal-stylist style analysis based on the messages below. Return only the title in Title Case.\n\n${messagesSummary}\n\nTitle:`,
-		},
-	];
-
-	const llmService = createLLMService({ useCase: ModelUseCase.TITLE_GENERATION, provider: ModelProvider.CLAUDE });
-
-	// Use AbortController to cancel the underlying fetch when timeout elapses
-	const controller = new AbortController();
-	const signal = controller.signal;
-	let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-	try {
-		// Schedule abort
-		timeoutId = setTimeout(() => {
-			controller.abort();
-		}, timeoutMs);
-
-		// Prepare messages for the specific provider (mapping roles, handling images, etc.)
-		const preparedInput = await llmService.prepareMessagesForLLM(titleMessages);
-
-		// Pass the signal into the LLM call so fetch can be aborted
-		const outputs = await llmService.generateResponse(preparedInput, signal);
-
-		// Clear timeout on success
-		if (timeoutId) {
-			clearTimeout(timeoutId);
-			timeoutId = null;
-		}
-
-		if (!outputs) return null;
-
-		const candidate = LLMService.extractText(outputs);
-		const cleaned = sanitizeTitle(candidate ?? undefined, maxLength);
-		return cleaned;
-	} catch (err: any) {
-		// If it was an abort, return null; otherwise log and return null
-		if (err && (err.name === 'AbortError' || err.message?.includes('aborted') || err.type === 'aborted')) {
-			// timeout triggered; expected path
-			console.warn('generateTitle: request aborted due to timeout');
-			return null;
-		}
-		console.warn('generateTitle error:', err);
-		return null;
-	} finally {
-		if (timeoutId) {
-			clearTimeout(timeoutId);
-		}
-	}
-}

@@ -1,0 +1,115 @@
+# Outfit identity analysis flow
+
+How an uploaded outfit photo becomes closet tiles, pending matches, Vectorize vectors, and (optionally) display faces.
+
+**Entry:** classification tags outfit images → `CLOSET_IDENTITY_QUEUE` (`kind: closet_identity`).  
+**Core:** `OutfitIdentityService.process` / `resolveMatch` in `src/services/identity/outfitIdentity.svc.ts` (writer in `write/`).  
+**Repair:** `closet_vector_repair` + hourly `closet_vector_backfill` scan.  
+**Faces:** `CLOSET_GARMENT_FACE_QUEUE` (`closet-garment-face`) via `GarmentFaceService` — cutout + packshot, flag-gated.  
+**No Durable Object** — one writer per user via queue + `identity_inflight`.
+
+The Flutter app **never** calls `POST /outfits/extract`. Production identity is entirely **async** after style-analysis classification (`closet-browse` + outfit tags). Admin/eval may run the same `process()` in-request.
+
+## Statuses
+
+Closet indexing: `committed` → `indexing` → `indexed` | `index_degraded`  
+Match lifecycle: `pending` → claimed (CAS reserved) → done (`same` / `new`)  
+Face source (read preference): `flatlay` > `cutout` > `crop`
+
+## Happy path (queue)
+
+```mermaid
+flowchart TD
+  A[Enqueue closet_identity job] --> B[Acquire identity_inflight]
+  B -->|busy| R[Retry ~30s]
+  B --> C[Prior-create searchable gate]
+  C -->|budget exhaust| D[Mark index_degraded]
+  C -->|stamped| E[Process crops sequentially]
+  D --> E
+  E --> F{ANN + unindexed D1 probes}
+  F -->|ask band| G[Pending match + probe_embed]
+  F -->|create| H[D1 tile first + probe]
+  H --> I[Best-effort Vectorize upsert]
+  I --> J[Enqueue backfill/repair]
+  H --> L[Enqueue garment-face cutout + packshot]
+  E --> K[Release identity_inflight]
+  L --> M[closet-garment-face consumer]
+  M --> N[Store cutout_image_key / flatlay_image_key]
+```
+
+Ask stays pending until the user resolves — **no** garment-face jobs while `pending`.
+
+## Resolve HTTP
+
+`POST .../resolve` stays off the writer lock and does not return `IdentityBusyError`.
+
+- **same:** CAS + link wear + enqueue packshot (skip if `flatlay_image_key` already set; fresh claim only)  
+- **new:** CAS + D1 create + enqueue index + enqueue packshot (fresh claim only)  
+- Same decision again → 200; opposite → 409 (conflicting decision on the same match)
+
+## Garment faces (display)
+
+Identity / Vectorize **always** use real padded crops. Cutout and packshot are presentation only.
+
+| Trigger | Cutout (`GARMENT_FACE_CUTOUT_ENABLED`) | Packshot (`GARMENT_FACE_PACKSHOT_ENABLED`) |
+|---------|----------------------------------------|--------------------------------------------|
+| Silent **create** (new tile on queue) | Enqueue after `process` | After cutout settles when both on (`followWithPackshot`); else enqueue alone |
+| Ask → **new** | If packshot asked and no cutout yet → cutout first | Enqueue on fresh claim (or deferred behind cutout) |
+| Ask → **same** | Same deferral when cutout missing | Enqueue on fresh claim (skip if flatlay exists) |
+| Ask **pending** | No | No |
+| Browse / list | No generation | No generation |
+
+- Queue: `CLOSET_GARMENT_FACE_QUEUE` — jobs `type: cutout | packshot` (`src/services/closet_face/garmentFace.svc.ts`).  
+- Cutout: gated SAM + BiRefNet (stricter thresholds for **footwear**); reject → keep crop face.  
+- Packshot: Nano Banana flat-lay; prefers stored cutout when present, else **padded crop** (never the full outfit photo).  
+- **Footwear:** Nano Banana only when a **studio-trusted cutout** exists (`passesFootwearStudioCutout`); else letterbox padded crop to a studio card (`flatlay_image_key`). Generative failure falls back to studio pad from the trusted cutout. Packshot type label prefers subcategory (e.g. `sneakers` not free-text `boots`).  
+- **Apparel:** generative packshot; may use cutout or padded crop.  
+- **Backdrop (≤2 swatches):** dark garments → soft mint `#E8F0EE`; light garments → soft charcoal `#6B736E` (`resolvePackshotStudioBackground`). Solid seamless only — no floor/wall seam or fabric texture. Used in Nano Banana prompts and footwear studio pad.  
+- List/detail: `isolated_image_url` prefers flatlay > cutout > crop; expose `crop_image_url` + `face_source` + `packshot_ready`.  
+- Judge (eval only): `GET /closet/eval/faces?userId=<EVAL_USER_ID>&admin_key=…` — crop | stored cutout | stored packshot gallery (`&format=json` for tooling). Eval UI **Faces** tab proxies via `/api/closet-faces`.  
+- Quality plan: [`.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md`](../.cursor/plans/closet_garment_face_quality_b7e4c901.plan.md).
+
+### Browse-ready contract (Flutter)
+
+**Create ≠ browse-ready.** D1/Vectorize tiles exist as soon as identity creates; packshot is async presentation.
+
+| Surface | Contract |
+|---------|----------|
+| `GET /closet/items` | Each item includes `packshot_ready` (`true` iff `flatlay_image_key` set) and `face_source` (`flatlay` \| `cutout` \| `crop`). Response also has `packshot_only_browse` (mirrors `GARMENT_FACE_PACKSHOT_ENABLED`). |
+| Packshot-only mode | When `packshot_only_browse: true`, list **omits** items without a packshot. Grid is uniform flatlay tiles — no crop/packshot mix. |
+| Flag off (prod default today) | List returns all browse items; Flutter may hide until `packshot_ready` / `face_source === 'flatlay'` using the same PostHog / remote flag as the API. |
+| `GET /closet/items/:id` | Same `packshot_ready` + face fields. In packshot-only mode, non-ready items return **404** (not in wardrobe). |
+| Ask / identity | Always use `crop_image_url` / padded crops — never wait on packshot. |
+| Preparing UX | Optional client “preparing” state for known item ids that are not yet `packshot_ready`; do not block extract or resolve. |
+
+No Flutter implementation lives in this repo — API fields + this doc are the contract.
+
+## Sync vs queue boundaries
+
+| Work | Where | Notes |
+|------|--------|--------|
+| Presigned upload | Sync HTTP | No identity |
+| Classify + enqueue | `waitUntil` after session/message | Outfit tags + PostHog `closet-browse` |
+| Claude extract + Florence boxes | Inside `process()` on **queue consumer** | Same code as admin sync extract |
+| `identity_inflight` lock | Inside `process()` | Busy → queue retry ~30s (5 attempts) |
+| Searchable gate | Inside `process()` | Then `index_degraded` + local probes |
+| Embed → Vectorize → policy | Sync in identity job | Ask = pending match; create = D1 tile |
+| Cutout / packshot | Separate `closet-garment-face` queue | After create / resolve; flag-gated; never pending ask |
+| Progress / catalog realtime | Identity queue path | HTTP extract does **not** broadcast catalog |
+| Resolve same/new | Sync HTTP, **no** writer lock | May enqueue packshot |
+| Admin `POST /outfits/extract` | Full `process()` **in-request** | Eval/smoke; 409 on busy; enqueues cutout+packshot for creates (same helper as queue) |
+
+## Writer busy (409 vs queue retry)
+
+| Path | Busy behavior |
+|------|----------------|
+| `CLOSET_IDENTITY_QUEUE` | `IdentityBusyError` → retry ~30s; give up after 5 attempts |
+| `POST /outfits/extract` (admin/eval) | **409** with busy message — client must retry; not used by app capture |
+| `POST .../resolve` | Never busy — stays off `identity_inflight` |
+| `CLOSET_GARMENT_FACE_QUEUE` | Own consumer retries; does not hold `identity_inflight` |
+
+## Degraded window
+
+If Vectorize lags past the searchable-gate budget, tiles become `index_degraded` and the next outfit still runs. Local scoring against recent unindexed/degraded probes (`listRecentUnindexedProbes`) **and** pending-ask probes (`listRecentPendingMatchProbes`) prefers **ask** over silent duplicate creates — including when the ANN query itself throws. Pending asks store `probe_embed` but no closet tile; later outfits still score those crops (neighbor id = the pending match’s candidate tile) so mid-cycle rewear is not starved.
+
+CF Images orient/crop/resize retries once on transient failures (5xx, 429, error **1031**, network timeouts). Per-item embed failure still fails that item only; the rest of the outfit continues.

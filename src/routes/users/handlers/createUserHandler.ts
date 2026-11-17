@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { createUsersDB } from 'db';
+import { createInviteCodesDB, createUsersDB } from 'db';
 import { error, RequestHandler } from 'itty-router';
 import { createAuthService } from 'services/auth.svc';
 import { AppRoles, AuthRequest, Gender } from 'types';
@@ -8,6 +8,7 @@ type CreateUserBody = {
 	name: string;
 	email?: string;
 	gender?: Gender;
+	inviteCode?: string;
 };
 
 const createUserHandler: RequestHandler<AuthRequest> = async (request) => {
@@ -30,11 +31,34 @@ const createUserHandler: RequestHandler<AuthRequest> = async (request) => {
 			return error(409, 'User already exists');
 		}
 
+		let inviteLimits: Parameters<typeof usersDB.createUser>[0]['inviteLimits'];
+		let inviteRedemption: Parameters<typeof usersDB.createUser>[0]['inviteRedemption'];
+
+		if (body.inviteCode) {
+			const inviteCodesDB = createInviteCodesDB(env.GOSTYLENS_DB);
+			try {
+				const invite = await inviteCodesDB.getRedeemableCode(body.inviteCode);
+				inviteLimits = {
+					trial_days: invite.trial_days,
+					trial_session_limit: invite.trial_session_limit,
+					monthly_session_limit: invite.monthly_session_limit,
+					message_per_session_limit: invite.message_per_session_limit,
+					image_per_session_limit: invite.image_per_session_limit,
+				};
+				inviteRedemption = { inviteId: invite.id };
+			} catch (inviteErr) {
+				const message = inviteErr instanceof Error ? inviteErr.message : 'Invalid invite code';
+				return error(400, message);
+			}
+		}
+
 		const newUser = await usersDB.createUser({
 			authId: authId,
 			name: body.name,
 			email: body.email,
 			gender: body.gender,
+			inviteLimits,
+			inviteRedemption,
 		});
 
 		const authService = createAuthService();

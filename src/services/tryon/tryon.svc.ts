@@ -1,0 +1,187 @@
+import { arrayBufferToBase64, fetchImageAsArrayBuffer, signDownloadUrlForKey } from '../../utils/assets.utils';
+import { Logger, createLogger } from '../../utils/logger.utils';
+import { FAL_MODELS, FAL_TRYON_MODEL, FalHttpError, falPostJson } from '../fal';
+
+const TRYON = FAL_MODELS.tryon;
+/** @deprecated Prefer FAL_TRYON_MODEL / FAL_MODELS.tryon — kept for existing imports. */
+export const TRYON_MODEL = FAL_TRYON_MODEL;
+
+export const CLOTH_TYPES = ['upper', 'lower', 'overall', 'inner', 'outer'] as const;
+export type ClothType = (typeof CLOTH_TYPES)[number];
+
+export type FashnCategory = 'tops' | 'bottoms' | 'one-pieces';
+
+export class TryonError extends Error {
+	constructor(
+		message: string,
+		public readonly status?: number
+	) {
+		super(message);
+		this.name = 'TryonError';
+	}
+
+	get isRetryable(): boolean {
+		return this.status == null || this.status === 429 || this.status >= 500;
+	}
+}
+
+export function isClothType(value: string): value is ClothType {
+	return (CLOTH_TYPES as readonly string[]).includes(value);
+}
+
+export function clothTypeToFashnCategory(clothType: ClothType): FashnCategory {
+	if (clothType === 'lower') return 'bottoms';
+	if (clothType === 'overall') return 'one-pieces';
+	return 'tops';
+}
+
+type FalFile = { url?: string; file_data?: string; content_type?: string };
+
+function falFileUrl(value: unknown): string | undefined {
+	if (typeof value === 'string' && (value.startsWith('http') || value.startsWith('data:image'))) {
+		return value;
+	}
+	if (!value || typeof value !== 'object') return undefined;
+	const file = value as FalFile;
+	if (typeof file.url === 'string' && file.url.length > 0) return file.url;
+	if (typeof file.file_data === 'string' && file.file_data.length > 0) {
+		if (file.file_data.startsWith('data:')) return file.file_data;
+		return `data:${file.content_type || 'image/png'};base64,${file.file_data}`;
+	}
+	return undefined;
+}
+
+function extractFashnImageUrl(json: { image?: unknown; images?: unknown } | null): string | undefined {
+	if (!json) return undefined;
+	if (Array.isArray(json.images) && json.images.length > 0) {
+		return falFileUrl(json.images[0]);
+	}
+	return falFileUrl(json.image);
+}
+
+export type TryOnFromR2Params = {
+	avatarImageKey: string;
+	garmentImageKey: string;
+	clothType: ClothType;
+};
+
+export type TryOnResult = {
+	pngBytes: Uint8Array;
+	model: string;
+	clothType: ClothType;
+	category: FashnCategory;
+	avatarImageKey: string;
+	garmentImageKey: string;
+};
+
+/**
+ * Stage 4: FASHN try-on. SAM cutouts are worn-item isolates, not CatVTON catalog
+ * photos — flatten onto white and send as garment_photo_type=flat-lay so the
+ * garment encoder actually sees the cutout.
+ */
+export class TryonService {
+	constructor(
+		private apiKey: string,
+		private bucket: R2Bucket,
+		private images: ImagesBinding,
+		private log: Logger
+	) {}
+
+	async tryOnFromR2(params: TryOnFromR2Params): Promise<TryOnResult> {
+		const { avatarImageKey, garmentImageKey, clothType } = params;
+		const category = clothTypeToFashnCategory(clothType);
+		const log = this.log.child({
+			avatar_image_key: avatarImageKey,
+			garment_image_key: garmentImageKey,
+			cloth_type: clothType,
+			category,
+			model: TRYON_MODEL,
+		});
+
+		if (!this.apiKey?.trim()) {
+			throw new TryonError('FAL_KEY is not set');
+		}
+
+		const [avatarObj, garmentObj] = await Promise.all([
+			this.bucket.get(avatarImageKey),
+			this.bucket.get(garmentImageKey),
+		]);
+		if (!avatarObj) throw new TryonError(`Avatar image not found in R2: ${avatarImageKey}`, 404);
+		if (!garmentObj) throw new TryonError(`Garment image not found in R2: ${garmentImageKey}`, 404);
+		if (!garmentObj.body) throw new TryonError(`Garment object has no body: ${garmentImageKey}`, 422);
+
+		const garmentJpeg = await this.flattenCutoutOnWhite(garmentObj.body);
+		const garmentDataUri = `data:image/jpeg;base64,${arrayBufferToBase64(garmentJpeg)}`;
+		const modelImageUrl = await signDownloadUrlForKey(avatarImageKey);
+
+		log.info('tryon_start', { garment_bytes: garmentJpeg.byteLength, garment_photo_type: 'flat-lay' });
+
+		let json: { image?: unknown; images?: unknown; detail?: unknown; error?: unknown };
+		try {
+			const result = await falPostJson<{ image?: unknown; images?: unknown; detail?: unknown; error?: unknown }>({
+				apiKey: this.apiKey,
+				endpoint: TRYON.endpoint,
+				model: TRYON.model,
+				useCase: TRYON.useCase,
+				log,
+				body: {
+					model_image: modelImageUrl,
+					garment_image: garmentDataUri,
+					category,
+					mode: 'balanced',
+					garment_photo_type: 'flat-lay',
+					moderation_level: 'permissive',
+					num_samples: 1,
+					segmentation_free: true,
+					output_format: 'png',
+				},
+			});
+			json = result.json;
+		} catch (err) {
+			if (err instanceof FalHttpError) {
+				throw new TryonError(err.message, err.status);
+			}
+			throw err;
+		}
+
+		const resultUrl = extractFashnImageUrl(json);
+		if (!resultUrl) {
+			throw new TryonError(`${TRYON.model} returned no image url`, 422);
+		}
+
+		const pngBuffer = await fetchImageAsArrayBuffer(resultUrl);
+		log.info('tryon_ok', { bytes: pngBuffer.byteLength });
+
+		return {
+			pngBytes: new Uint8Array(pngBuffer),
+			model: TRYON_MODEL,
+			clothType,
+			category,
+			avatarImageKey,
+			garmentImageKey,
+		};
+	}
+
+	private async flattenCutoutOnWhite(stream: ReadableStream): Promise<ArrayBuffer> {
+		const result = await this.images.input(stream).output({
+			format: 'image/jpeg',
+			quality: 90,
+			background: '#ffffff',
+		});
+		const response = result.response();
+		if (!response.ok) {
+			throw new TryonError(`Failed to flatten garment cutout (${response.status})`, 502);
+		}
+		return response.arrayBuffer();
+	}
+}
+
+export const createTryonService = (envBindings: Env, log?: Logger) => {
+	const logger = (log ?? createLogger({ env: envBindings.ENV_NAME })).child({ service: 'tryon' });
+	return new TryonService(
+		envBindings.FAL_KEY,
+		envBindings.OUTFIT_PHOTOS_BUCKET,
+		envBindings.IMAGES,
+		logger
+	);
+};

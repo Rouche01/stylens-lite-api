@@ -1,24 +1,43 @@
 import { error, RequestHandler } from 'itty-router';
 import { env } from 'cloudflare:workers';
 import { verifyTimingSafe } from 'utils/crypto';
+import { ApiRequest } from 'types';
 
-export const adminApiKeyMiddleware: RequestHandler = async (request) => {
-    const apiKey = request.headers.get('x-admin-api-key');
+function readAdminApiKey(request: ApiRequest, allowQueryParam: boolean): string | null {
+	const header = request.headers.get('x-admin-api-key');
+	if (header) return header;
+	if (!allowQueryParam) return null;
+	try {
+		return new URL(request.url).searchParams.get('admin_key');
+	} catch {
+		return null;
+	}
+}
 
-    if (!apiKey) {
-        return error(401, 'Unauthorized: Missing admin API key');
-    }
+function createAdminApiKeyMiddleware(allowQueryParam: boolean): RequestHandler<ApiRequest> {
+	return async (request) => {
+		const apiKey = readAdminApiKey(request, allowQueryParam);
 
-    const expectedKey = env.ADMIN_API_KEY;
+		if (!apiKey) {
+			return error(401, 'Unauthorized: Missing admin API key');
+		}
 
-    if (!expectedKey) {
-        console.error('ADMIN_API_KEY environment variable is not configured');
-        return error(500, 'Internal server error');
-    }
+		const expectedKey = env.ADMIN_API_KEY;
 
-    if (!verifyTimingSafe(apiKey, expectedKey)) {
-        return error(403, 'Forbidden: Invalid API key');
-    }
+		if (!expectedKey) {
+			request.log.error('admin_api_key_missing');
+			return error(500, 'Internal server error');
+		}
 
-    request.isAdmin = true;
-};
+		if (!verifyTimingSafe(apiKey, expectedKey)) {
+			return error(403, 'Forbidden: Invalid API key');
+		}
+
+		request.isAdmin = true;
+	};
+}
+
+export const adminApiKeyMiddleware = createAdminApiKeyMiddleware(false);
+
+/** Same as adminApiKeyMiddleware, plus `?admin_key=` for browser GET previews. */
+export const adminApiKeyQueryMiddleware = createAdminApiKeyMiddleware(true);

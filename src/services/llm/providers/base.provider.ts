@@ -1,7 +1,7 @@
 import { LLMProviderInput, LLMProviderOutputContent, MessageEntry } from '../../../utils/types';
 
 export interface ILLMProvider {
-	prepareMessagesForLLM(messages: MessageEntry[]): Promise<LLMProviderInput>;
+	prepareMessagesForLLM(messages: MessageEntry[], imageFormat?: 'url' | 'base64'): Promise<LLMProviderInput>;
 
 	generateResponse(params: {
 		input: LLMProviderInput;

@@ -2,6 +2,7 @@ import { error, RequestHandler } from 'itty-router';
 import { createFavouritesDB, createStyleAnalysisDB } from 'db';
 import { env } from 'cloudflare:workers';
 import { ProvisionedAuthRequest } from 'types';
+import { logRouteError } from 'utils/error';
 
 export type ToggleFavouriteBody = {
     isFavourite: boolean;
@@ -38,6 +39,7 @@ const toggleSessionFavouriteHandler: RequestHandler<ProvisionedAuthRequest> = as
             headers: { 'Content-Type': 'application/json' },
         });
     } catch (err) {
+        logRouteError(request.log, 'toggle_session_favourite_failed', err, { session_id: request.params.sessionId });
         if (err instanceof Error) {
             return error(400, err.message);
         }
