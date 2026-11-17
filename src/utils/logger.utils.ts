@@ -55,6 +55,8 @@ export const POSTHOG_INFO_LOG_MESSAGES = new Set([
 	'voltmem_prompt_injection',
 	/** Pending-match resolve → free calibration sheet rows (see docs/identity_calibration_review.md). */
 	'identity_calibration_label',
+	/** Fal spend / latency (see .cursor/plans/fal_client_observability_a1b2c3d4.plan.md). */
+	'fal_request_ok',
 ]);
 
 export function shouldExportLogToPostHog(level: LogLevel, message: string): boolean {
