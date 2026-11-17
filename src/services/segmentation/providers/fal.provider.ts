@@ -1,5 +1,6 @@
 import { arrayBufferToBase64, fetchImageAsArrayBuffer } from '../../../utils/assets.utils';
 import { getImageMimeType } from '../../../utils/image.utils';
+import { FalHttpError, falPostJson } from '../../fal';
 import { sam3PromptCandidates } from '../sam3_prompt';
 import { SegmentError, SegmentProvider, SegmentBoxInput, SegmentBoxResult } from './base.provider';
 
@@ -102,16 +103,6 @@ function toDataUri(image: ArrayBuffer): string {
 	return `data:${mime};base64,${arrayBufferToBase64(image)}`;
 }
 
-function summarizeFalError(body: string, json: FalSegmentResponse | null): string {
-	if (json?.detail != null) {
-		return typeof json.detail === 'string' ? json.detail : JSON.stringify(json.detail).slice(0, 500);
-	}
-	if (json?.error != null) {
-		return typeof json.error === 'string' ? json.error : JSON.stringify(json.error).slice(0, 500);
-	}
-	return body.slice(0, 500);
-}
-
 /**
  * Fal SAM 2 / SAM 3 adapter. CutoutService must not import this directly — resolve via createSegmentProvider().
  * Box-only → SAM 2. Label → SAM 3 short noun phrases (never Fal's default "wheel").
@@ -128,7 +119,7 @@ export class FalSegmentProvider implements SegmentProvider {
 	constructor(private apiKey: string) {}
 
 	async segmentBox(input: SegmentBoxInput): Promise<SegmentBoxResult> {
-		if (!this.apiKey) {
+		if (!this.apiKey?.trim()) {
 			throw new SegmentError('FAL_KEY is not set');
 		}
 
@@ -264,31 +255,21 @@ export class FalSegmentProvider implements SegmentProvider {
 			payload.include_scores = true;
 		}
 
-		const response = await fetch(params.endpoint, {
-			method: 'POST',
-			headers: {
-				Authorization: `Key ${this.apiKey}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(payload),
-		});
-
-		const body = await response.text();
-		if (!body) {
-			throw new SegmentError(`${params.model} returned empty body (${response.status})`, response.status);
-		}
-		let json: FalSegmentResponse | null = null;
+		let json: FalSegmentResponse;
 		try {
-			json = JSON.parse(body) as FalSegmentResponse;
-		} catch {
-			json = null;
-		}
-
-		if (!response.ok) {
-			throw new SegmentError(
-				`${params.model} failed (${response.status}): ${summarizeFalError(body, json)}`,
-				response.status
-			);
+			const result = await falPostJson<FalSegmentResponse>({
+				apiKey: this.apiKey,
+				endpoint: params.endpoint,
+				model: params.model,
+				useCase: 'segment',
+				body: payload,
+			});
+			json = result.json;
+		} catch (err) {
+			if (err instanceof FalHttpError) {
+				throw new SegmentError(err.message, err.status);
+			}
+			throw err;
 		}
 
 		const picked = pickFalMask(json);

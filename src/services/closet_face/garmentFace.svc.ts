@@ -112,6 +112,7 @@ export class GarmentFaceService {
 			const matte = await falBirefnetMatte({
 				apiKey: this.env.FAL_KEY,
 				imageUrl: await signDownloadUrlForKey(samKey),
+				log,
 			});
 			const matteQuality = await evaluateFaceCutoutPng(matte, result.maskScore ?? null);
 			const matteVerdict = passesFaceQuality(matteQuality, { category: job.category });
@@ -219,6 +220,7 @@ export class GarmentFaceService {
 			color: job.color,
 			category: job.category,
 			subcategory: job.subcategory,
+			log,
 		});
 		const flatlayKey = `cutouts/faces/${job.closetItemId}/flatlay-${crypto.randomUUID()}.png`;
 		await this.env.OUTFIT_PHOTOS_BUCKET.put(flatlayKey, packshot.pngBytes, {
@@ -305,6 +307,7 @@ export class GarmentFaceService {
 					color: job.color,
 					category: job.category,
 					subcategory: job.subcategory,
+					log,
 				});
 				const flatlayKey = `cutouts/faces/${job.closetItemId}/flatlay-${crypto.randomUUID()}.png`;
 				await this.env.OUTFIT_PHOTOS_BUCKET.put(flatlayKey, packshot.pngBytes, {

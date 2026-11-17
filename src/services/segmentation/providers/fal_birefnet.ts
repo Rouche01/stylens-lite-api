@@ -1,7 +1,10 @@
 import { fetchImageAsArrayBuffer } from '../../../utils/assets.utils';
+import type { Logger } from '../../../utils/logger.utils';
+import { FalHttpError, falPostJson } from '../../fal';
 import { SegmentError } from './base.provider';
 
 const FAL_BIREFNET_V2 = 'https://fal.run/fal-ai/birefnet/v2';
+const BIREFNET_MODEL = 'fal-ai/birefnet/v2';
 
 type FalImageFile = {
 	url?: string;
@@ -40,16 +43,6 @@ function falFileToUrl(value: unknown): string | undefined {
 	return undefined;
 }
 
-function summarizeFalError(body: string, json: FalBirefnetResponse | null): string {
-	if (json?.detail != null) {
-		return typeof json.detail === 'string' ? json.detail : JSON.stringify(json.detail).slice(0, 500);
-	}
-	if (json?.error != null) {
-		return typeof json.error === 'string' ? json.error : JSON.stringify(json.error).slice(0, 500);
-	}
-	return body.slice(0, 500);
-}
-
 /**
  * Soft-matte a cutout / subject PNG via Fal BiRefNet v2.
  * Spike helper — not part of SegmentProvider.
@@ -57,50 +50,43 @@ function summarizeFalError(body: string, json: FalBirefnetResponse | null): stri
 export async function falBirefnetMatte(params: {
 	apiKey: string;
 	imageUrl: string;
+	log?: Logger;
+	signal?: AbortSignal;
 }): Promise<Uint8Array> {
-	const { apiKey, imageUrl } = params;
-	if (!apiKey) {
+	const { apiKey, imageUrl, log, signal } = params;
+	if (!apiKey?.trim()) {
 		throw new SegmentError('FAL_KEY is not set');
 	}
 	if (!imageUrl) {
 		throw new SegmentError('imageUrl is required for BiRefNet');
 	}
 
-	const response = await fetch(FAL_BIREFNET_V2, {
-		method: 'POST',
-		headers: {
-			Authorization: `Key ${apiKey}`,
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({
-			image_url: imageUrl,
-			model: 'Matting',
-			operating_resolution: '1024x1024',
-			refine_foreground: true,
-			output_format: 'png',
-		}),
-	});
-
-	const body = await response.text();
-	if (!body) {
-		throw new SegmentError(`fal-ai/birefnet/v2 returned empty body (${response.status})`, response.status);
-	}
-
-	let json: FalBirefnetResponse | null = null;
+	let json: FalBirefnetResponse;
 	try {
-		json = JSON.parse(body) as FalBirefnetResponse;
-	} catch {
-		json = null;
+		const result = await falPostJson<FalBirefnetResponse>({
+			apiKey,
+			endpoint: FAL_BIREFNET_V2,
+			model: BIREFNET_MODEL,
+			useCase: 'matte',
+			log,
+			signal,
+			body: {
+				image_url: imageUrl,
+				model: 'Matting',
+				operating_resolution: '1024x1024',
+				refine_foreground: true,
+				output_format: 'png',
+			},
+		});
+		json = result.json;
+	} catch (err) {
+		if (err instanceof FalHttpError) {
+			throw new SegmentError(err.message, err.status);
+		}
+		throw err;
 	}
 
-	if (!response.ok) {
-		throw new SegmentError(
-			`fal-ai/birefnet/v2 failed (${response.status}): ${summarizeFalError(body, json)}`,
-			response.status
-		);
-	}
-
-	const resultUrl = falFileToUrl(json?.image) ?? falFileToUrl(json?.mask_image);
+	const resultUrl = falFileToUrl(json.image) ?? falFileToUrl(json.mask_image);
 	if (!resultUrl) {
 		throw new SegmentError('fal-ai/birefnet/v2 returned no image', 422);
 	}

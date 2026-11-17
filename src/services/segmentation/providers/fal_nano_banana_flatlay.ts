@@ -1,5 +1,7 @@
 import { fetchImageAsArrayBuffer } from '../../../utils/assets.utils';
+import type { Logger } from '../../../utils/logger.utils';
 import { resolvePackshotStudioBackground } from '../../../utils/packshot_background';
+import { FalHttpError, falPostJson } from '../../fal';
 import { SegmentError } from './base.provider';
 
 const FAL_NANO_BANANA_EDIT = 'https://fal.run/fal-ai/nano-banana/edit';
@@ -61,16 +63,6 @@ function extractImageUrl(json: FalNanoBananaEditResponse | null): string | undef
 		}
 	}
 	return falFileToUrl(json.image);
-}
-
-function summarizeFalError(body: string, json: FalNanoBananaEditResponse | null): string {
-	if (json?.detail != null) {
-		return typeof json.detail === 'string' ? json.detail : JSON.stringify(json.detail).slice(0, 500);
-	}
-	if (json?.error != null) {
-		return typeof json.error === 'string' ? json.error : JSON.stringify(json.error).slice(0, 500);
-	}
-	return body.slice(0, 500);
 }
 
 function normalizeCategory(category?: string | null): string {
@@ -142,9 +134,11 @@ export async function falNanoBananaFlatlay(params: {
 	color?: string | null;
 	category?: string | null;
 	subcategory?: string | null;
+	log?: Logger;
+	signal?: AbortSignal;
 }): Promise<{ pngBytes: Uint8Array; model: string }> {
-	const { apiKey, imageUrl, label, color, category, subcategory } = params;
-	if (!apiKey) {
+	const { apiKey, imageUrl, label, color, category, subcategory, log, signal } = params;
+	if (!apiKey?.trim()) {
 		throw new SegmentError('FAL_KEY is not set');
 	}
 	if (!imageUrl) {
@@ -152,35 +146,29 @@ export async function falNanoBananaFlatlay(params: {
 	}
 
 	const model = 'fal-ai/nano-banana/edit';
-	const response = await fetch(FAL_NANO_BANANA_EDIT, {
-		method: 'POST',
-		headers: {
-			Authorization: `Key ${apiKey}`,
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({
-			prompt: flatlayPromptForGarment({ label, color, category, subcategory }),
-			image_urls: [imageUrl],
-			num_images: 1,
-			aspect_ratio: '1:1',
-			output_format: 'png',
-		}),
-	});
-
-	const body = await response.text();
-	if (!body) {
-		throw new SegmentError(`${model} returned empty body (${response.status})`, response.status);
-	}
-
-	let json: FalNanoBananaEditResponse | null = null;
+	let json: FalNanoBananaEditResponse;
 	try {
-		json = JSON.parse(body) as FalNanoBananaEditResponse;
-	} catch {
-		json = null;
-	}
-
-	if (!response.ok) {
-		throw new SegmentError(`${model} failed (${response.status}): ${summarizeFalError(body, json)}`, response.status);
+		const result = await falPostJson<FalNanoBananaEditResponse>({
+			apiKey,
+			endpoint: FAL_NANO_BANANA_EDIT,
+			model,
+			useCase: 'packshot',
+			log,
+			signal,
+			body: {
+				prompt: flatlayPromptForGarment({ label, color, category, subcategory }),
+				image_urls: [imageUrl],
+				num_images: 1,
+				aspect_ratio: '1:1',
+				output_format: 'png',
+			},
+		});
+		json = result.json;
+	} catch (err) {
+		if (err instanceof FalHttpError) {
+			throw new SegmentError(err.message, err.status);
+		}
+		throw err;
 	}
 
 	const resultUrl = extractImageUrl(json);

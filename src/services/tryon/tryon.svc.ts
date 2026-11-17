@@ -1,5 +1,6 @@
 import { arrayBufferToBase64, fetchImageAsArrayBuffer, signDownloadUrlForKey } from '../../utils/assets.utils';
 import { Logger, createLogger } from '../../utils/logger.utils';
+import { FalHttpError, falPostJson } from '../fal';
 
 const FAL_FASHN_ENDPOINT = 'https://fal.run/fal-ai/fashn/tryon/v1.6';
 export const TRYON_MODEL = 'fal-ai/fashn/tryon/v1.6';
@@ -96,7 +97,7 @@ export class TryonService {
 			model: TRYON_MODEL,
 		});
 
-		if (!this.apiKey) {
+		if (!this.apiKey?.trim()) {
 			throw new TryonError('FAL_KEY is not set');
 		}
 
@@ -114,40 +115,32 @@ export class TryonService {
 
 		log.info('tryon_start', { garment_bytes: garmentJpeg.byteLength, garment_photo_type: 'flat-lay' });
 
-		const response = await fetch(FAL_FASHN_ENDPOINT, {
-			method: 'POST',
-			headers: {
-				Authorization: `Key ${this.apiKey}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				model_image: modelImageUrl,
-				garment_image: garmentDataUri,
-				category,
-				mode: 'balanced',
-				garment_photo_type: 'flat-lay',
-				moderation_level: 'permissive',
-				num_samples: 1,
-				segmentation_free: true,
-				output_format: 'png',
-			}),
-		});
-
-		const body = await response.text();
-		if (!body) {
-			throw new TryonError(`${TRYON_MODEL} returned empty body (${response.status})`, response.status);
-		}
-		let json: { image?: unknown; images?: unknown; detail?: unknown; error?: unknown } | null = null;
+		let json: { image?: unknown; images?: unknown; detail?: unknown; error?: unknown };
 		try {
-			json = JSON.parse(body) as { image?: unknown; images?: unknown; detail?: unknown; error?: unknown };
-		} catch {
-			json = null;
-		}
-
-		if (!response.ok) {
-			const detail = json?.detail ?? json?.error ?? body.slice(0, 500);
-			const message = typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 500);
-			throw new TryonError(`${TRYON_MODEL} failed (${response.status}): ${message}`, response.status);
+			const result = await falPostJson<{ image?: unknown; images?: unknown; detail?: unknown; error?: unknown }>({
+				apiKey: this.apiKey,
+				endpoint: FAL_FASHN_ENDPOINT,
+				model: TRYON_MODEL,
+				useCase: 'tryon',
+				log,
+				body: {
+					model_image: modelImageUrl,
+					garment_image: garmentDataUri,
+					category,
+					mode: 'balanced',
+					garment_photo_type: 'flat-lay',
+					moderation_level: 'permissive',
+					num_samples: 1,
+					segmentation_free: true,
+					output_format: 'png',
+				},
+			});
+			json = result.json;
+		} catch (err) {
+			if (err instanceof FalHttpError) {
+				throw new TryonError(err.message, err.status);
+			}
+			throw err;
 		}
 
 		const resultUrl = extractFashnImageUrl(json);
